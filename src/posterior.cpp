@@ -1,0 +1,131 @@
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2026 Franz X. Mohr
+
+
+#include "models/models.h"
+#include "io/hdf5/hdf5_and_armadillo.h"
+#include <iostream>
+#include <filesystem>
+#include <string>
+
+// Helper function to process a single file
+static int process_single_file_evaluation(const std::filesystem::path& filepath, bool run_coefficients, bool run_forecasts, bool run_loglik) {
+	try
+	{
+		std::string model_type;
+
+		{
+			// Open HDF5 file (will be closed when scope ends)
+			HighFive::File file = open_hdf5_file(filepath);
+
+			// Get model type from file
+			model_type = get_algorithm_type(file);
+
+			// File is automatically closed here when 'file' goes out of scope
+		}
+
+		// Initialize model
+		auto model = create_model(model_type);
+
+		// Posterior draws
+		if (run_coefficients)
+		{
+			model->draw_coefficients(filepath);
+		}
+
+		// Information criteria
+		if (run_loglik)
+		{
+			model->log_likelihood(filepath);
+		}
+
+		// Forecasts
+		if (run_forecasts)
+		{
+			model->forecast(filepath);
+		}
+	}
+	catch (const std::exception &e)
+	{
+		std::cerr << "Error processing " << filepath << ": " << e.what() << std::endl;
+		return 1;
+	}
+
+	return 0;
+}
+
+int posterior(int argc, char *argv[])
+{
+
+	// Get filepath from command line argument
+	std::filesystem::path filepath = argv[2];
+
+	// Check if path exists
+	if (!std::filesystem::exists(filepath))
+	{
+		std::cerr << "Error: Path does not exist: " << filepath << std::endl;
+		return 1;
+	}
+
+	// Parse optional flags
+	bool run_coefficients = true;
+	bool run_forecasts = true;
+	bool run_loglik = true;
+
+	for (int i = 3; i < argc; ++i)
+	{
+		std::string arg = argv[i];
+		if (arg == "--no-coefficients")
+		{
+			run_coefficients = false;
+		}
+		else if (arg == "--no-forecasts")
+		{
+			run_forecasts = false;
+		}
+		else if (arg == "--no-loglik")
+		{
+			run_loglik = false;
+		}
+		else
+		{
+			std::cerr << "Warning: Unknown flag '" << arg << "' ignored" << std::endl;
+		}
+	}
+
+	// Check if path is a directory
+	if (std::filesystem::is_directory(filepath))
+	{
+
+		// A file that fails is reported and the walk continues, but the exit
+		// status has to say that something failed: a caller looping over model
+		// directories cannot see stderr per file.
+		int failures = 0;
+
+		// Loop over all files in the directory and subdirectories recursively
+		for (const auto& entry : std::filesystem::recursive_directory_iterator(filepath))
+		{
+			if (entry.is_regular_file() && is_hdf5_file(entry.path()))
+			{
+				std::cout << "Processing: " << entry.path() << std::endl;
+				failures += process_single_file_evaluation(entry.path(), run_coefficients, run_forecasts, run_loglik);
+			}
+		}
+		return failures == 0 ? 0 : 1;
+	}
+	else if (std::filesystem::is_regular_file(filepath))
+	{
+		// Process single file, but only if it is an hdf5 file
+		if (!is_hdf5_file(filepath))
+		{
+			std::cerr << "Error: Not an hdf5 file: " << filepath << std::endl;
+			return 1;
+		}
+		return process_single_file_evaluation(filepath, run_coefficients, run_forecasts, run_loglik);
+	}
+	else
+	{
+		std::cerr << "Error: Path is neither a file nor a directory: " << filepath << std::endl;
+		return 1;
+	}
+}

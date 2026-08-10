@@ -1,0 +1,47 @@
+{
+    "version": 8,
+    "configurePresets": [
+        {
+            "name": "default",
+            "displayName": "debug-ninja",
+            "description": "Presets for development",
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build/bin/${presetName}",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "CMAKE_INSTALL_PREFIX": "${sourceDir}/build/install/${presetName}",
+                "CMAKE_DISABLE_FIND_PACKAGE_nvpl": "TRUE",
+                "BAYESTS_NATIVE_ARCH": "ON"
+            }
+        },
+        {
+            "name": "release",
+            "displayName": "release-ninja",
+            "description": "Presets for building the redistributable package",
+            "inherits": "default",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "BAYESTS_BUILD_DOCS": "OFF",
+                "BAYESTS_NATIVE_ARCH": "OFF"
+            }
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "default",
+            "configurePreset": "default"
+        },
+        {
+            "name": "release",
+            "configurePreset": "release"
+        }
+    ],
+    "packagePresets": [
+        {
+            "name": "release",
+            "displayName": "Binary package",
+            "description": "Archive (plus an NSIS installer where NSIS is available)",
+            "configurePreset": "release"
+        }
+    ]
+}

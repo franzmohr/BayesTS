@@ -1,0 +1,189 @@
+
+#####################################################################
+# Regression harnesses
+#
+# Not installed and not part of a package: these exist to compare one build of
+# the samplers against another. See golden_models.cpp for how the comparison is
+# made reproducible.
+#
+# Target names carry the bayests_ prefix because CMake target names are global
+# to a build tree, and these are created whenever BAYESTS_BUILD_TESTS is on --
+# including when a parent project pulls BayesTS in with add_subdirectory().
+
+add_executable(bayests_golden golden_models.cpp)
+
+target_link_libraries(bayests_golden PRIVATE bayests_models)
+target_link_libraries(bayests_golden PRIVATE bayests_hdf5_helper)
+
+# Builds the inputs for the branches the recorded fixtures never reach.
+add_executable(bayests_make_varsel_fixture make_varsel_fixture.cpp)
+
+target_link_libraries(bayests_make_varsel_fixture PRIVATE bayests_hdf5_helper)
+
+# Writes a model file from scratch for the samplers that have no recorded
+# inputs. See make_model_fixture.cpp.
+add_executable(bayests_make_model_fixture make_model_fixture.cpp)
+
+target_link_libraries(bayests_make_model_fixture PRIVATE bayests_hdf5_helper)
+
+target_link_libraries(bayests_golden PRIVATE bayests_warnings)
+target_link_libraries(bayests_make_varsel_fixture PRIVATE bayests_warnings)
+target_link_libraries(bayests_make_model_fixture PRIVATE bayests_warnings)
+
+if(OpenMP_CXX_FOUND)
+    target_link_libraries(bayests_golden PRIVATE OpenMP::OpenMP_CXX)
+    target_link_libraries(bayests_make_varsel_fixture PRIVATE OpenMP::OpenMP_CXX)
+    target_link_libraries(bayests_make_model_fixture PRIVATE OpenMP::OpenMP_CXX)
+endif()
+
+#####################################################################
+# Tests
+#
+# `ctest` is the entry point. Fixtures are generated into the build tree, never
+# into the source tree: they are derived data, they are large -- a full set is
+# hundreds of megabytes -- and a source tree that accumulates them cannot be
+# reasoned about by size or cleaned by `git clean` without care.
+#
+#   cmake --build build/bin/<preset>
+#   ctest --test-dir build/bin/<preset> --output-on-failure
+#
+# Each model file is produced by a `fixture.*` test and consumed by the
+# `golden.*` test that follows it, wired through CTest's FIXTURES_SETUP /
+# FIXTURES_REQUIRED so that running a single golden test by name regenerates
+# just the input it needs.
+#
+# What these tests do and do not check: bayests_golden prints a fingerprint per
+# posterior dataset and exits non-zero only if a fixture throws. So this is a
+# smoke test over every sampler and code path, not a numerical regression test.
+# Fingerprints are deliberately not checked in as expected values -- they shift
+# in the last digits with the compiler, the BLAS and, when BAYESTS_NATIVE_ARCH
+# is on, the CPU, so a committed baseline would fail on machines other than the
+# one that recorded it. To use them as a regression check, record the output
+# before a change and diff it against the output after, on the same machine and
+# with the same build.
+
+set(BAYESTS_FIXTURE_DIR "${CMAKE_CURRENT_BINARY_DIR}/fixtures")
+
+# The samplers are only reproducible single-threaded, and bayests_golden
+# refuses to run unless both are pinned.
+set(_bayests_pin_threads "OMP_NUM_THREADS=1;OPENBLAS_NUM_THREADS=1")
+
+# Windows has no RPATH, so a test launched by ctest finds the dependency DLLs
+# only if they are on PATH. Prepend the same directories the install step
+# resolves runtime dependencies from, so `ctest` works in a shell that has not
+# been set up by hand.
+set(_bayests_test_env_mod "")
+if(WIN32)
+    get_filename_component(_bayests_compiler_dir "${CMAKE_CXX_COMPILER}" DIRECTORY)
+    set(_bayests_dll_dirs "${_bayests_compiler_dir}")
+    foreach(_prefix IN LISTS CMAKE_PREFIX_PATH)
+        list(APPEND _bayests_dll_dirs "${_prefix}/bin")
+    endforeach()
+    list(APPEND _bayests_dll_dirs ${BAYESTS_RUNTIME_DEP_DIRS})
+    list(REMOVE_DUPLICATES _bayests_dll_dirs)
+
+    foreach(_dir IN LISTS _bayests_dll_dirs)
+        if(IS_DIRECTORY "${_dir}")
+            list(APPEND _bayests_test_env_mod "PATH=path_list_prepend:${_dir}")
+        endif()
+    endforeach()
+endif()
+
+# One generated model file plus the golden run over it.
+#
+#   bayests_make_model_fixture <dest.h5> <model> <none|ssvs|bvs> <covar 0|1>
+#                              <structural 0|1> <h>
+function(bayests_add_model_fixture name model varsel covar structural horizon)
+    add_test(NAME "fixture.${name}"
+        COMMAND bayests_make_model_fixture
+                "${BAYESTS_FIXTURE_DIR}/${name}.h5"
+                "${model}" "${varsel}" "${covar}" "${structural}" "${horizon}")
+    set_tests_properties("fixture.${name}" PROPERTIES
+        FIXTURES_SETUP "fx.${name}"
+        ENVIRONMENT_MODIFICATION "${_bayests_test_env_mod}")
+
+    add_test(NAME "golden.${name}"
+        COMMAND bayests_golden "${BAYESTS_FIXTURE_DIR}/${name}.h5")
+    set_tests_properties("golden.${name}" PROPERTIES
+        FIXTURES_REQUIRED "fx.${name}"
+        ENVIRONMENT "${_bayests_pin_threads}"
+        ENVIRONMENT_MODIFICATION "${_bayests_test_env_mod}")
+endfunction()
+
+# The generation matrix. h=4 and k=3 throughout, so a forecast is 4x3 per draw.
+#
+# SSVS appears only for VarNormalGamma: the stochastic volatility and
+# time-varying parameter samplers reject it (see the validate() overloads in
+# src/core/inputs.cpp), so a fixture asking for it would be testing the error
+# path, not the sampler.
+bayests_add_model_fixture(VarNormalGamma-plain      VarNormalGamma     none 0 0 4)
+bayests_add_model_fixture(VarNormalGamma-ssvs       VarNormalGamma     ssvs 0 0 4)
+bayests_add_model_fixture(VarNormalGamma-bvs        VarNormalGamma     bvs  0 0 4)
+bayests_add_model_fixture(VarNormalGamma-covar      VarNormalGamma     none 1 0 4)
+bayests_add_model_fixture(VarNormalGamma-structural VarNormalGamma     none 0 1 4)
+bayests_add_model_fixture(VarNormalGamma-nofcst     VarNormalGamma     none 0 0 0)
+
+bayests_add_model_fixture(VarNormalStochvol-plain      VarNormalStochvol none 0 0 4)
+bayests_add_model_fixture(VarNormalStochvol-bvs        VarNormalStochvol bvs  0 0 4)
+bayests_add_model_fixture(VarNormalStochvol-covar      VarNormalStochvol none 1 0 4)
+bayests_add_model_fixture(VarNormalStochvol-structural VarNormalStochvol none 0 1 4)
+bayests_add_model_fixture(VarNormalStochvol-nofcst     VarNormalStochvol none 0 0 0)
+
+bayests_add_model_fixture(VarTvpGamma-plain      VarTvpGamma none 0 0 4)
+bayests_add_model_fixture(VarTvpGamma-bvs        VarTvpGamma bvs  0 0 4)
+bayests_add_model_fixture(VarTvpGamma-covar      VarTvpGamma none 1 0 4)
+bayests_add_model_fixture(VarTvpGamma-structural VarTvpGamma none 0 1 4)
+bayests_add_model_fixture(VarTvpGamma-nofcst     VarTvpGamma none 0 0 0)
+
+bayests_add_model_fixture(VarTvpWishart-plain  VarTvpWishart none 0 0 4)
+bayests_add_model_fixture(VarTvpWishart-bvs    VarTvpWishart bvs  0 0 4)
+bayests_add_model_fixture(VarTvpWishart-nofcst VarTvpWishart none 0 0 0)
+
+bayests_add_model_fixture(VarTvpStochvol-plain      VarTvpStochvol none 0 0 4)
+bayests_add_model_fixture(VarTvpStochvol-bvs        VarTvpStochvol bvs  0 0 4)
+bayests_add_model_fixture(VarTvpStochvol-covar      VarTvpStochvol none 1 0 4)
+bayests_add_model_fixture(VarTvpStochvol-structural VarTvpStochvol none 0 1 4)
+bayests_add_model_fixture(VarTvpStochvol-nofcst     VarTvpStochvol none 0 0 0)
+
+#####################################################################
+# VarNormalWishart
+#
+# make_model_fixture cannot write this model, so its fixtures are derived from a
+# recorded file with make_varsel_fixture. No such file is in the repository --
+# they are hundreds of megabytes of sampler output -- so these tests exist only
+# when one is supplied:
+#
+#   cmake --preset <preset> -DBAYESTS_WISHART_FIXTURE=path/to/recorded.h5
+#
+# and are skipped, with a note at configure time, when it is not.
+set(BAYESTS_WISHART_FIXTURE "" CACHE FILEPATH
+    "Recorded VarNormalWishart model file the w-* regression fixtures are derived from")
+
+if(BAYESTS_WISHART_FIXTURE AND EXISTS "${BAYESTS_WISHART_FIXTURE}")
+    foreach(_scheme none ssvs bvs)
+        add_test(NAME "fixture.w-${_scheme}"
+            COMMAND bayests_make_varsel_fixture
+                    "${BAYESTS_WISHART_FIXTURE}"
+                    "${BAYESTS_FIXTURE_DIR}/w-${_scheme}.h5"
+                    "${_scheme}" 4)
+        set_tests_properties("fixture.w-${_scheme}" PROPERTIES
+            FIXTURES_SETUP "fx.w-${_scheme}"
+            ENVIRONMENT_MODIFICATION "${_bayests_test_env_mod}")
+
+        add_test(NAME "golden.w-${_scheme}"
+            COMMAND bayests_golden "${BAYESTS_FIXTURE_DIR}/w-${_scheme}.h5")
+        set_tests_properties("golden.w-${_scheme}" PROPERTIES
+            FIXTURES_REQUIRED "fx.w-${_scheme}"
+            ENVIRONMENT "${_bayests_pin_threads}"
+            ENVIRONMENT_MODIFICATION "${_bayests_test_env_mod}")
+    endforeach()
+    message(STATUS "VarNormalWishart fixtures derived from ${BAYESTS_WISHART_FIXTURE}")
+else()
+    message(STATUS "BAYESTS_WISHART_FIXTURE not set - VarNormalWishart tests skipped")
+endif()
+
+# VarTvpWishart carries no psi block, so it has no covar fixture. It is also the
+# one model whose R-side implementation no longer exists, which makes the
+# fingerprints recorded from these fixtures the only baseline it has: record
+# them before a change and diff them after, on the same machine and build.
+message(STATUS "Regression tests registered - run with: ctest --test-dir <binaryDir>")

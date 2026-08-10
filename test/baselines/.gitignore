@@ -1,0 +1,19 @@
+# Recorded fingerprints, for telling a refactor from a regression.
+#
+# Nothing in here is committed except this file. A fingerprint is a property of
+# the toolchain that produced it as much as of the code: it shifts in the last
+# digits with the compiler, the BLAS implementation and, when
+# BAYESTS_NATIVE_ARCH is on, the CPU. A baseline checked in here would therefore
+# fail on every machine except the one that recorded it, which is why the test
+# suite compares a before against an after on one machine instead of comparing
+# against a stored expectation.
+#
+# The directory is tracked -- rather than left to be created by hand -- so that
+# `ctest ... -R golden -V > test/baselines/<name>.txt` works in a fresh clone
+# and lands somewhere that survives `rm -rf build`.
+#
+# Date the files, or name them for the change they precede. A baseline recorded
+# before a build-flag change is worse than no baseline at all: it still diffs
+# cleanly enough to look meaningful.
+*
+!.gitignore

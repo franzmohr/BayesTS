@@ -1,0 +1,85 @@
+# ---- Build directories ----
+#
+# The presets build into build/bin/<preset>, so there is one build directory and
+# it is here. The rest cover the conventional names an IDE or a hand-run cmake
+# might pick instead.
+build/
+out/
+install/
+cmake-build-*/
+
+# CMake's --system-information scratch tree. Carries its own CMakeLists.txt,
+# which the patterns below would otherwise leave behind as a tracked file.
+__cmake_systeminformation/
+
+# ---- CMake generated files ----
+CMakeCache.txt
+CMakeFiles/
+CMakeScripts/
+cmake_install.cmake
+install_manifest.txt
+CTestTestfile.cmake
+Testing/
+_deps/
+.cmake/
+compile_commands.json
+
+# Machine-specific compiler/toolchain paths -- must stay local
+CMakeUserPresets.json
+
+# ---- Ninja ----
+.ninja_deps
+.ninja_log
+
+# ---- Doxygen ----
+# The CMake 'docs' target writes into the build tree, which is ignored above.
+# These catch a Doxygen run started by hand inside docs/.
+docs/Doxyfile
+docs/html/
+docs/latex/
+docs/xml/
+docs/man/
+
+# ---- Compiled objects, libraries and binaries ----
+*.o
+*.obj
+*.lo
+*.slo
+*.gch
+*.pch
+*.d
+*.exe
+*.out
+*.app
+*.so
+*.so.*
+*.dylib
+*.dll
+*.a
+*.lib
+*.exp
+*.ilk
+*.pdb
+
+# ---- HDF5 data and model output ----
+# Model files are derived data and can be hundreds of megabytes. The test
+# fixtures are generated into the build tree (see test/CMakeLists.txt), so
+# nothing below here should appear in the source tree at all; the pattern stays
+# as a guard against a stray sampler run writing one in.
+*.h5
+*.hdf5
+
+# ---- Editor / IDE / tooling ----
+.vscode/
+.vs/
+.idea/
+.cache/
+.claude/
+*.swp
+*~
+
+# ---- OS clutter ----
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
