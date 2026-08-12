@@ -121,16 +121,29 @@ find_package(Armadillo CONFIG REQUIRED)
 find_package(hdf5 CONFIG REQUIRED)
 
 # Which target the HDF5 config exports is not part of any contract: it depends on
-# how that HDF5 was built and by whom. A CMake-built shared HDF5 exports
-# hdf5::hdf5-shared, a static one hdf5::hdf5-static, and some packagings export
-# an unsuffixed hdf5::hdf5 instead -- MSYS2 and a hand-built HDF5 disagree. So the
-# name is resolved once, here, rather than written into each of the three places
-# that link it, where a mismatch surfaces three identical "target was not found"
-# errors that name no package.
+# how that HDF5 was built and by whom. Two things vary independently --
 #
-# Shared first: it is what the Windows packaging step expects to find and bundle.
+#   * the link type. A CMake-built HDF5 exports `-shared` and `-static` variants
+#     and may install one or both; a hand-built 2.0 installs both, MSYS2's package
+#     is static only.
+#   * the namespace. Some packagings export `hdf5::hdf5-static`, others the bare
+#     `hdf5-static` with no namespace at all -- MSYS2 again.
+#
+# So the name is resolved once, here, rather than written into each of the three
+# places that link it, where a mismatch surfaces as three identical "target was
+# not found" errors that name no package.
+#
+# Shared before static, and namespaced before bare, so a build against an HDF5
+# offering several keeps linking the one it always did. An HDF5 that offers only a
+# static library is fine: it just means nothing needs bundling next to the
+# executable on Windows.
+set(BAYESTS_HDF5_CANDIDATE_TARGETS
+    hdf5::hdf5-shared hdf5-shared
+    hdf5::hdf5        hdf5
+    hdf5::hdf5-static hdf5-static)
+
 set(BAYESTS_HDF5_TARGET "")
-foreach(_bayests_hdf5_candidate hdf5::hdf5-shared hdf5::hdf5 hdf5::hdf5-static)
+foreach(_bayests_hdf5_candidate IN LISTS BAYESTS_HDF5_CANDIDATE_TARGETS)
     if(TARGET ${_bayests_hdf5_candidate})
         set(BAYESTS_HDF5_TARGET ${_bayests_hdf5_candidate})
         break()
@@ -141,17 +154,18 @@ unset(_bayests_hdf5_candidate)
 if(NOT BAYESTS_HDF5_TARGET)
     # Report what this HDF5 actually offers, so adding the missing name is one
     # edit rather than a guess. IMPORTED_TARGETS is a directory property, so it
-    # lists everything the find_package above defined in this scope.
+    # lists everything the find_package above defined in this scope. The candidate
+    # list is printed from the variable the loop uses, so the two cannot drift.
     get_property(_bayests_imported DIRECTORY PROPERTY IMPORTED_TARGETS)
     list(FILTER _bayests_imported INCLUDE REGEX "(hdf5|HDF5)")
     message(FATAL_ERROR
         "find_package(hdf5) succeeded but exported none of the targets this "
         "project knows how to link:\n"
-        "    hdf5::hdf5-shared, hdf5::hdf5, hdf5::hdf5-static\n"
+        "    ${BAYESTS_HDF5_CANDIDATE_TARGETS}\n"
         "HDF5 version: ${HDF5_VERSION}\n"
         "HDF5-related imported targets that do exist:\n"
         "    ${_bayests_imported}\n"
-        "Add the right name to the candidate list in CMakeLists.txt.")
+        "Add the right name to BAYESTS_HDF5_CANDIDATE_TARGETS in CMakeLists.txt.")
 endif()
 
 message(STATUS "HDF5 target: ${BAYESTS_HDF5_TARGET}")
