@@ -1,6 +1,20 @@
 
 
-cmake_minimum_required(VERSION 4.2)
+# The floor is what the project actually uses, not what the author happens to
+# have installed -- a needlessly high one excludes every distribution. What sets
+# it, highest first; raise this only when something here does:
+#
+#   3.25  packagePresets in CMakePresets.json, which is schema version 6
+#   3.22  the ENVIRONMENT_MODIFICATION test property, which is how the tests
+#         find their DLLs on Windows (test/CMakeLists.txt)
+#   3.21  install(... RUNTIME_DEPENDENCY_SET), which bundles those DLLs into a
+#         Windows package (src/CMakeLists.txt)
+#   3.20  ctest --test-dir, used by every command in CONTRIBUTING.md and CI
+#
+# Nothing needs CMake 4. Going below 3.22 means giving up the two Windows
+# mechanisms above, and below 3.25 means dropping packagePresets and with it
+# `cpack --preset release`; `cmake --build --target package` is unaffected.
+cmake_minimum_required(VERSION 3.25)
 
 
 # Configuring in the source root scatters CMakeCache.txt, CMakeFiles/ and the
@@ -252,6 +266,7 @@ install(FILES
     "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE"
     "${CMAKE_CURRENT_SOURCE_DIR}/README.md"
     "${CMAKE_CURRENT_SOURCE_DIR}/CONTRIBUTING.md"
+    "${CMAKE_CURRENT_SOURCE_DIR}/CHANGELOG.md"
     DESTINATION "${CMAKE_INSTALL_DOCDIR}"
 )
 
