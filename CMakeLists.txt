@@ -120,6 +120,42 @@ find_package(Armadillo CONFIG REQUIRED)
 # HDF5 (needed by HighFive)
 find_package(hdf5 CONFIG REQUIRED)
 
+# Which target the HDF5 config exports is not part of any contract: it depends on
+# how that HDF5 was built and by whom. A CMake-built shared HDF5 exports
+# hdf5::hdf5-shared, a static one hdf5::hdf5-static, and some packagings export
+# an unsuffixed hdf5::hdf5 instead -- MSYS2 and a hand-built HDF5 disagree. So the
+# name is resolved once, here, rather than written into each of the three places
+# that link it, where a mismatch surfaces three identical "target was not found"
+# errors that name no package.
+#
+# Shared first: it is what the Windows packaging step expects to find and bundle.
+set(BAYESTS_HDF5_TARGET "")
+foreach(_bayests_hdf5_candidate hdf5::hdf5-shared hdf5::hdf5 hdf5::hdf5-static)
+    if(TARGET ${_bayests_hdf5_candidate})
+        set(BAYESTS_HDF5_TARGET ${_bayests_hdf5_candidate})
+        break()
+    endif()
+endforeach()
+unset(_bayests_hdf5_candidate)
+
+if(NOT BAYESTS_HDF5_TARGET)
+    # Report what this HDF5 actually offers, so adding the missing name is one
+    # edit rather than a guess. IMPORTED_TARGETS is a directory property, so it
+    # lists everything the find_package above defined in this scope.
+    get_property(_bayests_imported DIRECTORY PROPERTY IMPORTED_TARGETS)
+    list(FILTER _bayests_imported INCLUDE REGEX "(hdf5|HDF5)")
+    message(FATAL_ERROR
+        "find_package(hdf5) succeeded but exported none of the targets this "
+        "project knows how to link:\n"
+        "    hdf5::hdf5-shared, hdf5::hdf5, hdf5::hdf5-static\n"
+        "HDF5 version: ${HDF5_VERSION}\n"
+        "HDF5-related imported targets that do exist:\n"
+        "    ${_bayests_imported}\n"
+        "Add the right name to the candidate list in CMakeLists.txt.")
+endif()
+
+message(STATUS "HDF5 target: ${BAYESTS_HDF5_TARGET}")
+
 # HighFive (header-only library)
 # Manual installation - create interface target
 # Try multiple sources: env var, cache var, or search CMAKE_PREFIX_PATH
@@ -146,7 +182,7 @@ if(EXISTS "${HIGHFIVE_INCLUDE_DIR}/highfive/H5File.hpp")
     set_target_properties(HighFive PROPERTIES
         INTERFACE_INCLUDE_DIRECTORIES "${HIGHFIVE_INCLUDE_DIR}"
     )
-    target_link_libraries(HighFive INTERFACE hdf5::hdf5-shared)
+    target_link_libraries(HighFive INTERFACE ${BAYESTS_HDF5_TARGET})
     message(STATUS "Using HighFive from: ${HIGHFIVE_INCLUDE_DIR}")
 else()
     message(FATAL_ERROR "HighFive headers not found in ${HIGHFIVE_INCLUDE_DIR}")

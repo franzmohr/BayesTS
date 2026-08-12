@@ -27,7 +27,9 @@ target_link_libraries(bayests_hdf5_helper PUBLIC bayests_includes)
 #####################################################################
 # Linking
 target_link_libraries(bayests_hdf5_helper PUBLIC armadillo)
-target_link_libraries(bayests_hdf5_helper PUBLIC hdf5::hdf5-shared)
+# Resolved in the top-level CMakeLists: the exported target name depends on how
+# HDF5 was built, so it is not safe to write one in here.
+target_link_libraries(bayests_hdf5_helper PUBLIC ${BAYESTS_HDF5_TARGET})
 target_link_libraries(bayests_hdf5_helper PUBLIC HighFive)
 target_link_libraries(bayests_hdf5_helper PUBLIC bayests_core)
 

@@ -68,10 +68,22 @@ set(BAYESTS_FIXTURE_DIR "${CMAKE_CURRENT_BINARY_DIR}/fixtures")
 # refuses to run unless both are pinned.
 set(_bayests_pin_threads "OMP_NUM_THREADS=1;OPENBLAS_NUM_THREADS=1")
 
-# Windows has no RPATH, so a test launched by ctest finds the dependency DLLs
-# only if they are on PATH. Prepend the same directories the install step
-# resolves runtime dependencies from, so `ctest` works in a shell that has not
-# been set up by hand.
+# A test launched by ctest has to be able to find the shared libraries the
+# samplers link -- Armadillo, HDF5 and the BLAS underneath them -- and neither
+# platform manages that on its own when they come from a prefix that is not the
+# system one. Prepend the same directories the install step resolves runtime
+# dependencies from, so `ctest` works in a shell that has not been set up by hand.
+#
+# Windows has no RPATH at all, so the DLLs have to be on PATH. Unix has RPATH and
+# usually needs no help, but not always: a library reached only as the transitive
+# dependency of an imported target contributes no RPATH entry, so the link
+# succeeds and the binary then dies at startup with "cannot open shared object
+# file". A side-by-side prefix -- vcpkg, or a hand-built HDF5 -- is where this
+# shows up.
+#
+# macOS is deliberately not covered: DYLD_LIBRARY_PATH is stripped from the
+# environment of a protected process, so this mechanism cannot be relied on
+# there, and nothing tests it.
 set(_bayests_test_env_mod "")
 if(WIN32)
     get_filename_component(_bayests_compiler_dir "${CMAKE_CXX_COMPILER}" DIRECTORY)
@@ -85,6 +97,21 @@ if(WIN32)
     foreach(_dir IN LISTS _bayests_dll_dirs)
         if(IS_DIRECTORY "${_dir}")
             list(APPEND _bayests_test_env_mod "PATH=path_list_prepend:${_dir}")
+        endif()
+    endforeach()
+elseif(UNIX AND NOT APPLE)
+    # Both trees, because a multi-configuration prefix keeps its debug build
+    # under debug/lib and either may be the one that was linked.
+    set(_bayests_so_dirs "")
+    foreach(_prefix IN LISTS CMAKE_PREFIX_PATH)
+        list(APPEND _bayests_so_dirs "${_prefix}/lib" "${_prefix}/debug/lib")
+    endforeach()
+    list(APPEND _bayests_so_dirs ${BAYESTS_RUNTIME_DEP_DIRS})
+    list(REMOVE_DUPLICATES _bayests_so_dirs)
+
+    foreach(_dir IN LISTS _bayests_so_dirs)
+        if(IS_DIRECTORY "${_dir}")
+            list(APPEND _bayests_test_env_mod "LD_LIBRARY_PATH=path_list_prepend:${_dir}")
         endif()
     endforeach()
 endif()

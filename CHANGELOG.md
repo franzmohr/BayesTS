@@ -49,6 +49,34 @@ Dates are ISO. Versions follow the `project(VERSION)` in `CMakeLists.txt`.
 
 ### Changed
 
+* `ctest` now carries the shared library search path on Linux as well as Windows.
+  The Windows half already prepended each `CMAKE_PREFIX_PATH` entry's `bin/` to
+  `PATH`, because Windows has no RPATH; the Unix half was missing on the
+  assumption that RPATH always covers it. It does not. A library reached only as
+  the transitive dependency of an imported target contributes no RPATH entry, so
+  the link succeeds and the test binary then fails to start with `libopenblas.so.0:
+  cannot open shared object file` — which is what building against a side-by-side
+  prefix such as vcpkg produces. `<prefix>/lib` and `<prefix>/debug/lib` are now
+  prepended to `LD_LIBRARY_PATH` for every test. macOS is deliberately not
+  covered, since `DYLD_LIBRARY_PATH` is stripped from protected processes.
+
+  *Draws are unchanged*: this only affects how a test process finds its
+  libraries. All 320 fingerprints identical.
+
+* The HDF5 target is resolved at configure time instead of being hardcoded as
+  `hdf5::hdf5-shared` in three places. Which target an HDF5 config exports is not
+  part of any contract — a CMake-built shared HDF5 gives `hdf5::hdf5-shared`, a
+  static one `hdf5::hdf5-static`, and some packagings an unsuffixed
+  `hdf5::hdf5` — so the project could only be built against an HDF5 packaged the
+  way the author's is. It now takes the first of those three that exists,
+  preferring shared because that is what the Windows packaging step bundles, and
+  a build against an HDF5 exporting none of them fails with the version, the
+  candidate list, and every HDF5 target that *does* exist, rather than with three
+  identical "target was not found" errors that name no package.
+
+  *Draws are unchanged*: all 320 fingerprints identical, and on an HDF5 built the
+  way it was before, the resolution picks exactly the target that was hardcoded.
+
 * `cmake_minimum_required` is 3.25, down from 4.2, and the presets declare schema
   version 6 rather than 8. Nothing in the project used a CMake 4 feature, so the
   old floor excluded every distribution that does not ship a bleeding-edge CMake
