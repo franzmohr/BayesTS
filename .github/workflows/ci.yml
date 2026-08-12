@@ -64,10 +64,19 @@ jobs:
       # churn. BAYESTS_NATIVE_ARCH stays off: the binary is built and run on the
       # same runner, so it buys nothing and only risks an illegal instruction if
       # a job is ever split across machines.
+      # CMAKE_MAP_IMPORTED_CONFIG_DEBUG is what keeps the Debug job honest. vcpkg
+      # installs a debug variant of every port alongside the release one, and a
+      # Debug build of this project would otherwise link those -- so the job would
+      # be testing BayesTS against a debug Armadillo and HDF5 that no user has.
+      # Mapping Debug onto the release location means only BayesTS is built
+      # unoptimised, which is the point of the job; the dependencies stay the ones
+      # the Release job and every consumer use. The trailing empty element lets a
+      # target with no per-configuration location still resolve.
       - name: Configure
         run: |
           cmake -S . -B build/bin/ci -G Ninja \
             -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
+            -DCMAKE_MAP_IMPORTED_CONFIG_DEBUG="Release;RelWithDebInfo;" \
             -DCMAKE_PREFIX_PATH="${{ steps.deps.outputs.prefix-path }}" \
             -DHIGHFIVE_DIR="${{ steps.deps.outputs.highfive-dir }}" \
             -DBAYESTS_BUILD_DOCS=OFF \
@@ -79,6 +88,30 @@ jobs:
 
       - name: Test
         run: ctest --test-dir build/bin/ci --output-on-failure
+
+      # ctest reports a failed golden test as "Failed" whether the binary threw or
+      # never started, and those want different fixes. This separates them: if the
+      # no-argument run prints its usage line the binary loads fine and the problem
+      # is in what it does, and if it does not, ldd says which library is missing.
+      # Running one fixture by hand then shows the actual message.
+      - name: Diagnose a test failure
+        if: failure()
+        run: |
+          exe=build/bin/ci/test/bayests_golden
+          echo "::group::binary and its shared libraries"
+          ls -l "$exe" || echo "the binary was never built"
+          ldd "$exe" 2>&1 | grep -iE "not found|armadillo|hdf5" || ldd "$exe" 2>&1 | head -20
+          echo "::endgroup::"
+
+          echo "::group::does it start? (expect the usage line and exit 2)"
+          "$exe" || echo "exit=$?"
+          echo "::endgroup::"
+
+          echo "::group::one fixture, threads pinned"
+          fixture=$(find build/bin/ci/test/fixtures -name '*.h5' | head -1)
+          echo "using $fixture"
+          OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 "$exe" "$fixture" || echo "exit=$?"
+          echo "::endgroup::"
 
       # The install and package steps are part of the contract too -- a missing
       # file in the install() list or a CPack generator whose tool is absent only
