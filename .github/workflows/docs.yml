@@ -34,7 +34,7 @@ jobs:
     name: doxygen
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Set up dependencies
         id: deps
@@ -75,7 +75,7 @@ jobs:
           fi
 
       - name: Upload site
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: doxygen-html
           path: build/bin/docs/docs/html
@@ -91,7 +91,7 @@ jobs:
       # Pages is enabled anyway.
       - name: Package for Pages
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v5
         with:
           path: build/bin/docs/docs/html
 
@@ -148,4 +148,4 @@ jobs:
           fi
 
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
