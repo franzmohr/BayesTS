@@ -83,12 +83,9 @@ jobs:
       # Pages needs no artifact of its own on a PR, and uploading one from a fork
       # would be pointless -- only main is published.
       #
-      # This and deploy-pages below are the two actions still on Node 20, and so
-      # still emit the deprecation warning. Left where they are on purpose: their
-      # major versions do not track the other actions/* repositories, and pinning
-      # a tag that does not exist turns a warning into "Unable to resolve action".
-      # Dependabot proposes the correct bump, and the deploy job is inert until
-      # Pages is enabled anyway.
+      # The two Pages actions version independently of the other actions/*
+      # repositories, so their majors are not expected to match checkout's or
+      # upload-artifact's. Do not "align" them; let Dependabot move each on its own.
       - name: Package for Pages
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         uses: actions/upload-pages-artifact@v5
