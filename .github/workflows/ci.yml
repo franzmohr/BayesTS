@@ -122,9 +122,14 @@ jobs:
             hdf5:p
             openblas:p
 
+      # Pinned in .github/highfive-version, the same file the Linux jobs read
+      # through the composite action. See that action for why the tag is a beta
+      # and why the URL is the old BlueBrain path.
       - name: Fetch HighFive
         run: |
-          git clone --depth 1 --branch v3.0.0 \
+          ref=$(tr -d '[:space:]' < .github/highfive-version)
+          echo "HighFive ref: $ref"
+          git clone --depth 1 --branch "$ref" \
             https://github.com/BlueBrain/HighFive.git "$RUNNER_TEMP/highfive"
           test -f "$RUNNER_TEMP/highfive/include/highfive/H5File.hpp"
 

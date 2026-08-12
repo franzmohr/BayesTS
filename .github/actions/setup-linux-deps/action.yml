@@ -10,11 +10,12 @@ description: >
 inputs:
   highfive-ref:
     description: >
-      Git tag of HighFive to use. HighFive is header-only, so this is a shallow
-      clone rather than a build. Keep it at the version the project is developed
-      against -- see the HIGHFIVE_DIR note in CMakeUserPresets.json.
+      Git ref of HighFive to use. Defaults to the contents of
+      .github/highfive-version, which is the single place this is pinned --
+      ci.yml and release.yml read the same file for their Windows jobs, so a bump
+      is one edit rather than three.
     required: false
-    default: v3.0.0
+    default: ''
   doxygen:
     description: Also install Doxygen and Graphviz, for the docs target.
     required: false
@@ -76,16 +77,43 @@ runs:
           exit 1
         fi
 
+    # Header-only, and the project locates it by looking for
+    # include/highfive/H5File.hpp under the given prefix -- which is exactly the
+    # layout of the source tree, so no build or install step is needed.
+    #
+    # The URL is the old BlueBrain path on purpose. Upstream has moved to
+    # github.com/highfive-devs/highfive and BlueBrain/HighFive now redirects;
+    # the redirect is what is known to work here, so it stays until the new path
+    # has been confirmed to serve refs.
+    #
+    # Beware the version numbering: HighFive 3.0.0 has no release tag, only
+    # v3.0.0-beta1 and v3.0.0-beta2, while the beta's H5Version.hpp already
+    # reports 3.0.0. Reading the header is therefore not a way to find the tag --
+    # which is how `v3.0.0` came to be pinned here and broke the build.
     - name: Fetch HighFive
       id: highfive
       shell: bash
       run: |
+        url=https://github.com/BlueBrain/HighFive.git
         dir="$RUNNER_TEMP/highfive"
-        # Header-only, and the project locates it by looking for
-        # include/highfive/H5File.hpp under the given prefix -- which is exactly
-        # the layout of the source tree, so no build or install step is needed.
-        git clone --depth 1 --branch "${{ inputs.highfive-ref }}" \
-          https://github.com/BlueBrain/HighFive.git "$dir"
+
+        ref="${{ inputs.highfive-ref }}"
+        if [ -z "$ref" ]; then
+          ref=$(tr -d '[:space:]' < .github/highfive-version)
+        fi
+        echo "HighFive ref: $ref"
+
+        # Checked before cloning so a bad pin says what the valid ones are.
+        # `git clone --branch` on its own only reports that the ref is missing,
+        # which leaves the next person guessing at the naming convention.
+        if ! git ls-remote --exit-code "$url" "refs/tags/$ref" >/dev/null 2>&1; then
+          echo "::error::HighFive has no tag '$ref' (pinned in .github/highfive-version)."
+          echo "Tags on the 3.x line:"
+          git ls-remote --tags "$url" 'refs/tags/v3*' | sed 's|.*refs/tags/|  |'
+          exit 1
+        fi
+
+        git clone --depth 1 --branch "$ref" "$url" "$dir"
         test -f "$dir/include/highfive/H5File.hpp" \
           || { echo "::error::HighFive layout unexpected in $dir"; exit 1; }
         echo "dir=$dir" >> "$GITHUB_OUTPUT"

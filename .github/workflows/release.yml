@@ -80,11 +80,15 @@ jobs:
             hdf5:p
             openblas:p
 
+      # Pinned in .github/highfive-version -- one file for every job here and in
+      # ci.yml, so a bump cannot be applied to some of them and missed in others.
       - name: Fetch HighFive (Windows)
         if: matrix.name == 'windows'
         shell: msys2 {0}
         run: |
-          git clone --depth 1 --branch v3.0.0 \
+          ref=$(tr -d '[:space:]' < .github/highfive-version)
+          echo "HighFive ref: $ref"
+          git clone --depth 1 --branch "$ref" \
             https://github.com/BlueBrain/HighFive.git "$RUNNER_TEMP/highfive"
 
       - name: Configure, build and package (Linux)
