@@ -3,16 +3,24 @@
 
 #include "bayests/var_normal_wishart.h"
 
+#include "core/algorithms/bvs.h"
+#include "core/algorithms/ssvs.h"
 #include "core/algorithms/wishart.h"
 #include "core/models/model_support.h"
 
 #include <cmath>
+#include <optional>
 #include <stdexcept>
 
 namespace bayests
 {
 
+using core::BvsBlock;
+using core::BvsScope;
+using core::bvs_sweep;
 using core::draw_normal_precision;
+using core::SsvsBlock;
+using core::ssvs_sweep;
 using core::stacked_response;
 
 VarNormalWishartDraws VarNormalWishartSampler::draw_coefficients(const VarNormalWishartInput &input,
@@ -43,19 +51,10 @@ VarNormalWishartDraws VarNormalWishartSampler::draw_coefficients(const VarNormal
     arma::mat prior_a_vinv, diag_tt;
     arma::mat post_a_v, u_sigma_inv_diag;
 
-    // Variable selection
-    arma::uword a_varsel_n = 0;
-    arma::uvec a_varsel_include, a_varsel_include_draw;
-    arma::vec a_lambda, a_prior_incl;
-
-    // SSVS auxiliary variables
-    arma::vec a_tau0, a_tau1, a_tau0sq, a_tau1sq;
-    arma::vec a_u0, a_u1, a_post_incl;
-
-    // BVS auxiliary variables
-    arma::vec a_AG, a_lambda_lprior_0, a_lambda_lprior_1;
-    arma::vec a_theta0, a_theta1, a_theta0_res, a_theta1_res;
-    arma::mat a_lambda_diag, z_bvs;
+    // Variable selection. Only one of the two is ever engaged.
+    std::optional<SsvsBlock> a_ssvs;
+    std::optional<BvsBlock> a_bvs;
+    arma::mat z_bvs;
 
     if (use_a)
     {
@@ -67,26 +66,17 @@ VarNormalWishartDraws VarNormalWishartSampler::draw_coefficients(const VarNormal
 
         if (use_varsel)
         {
-            a_lambda = input.initial.a_lambda;
-            a_prior_incl = input.varsel_prior.inprior;
-            a_varsel_include = input.varsel_prior.include;
-            a_varsel_n = a_varsel_include.n_elem;
             out.a_lambda = arma::mat(nparams, iterations);
 
             if (use_ssvs)
             {
-                a_tau0 = input.varsel_prior.ssvs.tau0;
-                a_tau1 = input.varsel_prior.ssvs.tau1;
-                a_tau0sq = arma::square(a_tau0);
-                a_tau1sq = arma::square(a_tau1);
+                a_ssvs.emplace(input.initial.a_lambda, input.varsel_prior);
             }
 
             if (use_bvs)
             {
                 z_bvs = z;
-                a_lambda_diag = arma::diagmat(a_lambda);
-                a_lambda_lprior_0 = arma::log(1 - a_prior_incl);
-                a_lambda_lprior_1 = arma::log(a_prior_incl);
+                a_bvs.emplace(input.initial.a_lambda, input.varsel_prior);
             }
         }
     }
@@ -108,9 +98,9 @@ VarNormalWishartDraws VarNormalWishartSampler::draw_coefficients(const VarNormal
         {
             u_sigma_inv_diag = arma::kron(diag_tt, u_sigma_inv);
 
-            if (use_bvs)
+            if (a_bvs)
             {
-                z = z_bvs * a_lambda_diag;
+                z = z_bvs * a_bvs->lambda_diag;
             }
 
             // Update a
@@ -118,75 +108,18 @@ VarNormalWishartDraws VarNormalWishartSampler::draw_coefficients(const VarNormal
             a = draw_normal_precision(post_a_v,
                                       prior_a_vinv * prior_a_mu + arma::trans(z) * u_sigma_inv_diag * y);
 
-            if (use_varsel)
+            if (a_ssvs)
             {
-                a_varsel_include_draw = arma::shuffle(a_varsel_include); // Reorder positions of variable selection
+                ssvs_sweep(*a_ssvs, a, prior_a_vinv);
+            }
 
-                if (use_ssvs)
-                {
-                    // Obtain inclusion posterior
-                    a_u0 = 1 / a_tau0 % arma::exp(-(arma::square(a) / (2 * a_tau0sq))) % (1 - a_prior_incl);
-                    a_u1 = 1 / a_tau1 % arma::exp(-(arma::square(a) / (2 * a_tau1sq))) % a_prior_incl;
-                    a_post_incl = a_u1 / (a_u0 + a_u1);
-
-                    // Draw inclusion parameters in random order
-                    for (arma::uword i = 0; i < a_varsel_n; i++)
-                    {
-                        const arma::uword a_varsel_pos = a_varsel_include_draw(i);
-                        const double a_lambda_draw = (arma::randu() < a_post_incl(a_varsel_pos)) ? 1.0 : 0.0;
-                        a_lambda(a_varsel_pos) = a_lambda_draw;
-                        if (a_lambda_draw == 0)
-                        {
-                            prior_a_vinv(a_varsel_pos, a_varsel_pos) = 1 / a_tau0sq(a_varsel_pos);
-                        }
-                        else
-                        {
-                            prior_a_vinv(a_varsel_pos, a_varsel_pos) = 1 / a_tau1sq(a_varsel_pos);
-                        }
-                    }
-                }
-
-                if (use_bvs)
-                {
-                    z = z_bvs;
-                    a_AG = a_lambda_diag * a;
-                    for (arma::uword j = 0; j < a_varsel_n; j++)
-                    {
-                        const arma::uword a_varsel_pos = a_varsel_include_draw(j);
-                        const double a_randu = std::log(arma::randu());
-                        if (a_lambda(a_varsel_pos) == 1 && a_randu >= a_lambda_lprior_1(a_varsel_pos))
-                        {
-                            continue;
-                        }
-                        if (a_lambda(a_varsel_pos) == 0 && a_randu >= a_lambda_lprior_0(a_varsel_pos))
-                        {
-                            continue;
-                        }
-                        if ((a_lambda(a_varsel_pos) == 1 && a_randu < a_lambda_lprior_1(a_varsel_pos)) || (a_lambda(a_varsel_pos) == 0 && a_randu < a_lambda_lprior_0(a_varsel_pos)))
-                        {
-                            a_theta0 = a_AG;
-                            a_theta1 = a_AG;
-                            a_theta0(a_varsel_pos) = 0;
-                            a_theta1(a_varsel_pos) = a(a_varsel_pos);
-                            a_theta0_res = y - z * a_theta0;
-                            a_theta1_res = y - z * a_theta1;
-                            const double a_l0 = -arma::as_scalar(arma::trans(a_theta0_res) * u_sigma_inv_diag * a_theta0_res) / 2 + arma::as_scalar(a_lambda_lprior_0(a_varsel_pos));
-                            const double a_l1 = -arma::as_scalar(arma::trans(a_theta1_res) * u_sigma_inv_diag * a_theta1_res) / 2 + arma::as_scalar(a_lambda_lprior_1(a_varsel_pos));
-                            const double a_bayes = a_l1 - a_l0;
-                            const double a_bayes_rand = std::log(arma::randu());
-                            if (a_bayes >= a_bayes_rand)
-                            {
-                                a_lambda_diag(a_varsel_pos, a_varsel_pos) = 1;
-                            }
-                            else
-                            {
-                                a_lambda_diag(a_varsel_pos, a_varsel_pos) = 0;
-                            }
-                        }
-                    }
-                    a = a_lambda_diag * a;
-                    a_lambda = arma::vectorise(a_lambda_diag.diag());
-                }
+            if (a_bvs)
+            {
+                z = z_bvs;
+                bvs_sweep(*a_bvs, a, BvsScope::element, [&](const arma::vec &theta) {
+                    const arma::vec res = y - z * theta;
+                    return -arma::as_scalar(arma::trans(res) * u_sigma_inv_diag * res) / 2;
+                });
             }
 
             u = arma::reshape(y - z * a, k, tt);
@@ -204,7 +137,7 @@ VarNormalWishartDraws VarNormalWishartSampler::draw_coefficients(const VarNormal
                 out.a.col(draw_pos) = a;
                 if (use_varsel)
                 {
-                    out.a_lambda.col(draw_pos) = a_lambda;
+                    out.a_lambda.col(draw_pos) = a_ssvs ? a_ssvs->lambda : a_bvs->lambda;
                 }
             }
             out.u_sigma_inv.col(draw_pos) = arma::vectorise(u_sigma_inv);

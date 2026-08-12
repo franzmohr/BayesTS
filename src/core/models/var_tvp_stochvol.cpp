@@ -3,17 +3,25 @@
 
 #include "bayests/var_tvp_stochvol.h"
 
+#include "core/algorithms/bvs.h"
 #include "core/algorithms/kalman_durbin_koopman_2002.h"
 #include "core/algorithms/stochvol_ocsn_2007.h"
 #include "core/models/model_support.h"
 
 #include <cmath>
+#include <optional>
 #include <stdexcept>
 
 namespace bayests
 {
 
+using core::build_psi_regressors;
+using core::BvsBlock;
+using core::BvsScope;
+using core::bvs_sweep;
 using core::draw_normal_precision;
+using core::fill_psi_path;
+using core::fill_strict_lower_triangle;
 using core::stacked_response;
 
 VarTvpStochvolDraws VarTvpStochvolSampler::draw_coefficients(const VarTvpStochvolInput &input,
@@ -53,11 +61,9 @@ VarTvpStochvolDraws VarTvpStochvolSampler::draw_coefficients(const VarTvpStochvo
     arma::mat a0_post_v, a0_sigma_inv;
 
     // Variable selection
-    arma::uword a_varsel_n = 0;
-    arma::uvec a_varsel_include, a_varsel_include_draw;
-    arma::vec a_lambda;
-    arma::vec a_lambda_lprior_0, a_lambda_lprior_1, a_theta0_res, a_theta1_res;
-    arma::mat a_AG, a_theta0, a_theta1, a_lambda_diag, z_bvs;
+    std::optional<BvsBlock> a_bvs;
+    arma::mat z_bvs;
+    arma::vec a_theta_res;
 
     const arma::vec &a_sigma_prior_rate = input.a_prior.sigma.rate;
     const arma::vec &a0_prior_mu = input.a_prior.initial_state.mu;
@@ -83,19 +89,13 @@ VarTvpStochvolDraws VarTvpStochvolSampler::draw_coefficients(const VarTvpStochvo
 
         if (use_varsel)
         {
-            a_lambda = input.initial.a_lambda;
-            a_varsel_include = input.a_varsel_prior.include;
-            a_varsel_n = a_varsel_include.n_elem;
             out.a_lambda = arma::mat(nparams, iterations);
 
             if (use_bvs)
             {
                 z_bvs = z;
-                a_lambda_diag = arma::diagmat(a_lambda);
-                a_lambda_lprior_0 = arma::log(1 - input.a_varsel_prior.inprior);
-                a_lambda_lprior_1 = arma::log(input.a_varsel_prior.inprior);
-                a_theta0_res = arma::zeros<arma::vec>(k * tt);
-                a_theta1_res = arma::zeros<arma::vec>(k * tt);
+                a_bvs.emplace(input.initial.a_lambda, input.a_varsel_prior);
+                a_theta_res = arma::zeros<arma::vec>(k * tt);
             }
         }
     }
@@ -106,11 +106,9 @@ VarTvpStochvolDraws VarTvpStochvolSampler::draw_coefficients(const VarTvpStochvo
     arma::vec psi0, psi0_post_mu;
     arma::mat psi0_post_v, psi0_sigma_inv;
 
-    arma::uword psi_varsel_n = 0;
-    arma::uvec psi_varsel_include, psi_varsel_include_draw;
-    arma::vec psi_lambda;
-    arma::vec psi_lambda_lprior_0, psi_lambda_lprior_1, psi_theta0_res, psi_theta1_res;
-    arma::mat psi_AG, Psi_lambda, psi_lambda_diag, psi_theta0, psi_theta1, psi_u_omega_inv_diag;
+    std::optional<BvsBlock> psi_bvs;
+    arma::vec psi_theta_res;
+    arma::mat Psi_lambda, psi_u_omega_inv_diag;
 
     if (use_psi)
     {
@@ -124,14 +122,7 @@ VarTvpStochvolDraws VarTvpStochvolSampler::draw_coefficients(const VarTvpStochvo
         out.psi = arma::mat(kk * tt, iterations);
         out.psi_sigma = arma::mat(n_psi, iterations);
 
-        for (int j = 0; j < tt; j++)
-        {
-            for (int i = 1; i < k; i++)
-            {
-                Psi.submat(j * k + i, j * k, j * k + i, j * k + i - 1) =
-                    arma::trans(psi.submat(i * (i - 1) / 2, j, (i + 1) * i / 2 - 1, j));
-            }
-        }
+        fill_psi_path(Psi, psi, k);
 
         psi_sigma = input.initial.psi_sigma_inv;
         psi_sigma.diag() = 1 / psi_sigma.diag();
@@ -144,16 +135,10 @@ VarTvpStochvolDraws VarTvpStochvolSampler::draw_coefficients(const VarTvpStochvo
 
         if (use_varsel_psi)
         {
-            psi_lambda = input.initial.psi_lambda;
-            psi_lambda_diag = arma::diagmat(psi_lambda);
             out.psi_lambda = arma::mat(kk, iterations);
             Psi_lambda = arma::eye<arma::mat>(k, k);
-            psi_varsel_include = input.psi_varsel_prior.include;
-            psi_varsel_n = psi_varsel_include.n_elem;
-            psi_lambda_lprior_0 = arma::log(1 - input.psi_varsel_prior.inprior);
-            psi_lambda_lprior_1 = arma::log(input.psi_varsel_prior.inprior);
-            psi_theta0_res = arma::zeros<arma::vec>((k - 1) * tt);
-            psi_theta1_res = arma::zeros<arma::vec>((k - 1) * tt);
+            psi_bvs.emplace(input.initial.psi_lambda, input.psi_varsel_prior);
+            psi_theta_res = arma::zeros<arma::vec>((k - 1) * tt);
             psi_u_omega_inv_diag = arma::zeros<arma::mat>((k - 1) * tt, (k - 1) * tt);
         }
     }
@@ -199,9 +184,9 @@ VarTvpStochvolDraws VarTvpStochvolSampler::draw_coefficients(const VarTvpStochvo
                     diag_k);
             }
 
-            if (use_bvs)
+            if (a_bvs)
             {
-                z = z_bvs * a_lambda_diag;
+                z = z_bvs * a_bvs->lambda_diag;
             }
 
             // Update a
@@ -225,56 +210,20 @@ VarTvpStochvolDraws VarTvpStochvolSampler::draw_coefficients(const VarTvpStochvo
             a0_post_v = a0_prior_v_inv + a0_sigma_inv;
             a0 = draw_normal_precision(a0_post_v, a0_prior_v_inv * a0_prior_mu + a0_sigma_inv * a.col(0));
 
-            if (use_varsel)
+            if (a_bvs)
             {
-                a_varsel_include_draw = arma::shuffle(a_varsel_include); // Reorder positions of variable selection
-
-                if (use_bvs)
-                {
-                    z = z_bvs;
-                    a_AG = a_lambda_diag * a;
-                    for (arma::uword j = 0; j < a_varsel_n; j++)
+                z = z_bvs;
+                bvs_sweep(*a_bvs, a, BvsScope::path_row, [&](const arma::mat &theta) {
+                    for (int i = 0; i < tt; i++)
                     {
-                        const arma::uword a_varsel_pos = a_varsel_include_draw(j);
-                        double a_randu = std::log(arma::randu());
-                        if (a_lambda(a_varsel_pos) == 1 && a_randu >= a_lambda_lprior_1(a_varsel_pos))
-                        {
-                            continue;
-                        }
-                        if (a_lambda(a_varsel_pos) == 0 && a_randu >= a_lambda_lprior_0(a_varsel_pos))
-                        {
-                            continue;
-                        }
-                        if ((a_lambda(a_varsel_pos) == 1 && a_randu < a_lambda_lprior_1(a_varsel_pos)) || (a_lambda(a_varsel_pos) == 0 && a_randu < a_lambda_lprior_0(a_varsel_pos)))
-                        {
-                            a_theta0 = a_AG;
-                            a_theta1 = a_AG;
-                            a_theta0.row(a_varsel_pos).zeros();
-                            a_theta1.row(a_varsel_pos) = a.row(a_varsel_pos);
-                            for (int i = 0; i < tt; i++)
-                            {
-                                a_theta0_res.subvec(i * k, (i + 1) * k - 1) =
-                                    y.subvec(i * k, (i + 1) * k - 1) - z.rows(i * k, (i + 1) * k - 1) * a_theta0.col(i);
-                                a_theta1_res.subvec(i * k, (i + 1) * k - 1) =
-                                    y.subvec(i * k, (i + 1) * k - 1) - z.rows(i * k, (i + 1) * k - 1) * a_theta1.col(i);
-                            }
-                            const double a_l0 = -arma::as_scalar(arma::trans(a_theta0_res) * u_sigma_inv_diag * a_theta0_res) / 2 + arma::as_scalar(a_lambda_lprior_0(a_varsel_pos));
-                            const double a_l1 = -arma::as_scalar(arma::trans(a_theta1_res) * u_sigma_inv_diag * a_theta1_res) / 2 + arma::as_scalar(a_lambda_lprior_1(a_varsel_pos));
-                            const double a_bayes = a_l1 - a_l0;
-                            a_randu = std::log(arma::randu());
-                            if (a_bayes >= a_randu)
-                            {
-                                a_lambda_diag(a_varsel_pos, a_varsel_pos) = 1;
-                            }
-                            else
-                            {
-                                a_lambda_diag(a_varsel_pos, a_varsel_pos) = 0;
-                            }
-                        }
+                        a_theta_res.subvec(i * k, (i + 1) * k - 1) =
+                            y.subvec(i * k, (i + 1) * k - 1) -
+                            z.rows(i * k, (i + 1) * k - 1) * theta.col(i);
                     }
-                    a = a_lambda_diag * a;
-                    a_lambda = arma::vectorise(a_lambda_diag.diag());
-                }
+                    return -arma::as_scalar(arma::trans(a_theta_res) * u_sigma_inv_diag *
+                                            a_theta_res) /
+                           2;
+                });
             }
 
             for (int i = 0; i < tt; i++)
@@ -287,13 +236,9 @@ VarTvpStochvolDraws VarTvpStochvolSampler::draw_coefficients(const VarTvpStochvo
         if (use_psi)
         {
             psi_y = arma::reshape(arma::vectorise(u.rows(1, k - 1)), k - 1, tt);
+            build_psi_regressors(psi_z, u);
             for (int j = 0; j < tt; j++)
             {
-                for (int i = 1; i < k; i++)
-                {
-                    psi_z.submat(j * (k - 1) + i - 1, i * (i - 1) / 2, j * (k - 1) + i - 1,
-                                 (i + 1) * i / 2 - 1) = -arma::trans(u.submat(0, j, i - 1, j));
-                }
                 psi_u_omega.rows(j * (k - 1), (j + 1) * (k - 1) - 1) =
                     u_omega_inv_diag.submat(j * k + 1, j * k + 1, (j + 1) * k - 1, (j + 1) * k - 1);
                 psi_u_omega.rows(j * (k - 1), (j + 1) * (k - 1) - 1).diag() =
@@ -303,7 +248,7 @@ VarTvpStochvolDraws VarTvpStochvolSampler::draw_coefficients(const VarTvpStochvo
             if (use_varsel_psi)
             {
                 psi_z_bvs = psi_z;
-                psi_z = psi_z * psi_lambda_diag;
+                psi_z = psi_z * psi_bvs->lambda_diag;
             }
 
             psi = kalman_durbin_koopman_2002(psi_y, psi_z, psi_u_omega, psi_sigma, psi_B, psi0,
@@ -328,12 +273,9 @@ VarTvpStochvolDraws VarTvpStochvolSampler::draw_coefficients(const VarTvpStochvo
             psi0 = draw_normal_precision(psi0_post_v,
                                          input.psi_prior.initial_state.v_inv * input.psi_prior.initial_state.mu + psi0_sigma_inv * psi.col(0));
 
-            if (use_varsel_psi)
+            if (psi_bvs)
             {
-                psi_varsel_include_draw = arma::shuffle(psi_varsel_include); // Reorder positions of variable selection
-
                 psi_z = psi_z_bvs;
-                psi_AG = psi_lambda_diag * psi;
                 for (int i = 0; i < tt; i++)
                 {
                     psi_u_omega_inv_diag.submat(i * (k - 1), i * (k - 1), (i + 1) * (k - 1) - 1,
@@ -341,56 +283,24 @@ VarTvpStochvolDraws VarTvpStochvolSampler::draw_coefficients(const VarTvpStochvo
                         u_omega_inv_diag.submat(i * k + 1, i * k + 1, (i + 1) * k - 1, (i + 1) * k - 1);
                 }
 
-                for (arma::uword j = 0; j < psi_varsel_n; j++)
-                {
-                    const arma::uword psi_varsel_pos = psi_varsel_include_draw(j);
-                    double psi_randu = std::log(arma::randu());
-                    if (psi_lambda(psi_varsel_pos) == 1 && psi_randu >= psi_lambda_lprior_1(psi_varsel_pos))
+                // path_row, for the reason spelled out at the same call in
+                // var_tvp_gamma.cpp: element scope reached period 0 alone.
+                bvs_sweep(*psi_bvs, psi, BvsScope::path_row, [&](const arma::mat &theta) {
+                    for (int i = 0; i < tt; i++)
                     {
-                        continue;
+                        psi_theta_res.subvec(i * (k - 1), (i + 1) * (k - 1) - 1) =
+                            psi_y.col(i) -
+                            psi_z.rows(i * (k - 1), (i + 1) * (k - 1) - 1) * theta.col(i);
                     }
-                    if (psi_lambda(psi_varsel_pos) == 0 && psi_randu >= psi_lambda_lprior_0(psi_varsel_pos))
-                    {
-                        continue;
-                    }
-                    if ((psi_lambda(psi_varsel_pos) == 1 && psi_randu < psi_lambda_lprior_1(psi_varsel_pos)) || (psi_lambda(psi_varsel_pos) == 0 && psi_randu < psi_lambda_lprior_0(psi_varsel_pos)))
-                    {
-                        psi_theta0 = psi_AG;
-                        psi_theta1 = psi_AG;
-                        psi_theta0(psi_varsel_pos) = 0;
-                        psi_theta1(psi_varsel_pos) = psi(psi_varsel_pos);
-                        for (int i = 0; i < tt; i++)
-                        {
-                            psi_theta0_res.subvec(i * (k - 1), (i + 1) * (k - 1) - 1) =
-                                psi_y.col(i) - psi_z.rows(i * (k - 1), (i + 1) * (k - 1) - 1) * psi_theta0.col(i);
-                            psi_theta1_res.subvec(i * (k - 1), (i + 1) * (k - 1) - 1) =
-                                psi_y.col(i) - psi_z.rows(i * (k - 1), (i + 1) * (k - 1) - 1) * psi_theta1.col(i);
-                        }
-                        const double psi_l0 = -arma::as_scalar(arma::trans(psi_theta0_res) * psi_u_omega_inv_diag * psi_theta0_res) / 2 + arma::as_scalar(psi_lambda_lprior_0(psi_varsel_pos));
-                        const double psi_l1 = -arma::as_scalar(arma::trans(psi_theta1_res) * psi_u_omega_inv_diag * psi_theta1_res) / 2 + arma::as_scalar(psi_lambda_lprior_1(psi_varsel_pos));
-                        const double psi_bayes = psi_l1 - psi_l0;
-                        psi_randu = std::log(arma::randu());
-                        if (psi_bayes >= psi_randu)
-                        {
-                            psi_lambda_diag(psi_varsel_pos, psi_varsel_pos) = 1;
-                        }
-                        else
-                        {
-                            psi_lambda_diag(psi_varsel_pos, psi_varsel_pos) = 0;
-                        }
-                    }
-                }
-                psi = psi_lambda_diag * psi;
-                psi_lambda = arma::vectorise(psi_lambda_diag.diag());
+                    return -arma::as_scalar(arma::trans(psi_theta_res) * psi_u_omega_inv_diag *
+                                            psi_theta_res) /
+                           2;
+                });
             }
 
+            fill_psi_path(Psi, psi, k);
             for (int j = 0; j < tt; j++)
             {
-                for (int i = 1; i < k; i++)
-                {
-                    Psi.submat(j * k + i, j * k, j * k + i, j * k + i - 1) =
-                        arma::trans(psi.submat(i * (i - 1) / 2, j, (i + 1) * i / 2 - 1, j));
-                }
                 u.col(j) = Psi.submat(k * j, k * j, k * (j + 1) - 1, k * (j + 1) - 1) * u.col(j);
             }
         }
@@ -440,7 +350,7 @@ VarTvpStochvolDraws VarTvpStochvolSampler::draw_coefficients(const VarTvpStochvo
                 out.a_sigma.col(draw_pos) = arma::vectorise(a_sigma.diag());
                 if (use_varsel)
                 {
-                    out.a_lambda.col(draw_pos) = a_lambda;
+                    out.a_lambda.col(draw_pos) = a_bvs->lambda;
                 }
             }
 
@@ -456,11 +366,7 @@ VarTvpStochvolDraws VarTvpStochvolSampler::draw_coefficients(const VarTvpStochvo
 
                 if (use_varsel_psi)
                 {
-                    for (int i = 1; i < k; i++)
-                    {
-                        Psi_lambda.submat(i, 0, i, i - 1) =
-                            arma::trans(psi_lambda.subvec(i * (i - 1) / 2, (i + 1) * i / 2 - 1));
-                    }
+                    fill_strict_lower_triangle(Psi_lambda, psi_bvs->lambda);
                     out.psi_lambda.col(draw_pos) = arma::vectorise(Psi_lambda);
                 }
             }

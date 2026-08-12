@@ -116,24 +116,36 @@ endfunction()
 # time-varying parameter samplers reject it (see the validate() overloads in
 # src/core/inputs.cpp), so a fixture asking for it would be testing the error
 # path, not the sampler.
+#
+# The `covar` flag is what decides whether a model has a psi block at all, and
+# make_model_fixture only writes /model/priors/psi -- and with it psi's own
+# varsel attribute -- when it is set. A selection scheme therefore only reaches
+# the psi block in a fixture that asks for both, which is what the `-covar`
+# suffixed selection rows below are for: without them the whole psi selection
+# path went unexercised in every model, while `<scheme>` with covar=0 covered
+# only the lag coefficients.
 bayests_add_model_fixture(VarNormalGamma-plain      VarNormalGamma     none 0 0 4)
 bayests_add_model_fixture(VarNormalGamma-ssvs       VarNormalGamma     ssvs 0 0 4)
 bayests_add_model_fixture(VarNormalGamma-bvs        VarNormalGamma     bvs  0 0 4)
 bayests_add_model_fixture(VarNormalGamma-covar      VarNormalGamma     none 1 0 4)
 bayests_add_model_fixture(VarNormalGamma-structural VarNormalGamma     none 0 1 4)
 bayests_add_model_fixture(VarNormalGamma-nofcst     VarNormalGamma     none 0 0 0)
+bayests_add_model_fixture(VarNormalGamma-ssvs-covar VarNormalGamma     ssvs 1 0 4)
+bayests_add_model_fixture(VarNormalGamma-bvs-covar  VarNormalGamma     bvs  1 0 4)
 
 bayests_add_model_fixture(VarNormalStochvol-plain      VarNormalStochvol none 0 0 4)
 bayests_add_model_fixture(VarNormalStochvol-bvs        VarNormalStochvol bvs  0 0 4)
 bayests_add_model_fixture(VarNormalStochvol-covar      VarNormalStochvol none 1 0 4)
 bayests_add_model_fixture(VarNormalStochvol-structural VarNormalStochvol none 0 1 4)
 bayests_add_model_fixture(VarNormalStochvol-nofcst     VarNormalStochvol none 0 0 0)
+bayests_add_model_fixture(VarNormalStochvol-bvs-covar  VarNormalStochvol bvs  1 0 4)
 
 bayests_add_model_fixture(VarTvpGamma-plain      VarTvpGamma none 0 0 4)
 bayests_add_model_fixture(VarTvpGamma-bvs        VarTvpGamma bvs  0 0 4)
 bayests_add_model_fixture(VarTvpGamma-covar      VarTvpGamma none 1 0 4)
 bayests_add_model_fixture(VarTvpGamma-structural VarTvpGamma none 0 1 4)
 bayests_add_model_fixture(VarTvpGamma-nofcst     VarTvpGamma none 0 0 0)
+bayests_add_model_fixture(VarTvpGamma-bvs-covar  VarTvpGamma bvs  1 0 4)
 
 bayests_add_model_fixture(VarTvpWishart-plain  VarTvpWishart none 0 0 4)
 bayests_add_model_fixture(VarTvpWishart-bvs    VarTvpWishart bvs  0 0 4)
@@ -144,6 +156,7 @@ bayests_add_model_fixture(VarTvpStochvol-bvs        VarTvpStochvol bvs  0 0 4)
 bayests_add_model_fixture(VarTvpStochvol-covar      VarTvpStochvol none 1 0 4)
 bayests_add_model_fixture(VarTvpStochvol-structural VarTvpStochvol none 0 1 4)
 bayests_add_model_fixture(VarTvpStochvol-nofcst     VarTvpStochvol none 0 0 0)
+bayests_add_model_fixture(VarTvpStochvol-bvs-covar  VarTvpStochvol bvs  1 0 4)
 
 #####################################################################
 # VarNormalWishart

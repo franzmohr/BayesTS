@@ -50,6 +50,69 @@ inline arma::vec draw_normal_precision(const arma::mat &precision, const arma::v
     return mean + arma::solve(arma::trimatu(r), arma::randn<arma::vec>(precision.n_rows));
 }
 
+/// Writes `packed` into the strict lower triangle of `dest`, row by row.
+///
+/// The contemporaneous matrix Psi is unit lower triangular, so the sampler
+/// carries only its free elements, packed row-major: row i holds i of them,
+/// starting at i(i-1)/2. This is the one place that indexing is spelled out --
+/// it is the same arithmetic whether the packed source is a psi draw, a
+/// psi_lambda indicator vector, or a column of structural coefficients out of a
+/// posterior, and whether `dest` is dense or sparse.
+///
+/// `dest` must already hold the unit diagonal; only the strict lower triangle is
+/// touched.
+template <class Matrix, class Packed>
+inline void fill_strict_lower_triangle(Matrix &dest, const Packed &packed)
+{
+    for (arma::uword i = 1; i < dest.n_rows; i++)
+    {
+        dest.submat(i, 0, i, i - 1) =
+            arma::trans(packed.subvec(i * (i - 1) / 2, (i + 1) * i / 2 - 1));
+    }
+}
+
+/// The same fill, once per period, into the block diagonal a time-varying Psi
+/// is stored as: block j of `Psi` is the contemporaneous matrix of period j,
+/// taken from column j of `psi`.
+///
+/// Not expressed in terms of fill_strict_lower_triangle(): the destination is a
+/// submatrix of `Psi` rather than a matrix, and an Armadillo subview cannot be
+/// sliced again.
+inline void fill_psi_path(arma::mat &Psi, const arma::mat &psi, const int k)
+{
+    const int tt = static_cast<int>(psi.n_cols);
+    for (int j = 0; j < tt; j++)
+    {
+        for (int i = 1; i < k; i++)
+        {
+            Psi.submat(j * k + i, j * k, j * k + i, j * k + i - 1) =
+                arma::trans(psi.submat(i * (i - 1) / 2, j, (i + 1) * i / 2 - 1, j));
+        }
+    }
+}
+
+/// The regressors of the psi block: equation i of period j is explained by the
+/// errors of the equations above it, so row j(k-1)+i-1 carries -u(0..i-1, j) in
+/// the columns belonging to row i of Psi.
+///
+/// `u` is the k x tt error matrix and `psi_z` is expected at its full size,
+/// tt(k-1) x k(k-1)/2, with the cells outside those blocks left alone -- they
+/// are structurally zero and stay zero for the life of the chain.
+inline void build_psi_regressors(arma::mat &psi_z, const arma::mat &u)
+{
+    const int k = static_cast<int>(u.n_rows);
+    const int tt = static_cast<int>(u.n_cols);
+    for (int i = 1; i < k; i++)
+    {
+        for (int j = 0; j < tt; j++)
+        {
+            psi_z.submat(j * (k - 1) + i - 1, i * (i - 1) / 2,
+                         j * (k - 1) + i - 1, (i + 1) * i / 2 - 1) =
+                -arma::trans(u.submat(0, j, i - 1, j));
+        }
+    }
+}
+
 } // namespace bayests::core
 
 #endif // BAYESTS_CORE_MODELS_MODEL_SUPPORT_H

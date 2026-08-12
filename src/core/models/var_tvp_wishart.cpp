@@ -3,16 +3,21 @@
 
 #include "bayests/var_tvp_wishart.h"
 
+#include "core/algorithms/bvs.h"
 #include "core/algorithms/kalman_durbin_koopman_2002.h"
 #include "core/algorithms/wishart.h"
 #include "core/models/model_support.h"
 
 #include <cmath>
+#include <optional>
 #include <stdexcept>
 
 namespace bayests
 {
 
+using core::BvsBlock;
+using core::BvsScope;
+using core::bvs_sweep;
 using core::draw_normal_precision;
 using core::stacked_response;
 
@@ -54,13 +59,9 @@ VarTvpWishartDraws VarTvpWishartSampler::draw_coefficients(const VarTvpWishartIn
     const arma::mat &a0_prior_v_inv = input.a_prior.initial_state.v_inv;
 
     // Variable selection
-    arma::uword a_varsel_n = 0;
-    arma::uvec a_varsel_include, a_varsel_include_draw;
-    arma::vec a_lambda;
-
-    // BVS auxiliary variables
-    arma::vec a_lambda_lprior_0, a_lambda_lprior_1, a_theta0_res, a_theta1_res;
-    arma::mat a_AG, a_theta0, a_theta1, a_lambda_diag, z_bvs;
+    std::optional<BvsBlock> a_bvs;
+    arma::mat z_bvs;
+    arma::vec a_theta_res;
 
     if (use_a)
     {
@@ -81,19 +82,13 @@ VarTvpWishartDraws VarTvpWishartSampler::draw_coefficients(const VarTvpWishartIn
 
         if (use_varsel)
         {
-            a_lambda = input.initial.a_lambda;
-            a_varsel_include = input.a_varsel_prior.include;
-            a_varsel_n = a_varsel_include.n_elem;
             out.a_lambda = arma::mat(nparams, iterations);
 
             if (use_bvs)
             {
                 z_bvs = z;
-                a_lambda_diag = arma::diagmat(a_lambda);
-                a_lambda_lprior_0 = arma::log(1 - input.a_varsel_prior.inprior);
-                a_lambda_lprior_1 = arma::log(input.a_varsel_prior.inprior);
-                a_theta0_res = y * 0;
-                a_theta1_res = y * 0;
+                a_bvs.emplace(input.initial.a_lambda, input.a_varsel_prior);
+                a_theta_res = arma::zeros<arma::vec>(y.n_elem);
             }
         }
     }
@@ -134,9 +129,9 @@ VarTvpWishartDraws VarTvpWishartSampler::draw_coefficients(const VarTvpWishartIn
             u_sigma = arma::repmat(arma::solve(u_sigma_inv, diag_k), tt, 1);
             u_sigma_inv_diag = arma::kron(diag_tt_sp, arma::sp_mat(u_sigma_inv));
 
-            if (use_bvs)
+            if (a_bvs)
             {
-                z = z_bvs * a_lambda_diag;
+                z = z_bvs * a_bvs->lambda_diag;
             }
 
             // Update a
@@ -158,54 +153,20 @@ VarTvpWishartDraws VarTvpWishartSampler::draw_coefficients(const VarTvpWishartIn
             a0 = draw_normal_precision(a0_post_v,
                                        a0_prior_v_inv * a0_prior_mu + a0_sigma_inv * a.col(0));
 
-            if (use_varsel)
+            if (a_bvs)
             {
-                a_varsel_include_draw = arma::shuffle(a_varsel_include); // Reorder positions of variable selection
-
-                if (use_bvs)
-                {
-                    z = z_bvs;
-                    a_AG = a_lambda_diag * a;
-                    for (arma::uword j = 0; j < a_varsel_n; j++)
+                z = z_bvs;
+                bvs_sweep(*a_bvs, a, BvsScope::path_row, [&](const arma::mat &theta) {
+                    for (int i = 0; i < tt; i++)
                     {
-                        const arma::uword a_varsel_pos = a_varsel_include_draw(j);
-                        double a_randu = std::log(arma::randu());
-                        if (a_lambda(a_varsel_pos) == 1 && a_randu >= a_lambda_lprior_1(a_varsel_pos))
-                        {
-                            continue;
-                        }
-                        if (a_lambda(a_varsel_pos) == 0 && a_randu >= a_lambda_lprior_0(a_varsel_pos))
-                        {
-                            continue;
-                        }
-                        if ((a_lambda(a_varsel_pos) == 1 && a_randu < a_lambda_lprior_1(a_varsel_pos)) || (a_lambda(a_varsel_pos) == 0 && a_randu < a_lambda_lprior_0(a_varsel_pos)))
-                        {
-                            a_theta0 = a_AG;
-                            a_theta1 = a_AG;
-                            a_theta0.row(a_varsel_pos).zeros();
-                            a_theta1.row(a_varsel_pos) = a.row(a_varsel_pos);
-                            for (int i = 0; i < tt; i++)
-                            {
-                                a_theta0_res.subvec(i * k, (i + 1) * k - 1) = y.subvec(i * k, (i + 1) * k - 1) - z.rows(i * k, (i + 1) * k - 1) * a_theta0.col(i);
-                                a_theta1_res.subvec(i * k, (i + 1) * k - 1) = y.subvec(i * k, (i + 1) * k - 1) - z.rows(i * k, (i + 1) * k - 1) * a_theta1.col(i);
-                            }
-                            const double a_l0 = -arma::as_scalar(arma::trans(a_theta0_res) * u_sigma_inv_diag * a_theta0_res) / 2 + arma::as_scalar(a_lambda_lprior_0(a_varsel_pos));
-                            const double a_l1 = -arma::as_scalar(arma::trans(a_theta1_res) * u_sigma_inv_diag * a_theta1_res) / 2 + arma::as_scalar(a_lambda_lprior_1(a_varsel_pos));
-                            const double a_bayes = a_l1 - a_l0;
-                            a_randu = std::log(arma::randu());
-                            if (a_bayes >= a_randu)
-                            {
-                                a_lambda_diag(a_varsel_pos, a_varsel_pos) = 1;
-                            }
-                            else
-                            {
-                                a_lambda_diag(a_varsel_pos, a_varsel_pos) = 0;
-                            }
-                        }
+                        a_theta_res.subvec(i * k, (i + 1) * k - 1) =
+                            y.subvec(i * k, (i + 1) * k - 1) -
+                            z.rows(i * k, (i + 1) * k - 1) * theta.col(i);
                     }
-                    a = a_lambda_diag * a;
-                    a_lambda = arma::vectorise(a_lambda_diag.diag());
-                }
+                    return -arma::as_scalar(arma::trans(a_theta_res) * u_sigma_inv_diag *
+                                            a_theta_res) /
+                           2;
+                });
             }
 
             for (int i = 0; i < tt; i++)
@@ -230,7 +191,7 @@ VarTvpWishartDraws VarTvpWishartSampler::draw_coefficients(const VarTvpWishartIn
                 out.a_sigma.col(draw_pos) = arma::vectorise(a_sigma.diag());
                 if (use_varsel)
                 {
-                    out.a_lambda.col(draw_pos) = a_lambda;
+                    out.a_lambda.col(draw_pos) = a_bvs->lambda;
                 }
             }
 

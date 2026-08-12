@@ -4,6 +4,8 @@ add_library(bayests_algorithms
             kalman_durbin_koopman_2002.cpp kalman_durbin_koopman_2002.h
             stochvol_ocsn_2007.cpp stochvol_ocsn_2007.h
             wishart.cpp wishart.h
+            bvs.cpp bvs.h
+            ssvs.cpp ssvs.h
             )
 
 add_library(BayesTS::algorithms ALIAS bayests_algorithms)

@@ -3,15 +3,22 @@
 
 #include "bayests/var_normal_stochvol.h"
 
+#include "core/algorithms/bvs.h"
 #include "core/models/model_support.h"
 
 #include <cmath>
+#include <optional>
 #include <stdexcept>
 
 namespace bayests
 {
 
+using core::build_psi_regressors;
+using core::BvsBlock;
+using core::BvsScope;
+using core::bvs_sweep;
 using core::draw_normal_precision;
+using core::fill_strict_lower_triangle;
 using core::stacked_response;
 
 namespace
@@ -61,14 +68,8 @@ VarNormalStochvolDraws VarNormalStochvolSampler::draw_coefficients(
     arma::mat a_prior_vinv, a_post_v;
 
     // Variable selection
-    arma::uword a_varsel_n = 0;
-    arma::uvec a_varsel_include, a_varsel_include_draw;
-    arma::vec a_lambda, a_prior_incl;
-
-    // BVS auxiliary variables
-    arma::vec a_AG, a_lambda_lprior_0, a_lambda_lprior_1;
-    arma::vec a_theta0, a_theta1, a_theta0_res, a_theta1_res;
-    arma::mat a_lambda_diag, z_bvs;
+    std::optional<BvsBlock> a_bvs;
+    arma::mat z_bvs;
 
     if (use_a)
     {
@@ -79,18 +80,12 @@ VarNormalStochvolDraws VarNormalStochvolSampler::draw_coefficients(
 
         if (use_varsel)
         {
-            a_lambda = input.initial.a_lambda;
-            a_prior_incl = input.a_varsel_prior.inprior;
-            a_varsel_include = input.a_varsel_prior.include;
-            a_varsel_n = a_varsel_include.n_elem;
             out.a_lambda = arma::mat(nparams, iterations);
 
             if (use_bvs)
             {
                 z_bvs = z;
-                a_lambda_diag = arma::diagmat(a_lambda);
-                a_lambda_lprior_0 = arma::log(1 - a_prior_incl);
-                a_lambda_lprior_1 = arma::log(a_prior_incl);
+                a_bvs.emplace(input.initial.a_lambda, input.a_varsel_prior);
             }
         }
     }
@@ -101,14 +96,8 @@ VarNormalStochvolDraws VarNormalStochvolSampler::draw_coefficients(
     arma::mat Psi_lambda, psi_prior_vinv, psi_post_v, psi_z;
     arma::sp_mat Psi, Psi_block_diagonal, psi_u_omega_inv_diag;
 
-    arma::uword psi_varsel_n = 0;
-    arma::uvec psi_varsel_include, psi_varsel_include_draw;
-    arma::vec psi_lambda, psi_prior_incl;
-
-    // BVS auxiliary variables
-    arma::vec psi_AG, psi_lambda_lprior_0, psi_lambda_lprior_1;
-    arma::vec psi_theta0, psi_theta1, psi_theta0_res, psi_theta1_res;
-    arma::mat psi_lambda_diag, psi_z_bvs;
+    std::optional<BvsBlock> psi_bvs;
+    arma::mat psi_z_bvs;
 
     if (use_psi)
     {
@@ -125,10 +114,6 @@ VarNormalStochvolDraws VarNormalStochvolSampler::draw_coefficients(
         if (use_varsel)
         {
             out.psi_lambda = arma::mat(k * k, iterations);
-            psi_lambda = input.initial.psi_lambda;
-            psi_prior_incl = input.psi_varsel_prior.inprior;
-            psi_varsel_include = input.psi_varsel_prior.include;
-            psi_varsel_n = psi_varsel_include.n_elem;
 
             if (use_bvs)
             {
@@ -137,9 +122,7 @@ VarNormalStochvolDraws VarNormalStochvolSampler::draw_coefficients(
                 // such. Left as it stands: what the BVS residuals are measured
                 // against is a modelling decision, not part of this split.
                 psi_z_bvs = psi_z;
-                psi_lambda_diag = arma::diagmat(psi_lambda);
-                psi_lambda_lprior_0 = arma::log(1 - psi_prior_incl);
-                psi_lambda_lprior_1 = arma::log(psi_prior_incl);
+                psi_bvs.emplace(input.initial.psi_lambda, input.psi_varsel_prior);
             }
         }
     }
@@ -201,9 +184,9 @@ VarNormalStochvolDraws VarNormalStochvolSampler::draw_coefficients(
 
         if (use_a)
         {
-            if (use_bvs)
+            if (a_bvs)
             {
-                z = z_bvs * a_lambda_diag;
+                z = z_bvs * a_bvs->lambda_diag;
             }
 
             // Update a
@@ -211,51 +194,13 @@ VarNormalStochvolDraws VarNormalStochvolSampler::draw_coefficients(
             a = draw_normal_precision(a_post_v,
                                       a_prior_vinv * a_prior_mu + arma::trans(z) * u_sigma_inv_diag * y);
 
-            if (use_varsel)
+            if (a_bvs)
             {
-                a_varsel_include_draw = arma::shuffle(a_varsel_include); // Reorder positions of variable selection
-
-                if (use_bvs)
-                {
-                    z = z_bvs;
-                    a_AG = a_lambda_diag * a;
-                    for (arma::uword j = 0; j < a_varsel_n; j++)
-                    {
-                        const arma::uword a_varsel_pos = a_varsel_include_draw(j);
-                        const double a_randu = std::log(arma::randu());
-                        if (a_lambda(a_varsel_pos) == 1 && a_randu >= a_lambda_lprior_1(a_varsel_pos))
-                        {
-                            continue;
-                        }
-                        if (a_lambda(a_varsel_pos) == 0 && a_randu >= a_lambda_lprior_0(a_varsel_pos))
-                        {
-                            continue;
-                        }
-                        if ((a_lambda(a_varsel_pos) == 1 && a_randu < a_lambda_lprior_1(a_varsel_pos)) || (a_lambda(a_varsel_pos) == 0 && a_randu < a_lambda_lprior_0(a_varsel_pos)))
-                        {
-                            a_theta0 = a_AG;
-                            a_theta1 = a_AG;
-                            a_theta0(a_varsel_pos) = 0;
-                            a_theta1(a_varsel_pos) = a(a_varsel_pos);
-                            a_theta0_res = y - z * a_theta0;
-                            a_theta1_res = y - z * a_theta1;
-                            const double a_l0 = -arma::as_scalar(arma::trans(a_theta0_res) * u_sigma_inv_diag * a_theta0_res) / 2 + arma::as_scalar(a_lambda_lprior_0(a_varsel_pos));
-                            const double a_l1 = -arma::as_scalar(arma::trans(a_theta1_res) * u_sigma_inv_diag * a_theta1_res) / 2 + arma::as_scalar(a_lambda_lprior_1(a_varsel_pos));
-                            const double a_bayes = a_l1 - a_l0;
-                            const double a_bayes_rand = std::log(arma::randu());
-                            if (a_bayes >= a_bayes_rand)
-                            {
-                                a_lambda_diag(a_varsel_pos, a_varsel_pos) = 1;
-                            }
-                            else
-                            {
-                                a_lambda_diag(a_varsel_pos, a_varsel_pos) = 0;
-                            }
-                        }
-                    }
-                    a = a_lambda_diag * a;
-                    a_lambda = arma::vectorise(a_lambda_diag.diag());
-                }
+                z = z_bvs;
+                bvs_sweep(*a_bvs, a, BvsScope::element, [&](const arma::vec &theta) {
+                    const arma::vec res = y - z * theta;
+                    return -arma::as_scalar(arma::trans(res) * u_sigma_inv_diag * res) / 2;
+                });
             }
 
             u = arma::reshape(y - z * a, k, tt);
@@ -269,81 +214,39 @@ VarNormalStochvolDraws VarNormalStochvolSampler::draw_coefficients(
         if (use_psi)
         {
             psi_y = arma::vectorise(u.rows(1, k - 1));
-            for (int i = 1; i < k; i++)
-            {
-                for (int j = 0; j < tt; j++)
-                {
-                    psi_z.submat(j * (k - 1) + i - 1,
-                                 i * (i - 1) / 2,
-                                 j * (k - 1) + i - 1,
-                                 (i + 1) * i / 2 - 1) = -arma::trans(u.submat(0, j, i - 1, j));
+            build_psi_regressors(psi_z, u);
 
-                    psi_u_omega_inv_diag.submat(j * (k - 1),
-                                                j * (k - 1),
-                                                (j + 1) * (k - 1) - 1,
-                                                (j + 1) * (k - 1) - 1) = u_omega_inv_diag.submat(j * k + 1, j * k + 1,
-                                                                                                 (j + 1) * k - 1, (j + 1) * k - 1);
-                }
+            // The psi block explains equations 1..k-1, so its precision is the
+            // per-period volatility with the first equation's row and column
+            // dropped. Written once per period: the fill used to sit inside the
+            // regressor loop above, which repeated each block k-1 times.
+            for (int j = 0; j < tt; j++)
+            {
+                psi_u_omega_inv_diag.submat(j * (k - 1),
+                                            j * (k - 1),
+                                            (j + 1) * (k - 1) - 1,
+                                            (j + 1) * (k - 1) - 1) =
+                    u_omega_inv_diag.submat(j * k + 1, j * k + 1,
+                                            (j + 1) * k - 1, (j + 1) * k - 1);
             }
 
             psi_post_v = psi_prior_vinv + arma::trans(psi_z) * psi_u_omega_inv_diag * psi_z;
             psi = draw_normal_precision(psi_post_v,
                                         psi_prior_vinv * psi_prior_mu + arma::trans(psi_z) * psi_u_omega_inv_diag * psi_y);
 
-            if (use_varsel)
+            if (psi_bvs)
             {
-                psi_varsel_include_draw = arma::shuffle(psi_varsel_include); // Reorder positions of variable selection
-
-                if (use_bvs)
-                {
-                    psi_z = psi_z_bvs;
-                    psi_AG = psi_lambda_diag * psi;
-                    for (arma::uword j = 0; j < psi_varsel_n; j++)
-                    {
-                        const arma::uword psi_varsel_pos = psi_varsel_include_draw(j);
-                        const double psi_randu = std::log(arma::randu());
-                        if (psi_lambda(psi_varsel_pos) == 1 && psi_randu >= psi_lambda_lprior_1(psi_varsel_pos))
-                        {
-                            continue;
-                        }
-                        if (psi_lambda(psi_varsel_pos) == 0 && psi_randu >= psi_lambda_lprior_0(psi_varsel_pos))
-                        {
-                            continue;
-                        }
-                        if ((psi_lambda(psi_varsel_pos) == 1 && psi_randu < psi_lambda_lprior_1(psi_varsel_pos)) || (psi_lambda(psi_varsel_pos) == 0 && psi_randu < psi_lambda_lprior_0(psi_varsel_pos)))
-                        {
-                            psi_theta0 = psi_AG;
-                            psi_theta1 = psi_AG;
-                            psi_theta0(psi_varsel_pos) = 0;
-                            psi_theta1(psi_varsel_pos) = psi(psi_varsel_pos);
-                            psi_theta0_res = psi_y - psi_z * psi_theta0;
-                            psi_theta1_res = psi_y - psi_z * psi_theta1;
-                            const double psi_l0 = -arma::as_scalar(arma::trans(psi_theta0_res) * psi_u_omega_inv_diag * psi_theta0_res) / 2 + arma::as_scalar(psi_lambda_lprior_0(psi_varsel_pos));
-                            const double psi_l1 = -arma::as_scalar(arma::trans(psi_theta1_res) * psi_u_omega_inv_diag * psi_theta1_res) / 2 + arma::as_scalar(psi_lambda_lprior_1(psi_varsel_pos));
-                            const double psi_bayes = psi_l1 - psi_l0;
-                            const double psi_bayes_rand = std::log(arma::randu());
-                            if (psi_bayes >= psi_bayes_rand)
-                            {
-                                psi_lambda_diag(psi_varsel_pos, psi_varsel_pos) = 1;
-                            }
-                            else
-                            {
-                                psi_lambda_diag(psi_varsel_pos, psi_varsel_pos) = 0;
-                            }
-                        }
-                    }
-                    psi = psi_lambda_diag * psi;
-                    psi_lambda = arma::vectorise(psi_lambda_diag.diag());
-                }
+                psi_z = psi_z_bvs;
+                bvs_sweep(*psi_bvs, psi, BvsScope::element, [&](const arma::vec &theta) {
+                    const arma::vec res = psi_y - psi_z * theta;
+                    return -arma::as_scalar(arma::trans(res) * psi_u_omega_inv_diag * res) / 2;
+                });
             }
 
-            for (int i = 1; i < k; i++)
+            fill_strict_lower_triangle(Psi, psi);
+            if (use_varsel)
             {
-                Psi.submat(i, 0, i, i - 1) = arma::trans(psi.subvec(i * (i - 1) / 2, (i + 1) * i / 2 - 1));
-                if (use_varsel)
-                {
-                    Psi_lambda.submat(i, 0, i, i - 1) = arma::trans(psi_lambda.subvec(i * (i - 1) / 2, (i + 1) * i / 2 - 1));
-                }
+                fill_strict_lower_triangle(Psi_lambda, psi_bvs->lambda);
             }
             u = Psi * u;
         }
@@ -406,7 +309,7 @@ VarNormalStochvolDraws VarNormalStochvolSampler::draw_coefficients(
                 out.a.col(draw_pos) = a;
                 if (use_varsel)
                 {
-                    out.a_lambda.col(draw_pos) = a_lambda;
+                    out.a_lambda.col(draw_pos) = a_bvs->lambda;
                 }
             }
 
@@ -539,10 +442,7 @@ ForecastDraws VarNormalStochvolSampler::forecast(const VarNormalStochvolInput &i
             if (structural)
             {
                 A0_inv = arma::eye<arma::mat>(k, k);
-                for (int j = 1; j < k; j++)
-                {
-                    A0_inv.submat(j, 0, j, j - 1) = arma::trans(a0.submat(j * (j - 1) / 2, draw, (j + 1) * j / 2 - 1, draw));
-                }
+                fill_strict_lower_triangle(A0_inv, a0.col(draw));
                 A0_inv = arma::solve(A0_inv, diag_k);
                 fcst.submat(i * k, draw, (i + 1) * k - 1, draw) = A0_inv * fcst.submat(i * k, draw, (i + 1) * k - 1, draw);
             }
