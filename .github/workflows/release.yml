@@ -72,8 +72,11 @@ jobs:
           msystem: UCRT64
           update: true
           install: git
+          # gcc-fortran named explicitly rather than left to the toolchain group
+          # -- see the same list in ci.yml for why.
           pacboy: >-
             toolchain:p
+            gcc-fortran:p
             cmake:p
             ninja:p
             armadillo:p

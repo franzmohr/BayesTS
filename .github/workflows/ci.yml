@@ -115,13 +115,28 @@ jobs:
           update: true
           install: >-
             git
+          # gcc-fortran is named explicitly even though the toolchain group is
+          # supposed to contain it. project() declares Fortran, and relying on
+          # group membership is how a job ends up with gcc and g++ but no
+          # gfortran -- which fails at configure with "No CMAKE_Fortran_COMPILER
+          # could be found", a message that names no package.
           pacboy: >-
             toolchain:p
+            gcc-fortran:p
             cmake:p
             ninja:p
             armadillo:p
             hdf5:p
             openblas:p
+
+      # Checked before configure so a missing compiler is reported here, against
+      # the step that was supposed to install it, rather than 100 lines later.
+      - name: Verify the toolchain
+        run: |
+          for tool in gcc g++ gfortran cmake ninja; do
+            command -v "$tool" >/dev/null || { echo "::error::$tool not on PATH"; exit 1; }
+            printf '%-9s %s\n' "$tool" "$($tool --version | head -1)"
+          done
 
       # Pinned in .github/highfive-version, the same file the Linux jobs read
       # through the composite action. See that action for why the tag is a beta

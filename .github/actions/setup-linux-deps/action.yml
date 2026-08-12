@@ -33,15 +33,32 @@ runs:
   using: composite
   steps:
     # Fortran is not optional: the top-level project() declares C, CXX and
-    # Fortran, because the BLAS and LAPACK the samplers lean on are Fortran.
+    # Fortran, because the BLAS and LAPACK the samplers lean on are Fortran. A
+    # runner has gcc and g++ preinstalled but no Fortran compiler, so this step is
+    # the only thing standing between the job and "No CMAKE_Fortran_COMPILER
+    # could be found" -- an error that names neither the language's package nor
+    # the step that should have installed it.
     - name: Install toolchain
       shell: bash
       run: |
+        set -euo pipefail
         sudo apt-get update
         sudo apt-get install -y --no-install-recommends gfortran
         if [ "${{ inputs.doxygen }}" = "true" ]; then
           sudo apt-get install -y --no-install-recommends doxygen graphviz
         fi
+
+        command -v gfortran >/dev/null || {
+          echo "::error::gfortran is absent after 'apt-get install gfortran'."
+          exit 1
+        }
+        for tool in gcc g++ gfortran; do
+          printf '%-9s %s\n' "$tool" "$($tool --version | head -1)"
+        done
+
+        # Handed to CMake explicitly rather than left to be discovered, so the
+        # configure cannot depend on PATH ordering in a later step.
+        echo "FC=$(command -v gfortran)" >> "$GITHUB_ENV"
 
     # cmake_minimum_required is well ahead of what Ubuntu ships, so the runner's
     # apt CMake will not configure this project. This action also brings Ninja,
