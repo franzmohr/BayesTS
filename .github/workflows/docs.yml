@@ -1,0 +1,106 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (c) 2026 Franz X. Mohr
+
+# Build the Doxygen documentation, and publish it from main.
+#
+# The `docs` target is deliberately not part of ALL, so a normal build never
+# needs Doxygen and nothing else in CI exercises this. That makes it easy for a
+# malformed comment block or a stale path in Doxyfile.in to sit unnoticed, which
+# is what this job is for.
+
+name: Docs
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - 'docs/**'
+      - 'include/**'
+      - 'src/**'
+      - '*.md'
+      - '.github/workflows/docs.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: docs-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: doxygen
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up dependencies
+        id: deps
+        uses: ./.github/actions/setup-linux-deps
+        with:
+          doxygen: 'true'
+
+      # Tests off: this configure exists to produce a Doxyfile and nothing here
+      # compiles the samplers.
+      - name: Configure
+        run: |
+          cmake -S . -B build/bin/docs -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DHIGHFIVE_DIR="${{ steps.deps.outputs.highfive-dir }}" \
+            -DBAYESTS_BUILD_DOCS=ON \
+            -DBAYESTS_BUILD_TESTS=OFF
+
+      # Doxygen warnings are the point of running this, so they are surfaced as
+      # annotations rather than buried in the log. Not fatal: Doxygen warns about
+      # undocumented entities, and this project documents deliberately rather
+      # than exhaustively.
+      - name: Build docs
+        run: |
+          cmake --build build/bin/docs --target docs 2>&1 | tee doxygen.log
+          test -f build/bin/docs/docs/html/index.html \
+            || { echo "::error::Doxygen produced no index.html"; exit 1; }
+          if grep -E 'warning:' doxygen.log > warnings.txt; then
+            echo "::group::Doxygen warnings ($(wc -l < warnings.txt))"
+            cat warnings.txt
+            echo "::endgroup::"
+            {
+              echo "### Doxygen warnings: $(wc -l < warnings.txt)"
+              echo '```'
+              head -50 warnings.txt
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload site
+        uses: actions/upload-artifact@v4
+        with:
+          name: doxygen-html
+          path: build/bin/docs/docs/html
+
+      # Pages needs no artifact of its own on a PR, and uploading one from a fork
+      # would be pointless -- only main is published.
+      - name: Package for Pages
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: build/bin/docs/docs/html
+
+  # Requires Settings -> Pages -> Source set to "GitHub Actions" on the
+  # repository. Until that is switched on this job fails and the build job above
+  # is unaffected.
+  deploy:
+    name: publish to pages
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

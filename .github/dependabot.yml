@@ -1,0 +1,21 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (c) 2026 Franz X. Mohr
+
+# Only the actions are managed here. The C++ dependencies -- Armadillo, HDF5,
+# HighFive -- are found by find_package() from whatever the host provides, so
+# there is no manifest for Dependabot to bump; the pinned HighFive tag lives in
+# .github/actions/setup-linux-deps/action.yml and is moved by hand.
+
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      # One PR for the routine bumps. They are nearly always mechanical, and a
+      # separate PR per action just costs review attention.
+      actions:
+        patterns: ['*']
+    commit-message:
+      prefix: 'ci:'

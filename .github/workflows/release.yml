@@ -1,0 +1,159 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (c) 2026 Franz X. Mohr
+
+# Build the redistributable packages for a tag and attach them to a release.
+#
+# BAYESTS_NATIVE_ARCH must stay off here, and the release preset already turns it
+# off: it bakes the building machine's instruction set into the binary, so a
+# package built with it dies with an illegal instruction on any older CPU. That
+# is the one setting in this file that would be silently wrong rather than
+# loudly broken.
+
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to build packages for, without creating a release.
+        required: true
+
+concurrency:
+  group: release-${{ github.ref }}
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: package / ${{ matrix.name }}
+    runs-on: ${{ matrix.runs-on }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux
+            runs-on: ubuntu-latest
+          - name: windows
+            runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      # The tag has to agree with project(VERSION ...), because that is what
+      # names the archive -- CPACK_PACKAGE_FILE_NAME is built from
+      # PROJECT_VERSION, so a mismatch produces BayesTS-0.0.1-*.zip for tag
+      # v0.2.0 and nobody notices until someone downloads it.
+      - name: Check the tag matches project(VERSION)
+        shell: bash
+        run: |
+          declared=$(sed -n 's/^ *VERSION \([0-9][0-9.]*\).*/\1/p' CMakeLists.txt | head -1)
+          tag="${{ github.event.inputs.tag || github.ref_name }}"
+          echo "CMakeLists declares $declared, tag is $tag"
+          if [ "$tag" != "v$declared" ]; then
+            echo "::error::tag $tag does not match project(VERSION $declared);" \
+                 "bump CMakeLists.txt or retag."
+            exit 1
+          fi
+
+      - name: Set up dependencies (Linux)
+        id: deps
+        if: matrix.name == 'linux'
+        uses: ./.github/actions/setup-linux-deps
+
+      - name: Set up dependencies (Windows)
+        if: matrix.name == 'windows'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: git
+          pacboy: >-
+            toolchain:p
+            cmake:p
+            ninja:p
+            armadillo:p
+            hdf5:p
+            openblas:p
+
+      - name: Fetch HighFive (Windows)
+        if: matrix.name == 'windows'
+        shell: msys2 {0}
+        run: |
+          git clone --depth 1 --branch v3.0.0 \
+            https://github.com/BlueBrain/HighFive.git "$RUNNER_TEMP/highfive"
+
+      - name: Configure, build and package (Linux)
+        if: matrix.name == 'linux'
+        shell: bash
+        run: |
+          cmake -S . -B build/bin/release -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DHIGHFIVE_DIR="${{ steps.deps.outputs.highfive-dir }}" \
+            -DBAYESTS_BUILD_DOCS=OFF \
+            -DBAYESTS_BUILD_TESTS=ON \
+            -DBAYESTS_NATIVE_ARCH=OFF
+          cmake --build build/bin/release --parallel
+          # A package nobody has run is not a release candidate.
+          OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
+            ctest --test-dir build/bin/release --output-on-failure
+          cmake --build build/bin/release --target package
+
+      - name: Configure, build and package (Windows)
+        if: matrix.name == 'windows'
+        shell: msys2 {0}
+        run: |
+          cmake -S . -B build/bin/release -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DHIGHFIVE_DIR="$RUNNER_TEMP/highfive" \
+            -DBAYESTS_BUILD_DOCS=OFF \
+            -DBAYESTS_BUILD_TESTS=ON \
+            -DBAYESTS_NATIVE_ARCH=OFF \
+            -DBAYESTS_BUNDLE_RUNTIME_DEPS=ON
+          cmake --build build/bin/release --parallel
+          OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
+            ctest --test-dir build/bin/release --output-on-failure
+          cmake --build build/bin/release --target package
+
+      - name: Collect packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: packages-${{ matrix.name }}
+          path: |
+            build/bin/release/BayesTS-*.zip
+            build/bin/release/BayesTS-*.tar.gz
+            build/bin/release/BayesTS-*.exe
+          if-no-files-found: error
+
+  publish:
+    name: publish release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      # Drafted rather than published: the release notes should be the matching
+      # section of CHANGELOG.md, and that is a human's call to make. gh comes
+      # preinstalled on the runner, so no third-party action is involved in
+      # something that holds a write token.
+      - name: Draft the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ls -l dist
+          gh release create "${{ github.ref_name }}" dist/* \
+            --draft \
+            --title "BayesTS ${{ github.ref_name }}" \
+            --notes "Draft. Replace this with the ${{ github.ref_name }} section of CHANGELOG.md before publishing."

@@ -1,0 +1,40 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (c) 2026 Franz X. Mohr
+
+name: Feature or model request
+description: A new sampler, prior, or capability.
+labels: [enhancement]
+
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What is missing
+      description: >
+        For a new model, the specification: the measurement and state equations,
+        the priors, and a reference if the sampler is from a paper.
+    validations:
+      required: true
+
+  - type: textarea
+    id: why
+    attributes:
+      label: Why it belongs in the core
+      description: >
+        The core is values in, values out -- no file access, no output, no
+        Armadillo beyond `bayests/arma.h`. That is what makes it embeddable in an
+        R package or a notebook binding, so anything needing I/O belongs in a
+        layer above it.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: existing
+    attributes:
+      label: Does this change existing samplers?
+      options:
+        - No, purely additive
+        - Yes, it would move existing posterior draws
+        - Not sure
+    validations:
+      required: true

@@ -1,0 +1,82 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (c) 2026 Franz X. Mohr
+
+name: Bug report
+description: Something builds, runs or samples differently from how it should.
+labels: [bug]
+
+body:
+  - type: markdown
+    attributes:
+      value: >
+        For a wrong *number* rather than a crash, the toolchain matters as much
+        as the code: results shift in the last digits with the compiler, the BLAS
+        and the CPU. Please fill in the environment section even if it looks
+        irrelevant.
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: And what you expected instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: How to reproduce
+      description: >
+        Ideally the arguments to `bayests_make_model_fixture` that build an input
+        which shows it, or the model file's `/model` attributes. A fixture that
+        fails is worth more than a description of one.
+      placeholder: |
+        bayests_make_model_fixture m.h5 VarTvpGamma bvs 1 0 4
+        bayests m.h5 coefficients
+    validations:
+      required: true
+
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Kind
+      options:
+        - Wrong or suspicious posterior draws
+        - Crash, hang or thrown exception
+        - Build or configure failure
+        - Something else
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: >
+        Compiler and version, OS, CMake version, build type, whether
+        `BAYESTS_NATIVE_ARCH` was on, and the Armadillo, HDF5 and BLAS in use.
+        `cmake --system-information` has most of it.
+      placeholder: |
+        g++ 14.2 (MSYS2 UCRT64), Windows 11, CMake 4.2.1, Release,
+        BAYESTS_NATIVE_ARCH=ON, Armadillo 14.x, HDF5 2.0.0, OpenBLAS
+    validations:
+      required: true
+
+  - type: input
+    id: threads
+    attributes:
+      label: OMP_NUM_THREADS / OPENBLAS_NUM_THREADS
+      description: >
+        Only relevant for a numerical report. A multi-threaded BLAS reassociates
+        floating-point reductions, so unpinned threads make a result
+        irreproducible even from a fixed seed.
+      placeholder: "both 1"
+
+  - type: textarea
+    id: fingerprints
+    attributes:
+      label: Fingerprints
+      description: >
+        Optional but decisive for a numerical report. `test/record_fingerprints.sh`
+        against the good and bad builds, on one machine, and the diff.
+      render: text

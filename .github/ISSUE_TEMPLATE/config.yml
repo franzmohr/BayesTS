@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (c) 2026 Franz X. Mohr
+
+# Both templates ask for things that are easy to omit and expensive to ask for
+# later -- the toolchain, a reproducing fixture -- so the blank form stays off.
+blank_issues_enabled: false
+
+contact_links:
+  - name: Question about building or using BayesTS
+    url: https://github.com/franzmohr/BayesTS/discussions
+    about: >
+      Not a bug report. Configure failures where a dependency simply is not
+      found usually belong here.
+
+  - name: The bvartools R package
+    url: https://github.com/franzmohr/bvartools/issues
+    about: >
+      bvartools carries a copy of this project's core rather than linking it. If
+      you reached the samplers through R, report it there -- its copy may predate
+      a fix here.

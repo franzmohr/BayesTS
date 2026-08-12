@@ -1,0 +1,91 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (c) 2026 Franz X. Mohr
+
+name: Set up BayesTS build dependencies (Linux)
+description: >
+  Installs the toolchain and libraries a BayesTS build needs on an Ubuntu
+  runner. Four workflows need the same set, so it lives here rather than being
+  copied into each of them.
+
+inputs:
+  highfive-ref:
+    description: >
+      Git tag of HighFive to use. HighFive is header-only, so this is a shallow
+      clone rather than a build. Keep it at the version the project is developed
+      against -- see the HIGHFIVE_DIR note in CMakeUserPresets.json.
+    required: false
+    default: v3.0.0
+  doxygen:
+    description: Also install Doxygen and Graphviz, for the docs target.
+    required: false
+    default: 'false'
+
+outputs:
+  highfive-dir:
+    description: Value to pass as -DHIGHFIVE_DIR.
+    value: ${{ steps.highfive.outputs.dir }}
+
+runs:
+  using: composite
+  steps:
+    # Fortran is not optional: the top-level project() declares C, CXX and
+    # Fortran, because the BLAS and LAPACK the samplers lean on are Fortran.
+    #
+    # Armadillo and HDF5 come from apt. If find_package(Armadillo CONFIG) or
+    # find_package(hdf5 CONFIG) ever stops finding them here -- the CMake config
+    # files these ship are a packaging detail, not something upstream
+    # guarantees -- the fallback is vcpkg, which installs the official configs:
+    #
+    #   git clone --depth 1 https://github.com/microsoft/vcpkg "$RUNNER_TEMP/vcpkg"
+    #   "$RUNNER_TEMP/vcpkg/bootstrap-vcpkg.sh" -disableMetrics
+    #   "$RUNNER_TEMP/vcpkg/vcpkg" install armadillo hdf5 highfive
+    #
+    # and then pass installed/x64-linux as CMAKE_PREFIX_PATH instead.
+    - name: Install toolchain and libraries
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends \
+          gfortran \
+          libarmadillo-dev \
+          libhdf5-dev \
+          libopenblas-dev \
+          liblapack-dev
+        if [ "${{ inputs.doxygen }}" = "true" ]; then
+          sudo apt-get install -y --no-install-recommends doxygen graphviz
+        fi
+
+    # cmake_minimum_required(VERSION 4.2) is well ahead of what Ubuntu ships, so
+    # the runner's apt CMake will not configure this project. This action also
+    # brings Ninja, which the presets use.
+    - name: Install CMake and Ninja
+      uses: lukka/get-cmake@latest
+
+    - name: Fail early if CMake is too old
+      shell: bash
+      run: |
+        # Reading the floor out of CMakeLists rather than repeating it here, so
+        # this check cannot drift away from what the project actually requires.
+        required=$(sed -n 's/^cmake_minimum_required(VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt | head -1)
+        have=$(cmake --version | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+        echo "CMake required >= $required, have $have"
+        # sort -V puts the smaller version first; if that is not the requirement
+        # then what we have is older than the floor.
+        if [ "$(printf '%s\n%s\n' "$required" "$have" | sort -V | head -1)" != "$required" ]; then
+          echo "::error::CMake $have is older than the required $required."
+          exit 1
+        fi
+
+    - name: Fetch HighFive
+      id: highfive
+      shell: bash
+      run: |
+        dir="$RUNNER_TEMP/highfive"
+        # Header-only, and the project locates it by looking for
+        # include/highfive/H5File.hpp under the given prefix -- which is exactly
+        # the layout of the source tree, so no build or install step is needed.
+        git clone --depth 1 --branch "${{ inputs.highfive-ref }}" \
+          https://github.com/BlueBrain/HighFive.git "$dir"
+        test -f "$dir/include/highfive/H5File.hpp" \
+          || { echo "::error::HighFive layout unexpected in $dir"; exit 1; }
+        echo "dir=$dir" >> "$GITHUB_OUTPUT"

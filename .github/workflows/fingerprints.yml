@@ -1,0 +1,170 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (c) 2026 Franz X. Mohr
+
+# Did this pull request move the numbers?
+#
+# This is the procedure CONTRIBUTING.md prescribes by hand -- pin the RNG, record
+# a fingerprint per posterior dataset before and after, diff -- run automatically
+# on every PR. The reason it has to be a single job building both sides is the
+# same reason no fingerprint is checked in as an expected value: they shift in
+# the last digits with the compiler, the BLAS and the CPU, so a comparison is
+# only valid within one toolchain on one machine. Base and head are therefore
+# built here, back to back, on the same runner.
+#
+# It never fails the job on a difference. A moved number is often the point of
+# the change; what matters is that it is visible in the PR and that the author
+# says which it was. The job fails only when a build or a fixture fails, or when
+# the two sides cannot be compared at all.
+
+name: Sampler fingerprints
+
+on:
+  pull_request:
+    # Skip PRs that cannot change a draw. Two builds is not cheap, and a
+    # docs-only change has nothing to compare.
+    paths:
+      - 'src/**'
+      - 'include/**'
+      - 'test/**'
+      - 'CMakeLists.txt'
+      - '.github/workflows/fingerprints.yml'
+      - '.github/actions/setup-linux-deps/action.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: fingerprints-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  compare:
+    name: base vs head
+    runs-on: ubuntu-latest
+
+    env:
+      OMP_NUM_THREADS: 1
+      OPENBLAS_NUM_THREADS: 1
+
+    steps:
+      # Full history: the base commit has to be checked out later in the job.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up dependencies
+        id: deps
+        uses: ./.github/actions/setup-linux-deps
+
+      # Both recordings must be reduced by the *same* script, or the diff shows
+      # differences in the extraction rather than in the samplers. Taking head's
+      # copy out of the tree first also means this works when the base commit
+      # predates the script.
+      - name: Stash the recorder
+        run: |
+          install -m 755 test/record_fingerprints.sh "$RUNNER_TEMP/record.sh"
+
+      - name: Record base (${{ github.event.pull_request.base.sha }})
+        id: base
+        run: |
+          git checkout --detach --force "${{ github.event.pull_request.base.sha }}"
+          cmake -S . -B build/bin/base -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DHIGHFIVE_DIR="${{ steps.deps.outputs.highfive-dir }}" \
+            -DBAYESTS_BUILD_DOCS=OFF -DBAYESTS_NATIVE_ARCH=OFF
+          cmake --build build/bin/base --parallel
+          "$RUNNER_TEMP/record.sh" build/bin/base "$RUNNER_TEMP/before.txt"
+
+      # github.sha on a pull_request is the merge result, not the head commit,
+      # and that is deliberately what gets measured: what lands on the base
+      # branch is what the numbers should be judged on.
+      - name: Record head (merge result ${{ github.sha }})
+        id: head
+        run: |
+          git checkout --detach --force "${{ github.sha }}"
+          cmake -S . -B build/bin/head -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DHIGHFIVE_DIR="${{ steps.deps.outputs.highfive-dir }}" \
+            -DBAYESTS_BUILD_DOCS=OFF -DBAYESTS_NATIVE_ARCH=OFF
+          cmake --build build/bin/head --parallel
+          "$RUNNER_TEMP/record.sh" build/bin/head "$RUNNER_TEMP/after.txt"
+
+      # Reported per fixture rather than per line. A moved posterior changes
+      # every dataset of the fixtures it touches, so a raw line diff is long and
+      # says little; which fixtures moved is the useful summary, and it is what
+      # tells an author whether the blast radius matches their intent.
+      - name: Compare
+        run: |
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import os
+
+          def load(path):
+              fixtures, current = {}, None
+              with open(path, encoding='utf-8') as fh:
+                  for line in fh:
+                      line = line.rstrip('\n')
+                      if line.endswith(']'):
+                          current = line
+                          fixtures[current] = []
+                      elif current is not None:
+                          fixtures[current].append(line)
+              return fixtures
+
+          tmp = os.environ['RUNNER_TEMP']
+          before, after = load(f'{tmp}/before.txt'), load(f'{tmp}/after.txt')
+
+          print('## Sampler fingerprints\n')
+
+          added = [k for k in after if k not in before]
+          removed = [k for k in before if k not in after]
+          shared = [k for k in after if k in before]
+          moved = [k for k in shared if before[k] != after[k]]
+
+          if not before or not after:
+              print(':x: One side recorded nothing -- the comparison is void.')
+              raise SystemExit(1)
+
+          # Counted over the compared set, not over all of head: a fixture that
+          # exists on only one side contributes nothing to the comparison and
+          # including it here would overstate what was actually checked.
+          print(f'{len(shared)} fixture(s) compared, '
+                f'{sum(len(after[k]) for k in shared)} fingerprints.\n')
+
+          if moved:
+              print(f'### :warning: {len(moved)} fixture(s) changed\n')
+              for k in moved:
+                  print(f'- `{k}`')
+              print('\nIf that is the intended effect, say so in the PR and record '
+                    'it in `CHANGELOG.md` naming these models and configurations. '
+                    'If it is not, it is a regression.\n')
+          else:
+              print('### :white_check_mark: No fingerprint changed\n')
+              print('Every compared fixture is byte-identical between base and '
+                    'head, so this PR does not move any posterior draw.\n')
+
+          for label, names in (('only on head (new coverage)', added),
+                               ('only on base (coverage removed)', removed)):
+              if names:
+                  print(f'### {len(names)} fixture(s) {label}\n')
+                  for k in names:
+                      print(f'- `{k}`')
+                  print()
+
+          if removed:
+              print(':warning: A fixture that disappeared is untested from now '
+                    'on. That is a deliberate decision or an accident; say '
+                    'which.\n')
+          PY
+
+      # Kept regardless of the outcome: the full recordings are what an author
+      # needs to see *how* a number moved, not just that it did.
+      - name: Upload recordings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fingerprints
+          path: |
+            ${{ runner.temp }}/before.txt
+            ${{ runner.temp }}/after.txt
+          if-no-files-found: warn

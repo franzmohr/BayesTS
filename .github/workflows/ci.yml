@@ -1,0 +1,144 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (c) 2026 Franz X. Mohr
+
+# Build and run the test suite.
+#
+# What this proves and what it does not: `ctest` here is a smoke test. Every
+# sampler and code path runs and a fixture that throws fails the job, which
+# catches a build break, an uninitialised read that trips a validate(), and a
+# dimension mismatch. It does *not* catch a change in the numbers, which is what
+# most regressions in this codebase look like -- the fingerprints are only
+# comparable within one toolchain, so a stored expectation would fail on every
+# machine but the one that recorded it. The fingerprints workflow does that
+# comparison instead, base against head inside a single job.
+#
+# Coverage note: VarNormalWishart's fixtures need BAYESTS_WISHART_FIXTURE
+# pointing at a recorded model file, and those are hundreds of megabytes and not
+# in the repository, so the w-* tests do not run here. See test/CMakeLists.txt.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A force-push or a second push to a PR makes the earlier run irrelevant.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    name: ubuntu / ${{ matrix.build_type }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        build_type: [Debug, Release]
+
+    env:
+      # The golden harness refuses to run unless both are pinned: a
+      # multi-threaded BLAS reassociates floating-point reductions, and a
+      # fingerprint that cannot be reproduced is worse than none. test/
+      # CMakeLists.txt already sets these per test; this covers the fixture
+      # generators too, and makes the requirement visible here.
+      OMP_NUM_THREADS: 1
+      OPENBLAS_NUM_THREADS: 1
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up dependencies
+        id: deps
+        uses: ./.github/actions/setup-linux-deps
+
+      # Configured without a preset. The presets do not carry a
+      # CMAKE_PREFIX_PATH -- that lives in the gitignored, machine-specific
+      # CMakeUserPresets.json -- so CI has to pass its own paths regardless, and
+      # spelling the configure out keeps this readable and independent of preset
+      # churn. BAYESTS_NATIVE_ARCH stays off: the binary is built and run on the
+      # same runner, so it buys nothing and only risks an illegal instruction if
+      # a job is ever split across machines.
+      - name: Configure
+        run: |
+          cmake -S . -B build/bin/ci -G Ninja \
+            -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
+            -DHIGHFIVE_DIR="${{ steps.deps.outputs.highfive-dir }}" \
+            -DBAYESTS_BUILD_DOCS=OFF \
+            -DBAYESTS_BUILD_TESTS=ON \
+            -DBAYESTS_NATIVE_ARCH=OFF
+
+      - name: Build
+        run: cmake --build build/bin/ci --parallel
+
+      - name: Test
+        run: ctest --test-dir build/bin/ci --output-on-failure
+
+      # The install and package steps are part of the contract too -- a missing
+      # file in the install() list or a CPack generator whose tool is absent only
+      # shows up here. Release only, to keep the Debug job to build-and-test.
+      - name: Install
+        if: matrix.build_type == 'Release'
+        run: cmake --install build/bin/ci --prefix "$RUNNER_TEMP/staged"
+
+      - name: Package
+        if: matrix.build_type == 'Release'
+        run: cmake --build build/bin/ci --target package
+
+  # The project's primary development platform, and the reason the Fortran
+  # requirement is awkward: MSVC has no Fortran compiler, so this uses the same
+  # MSYS2 UCRT64 toolchain as a local build rather than the runner's Visual
+  # Studio. Armadillo and HDF5 come from pacman; HighFive is header-only.
+  windows:
+    name: windows / msys2 ucrt64 / Release
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+
+    env:
+      OMP_NUM_THREADS: 1
+      OPENBLAS_NUM_THREADS: 1
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            git
+          pacboy: >-
+            toolchain:p
+            cmake:p
+            ninja:p
+            armadillo:p
+            hdf5:p
+            openblas:p
+
+      - name: Fetch HighFive
+        run: |
+          git clone --depth 1 --branch v3.0.0 \
+            https://github.com/BlueBrain/HighFive.git "$RUNNER_TEMP/highfive"
+          test -f "$RUNNER_TEMP/highfive/include/highfive/H5File.hpp"
+
+      - name: Configure
+        run: |
+          cmake -S . -B build/bin/ci -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DHIGHFIVE_DIR="$RUNNER_TEMP/highfive" \
+            -DBAYESTS_BUILD_DOCS=OFF \
+            -DBAYESTS_BUILD_TESTS=ON \
+            -DBAYESTS_NATIVE_ARCH=OFF
+
+      - name: Build
+        run: cmake --build build/bin/ci --parallel
+
+      - name: Test
+        run: ctest --test-dir build/bin/ci --output-on-failure
