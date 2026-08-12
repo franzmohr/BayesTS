@@ -98,7 +98,7 @@ runs:
     # directory, so the two live side by side and the clone is always fresh.
     - name: Cache vcpkg packages
       id: vcpkg-cache
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: ${{ runner.temp }}/vcpkg-installed
         # Bumping the trailing -vN is the way to discard a tree that has gone

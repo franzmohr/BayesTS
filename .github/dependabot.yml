@@ -10,8 +10,12 @@ version: 2
 updates:
   - package-ecosystem: github-actions
     directory: /
+    # Weekly rather than monthly: an action pinned to a deprecated Node runtime
+    # keeps working until it abruptly does not, and a month is a long time to
+    # carry that. This is also the mechanism that gets a major-version bump right
+    # without anyone guessing at which tags exist.
     schedule:
-      interval: monthly
+      interval: weekly
     groups:
       # One PR for the routine bumps. They are nearly always mechanical, and a
       # separate PR per action just costs review attention.

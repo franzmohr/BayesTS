@@ -51,7 +51,7 @@ jobs:
       OPENBLAS_NUM_THREADS: 1
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up dependencies
         id: deps
@@ -64,6 +64,7 @@ jobs:
       # churn. BAYESTS_NATIVE_ARCH stays off: the binary is built and run on the
       # same runner, so it buys nothing and only risks an illegal instruction if
       # a job is ever split across machines.
+      #
       # CMAKE_MAP_IMPORTED_CONFIG_DEBUG is what keeps the Debug job honest. vcpkg
       # installs a debug variant of every port alongside the release one, and a
       # Debug build of this project would otherwise link those -- so the job would
@@ -140,7 +141,7 @@ jobs:
       OPENBLAS_NUM_THREADS: 1
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: msys2/setup-msys2@v2
         with:
