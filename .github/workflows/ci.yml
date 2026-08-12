@@ -68,6 +68,7 @@ jobs:
         run: |
           cmake -S . -B build/bin/ci -G Ninja \
             -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
+            -DCMAKE_PREFIX_PATH="${{ steps.deps.outputs.prefix-path }}" \
             -DHIGHFIVE_DIR="${{ steps.deps.outputs.highfive-dir }}" \
             -DBAYESTS_BUILD_DOCS=OFF \
             -DBAYESTS_BUILD_TESTS=ON \

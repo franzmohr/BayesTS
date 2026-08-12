@@ -22,6 +22,9 @@ inputs:
     default: 'false'
 
 outputs:
+  prefix-path:
+    description: Value to pass as -DCMAKE_PREFIX_PATH.
+    value: ${{ steps.vcpkg.outputs.prefix }}
   highfive-dir:
     description: Value to pass as -DHIGHFIVE_DIR.
     value: ${{ steps.highfive.outputs.dir }}
@@ -31,34 +34,18 @@ runs:
   steps:
     # Fortran is not optional: the top-level project() declares C, CXX and
     # Fortran, because the BLAS and LAPACK the samplers lean on are Fortran.
-    #
-    # Armadillo and HDF5 come from apt. If find_package(Armadillo CONFIG) or
-    # find_package(hdf5 CONFIG) ever stops finding them here -- the CMake config
-    # files these ship are a packaging detail, not something upstream
-    # guarantees -- the fallback is vcpkg, which installs the official configs:
-    #
-    #   git clone --depth 1 https://github.com/microsoft/vcpkg "$RUNNER_TEMP/vcpkg"
-    #   "$RUNNER_TEMP/vcpkg/bootstrap-vcpkg.sh" -disableMetrics
-    #   "$RUNNER_TEMP/vcpkg/vcpkg" install armadillo hdf5 highfive
-    #
-    # and then pass installed/x64-linux as CMAKE_PREFIX_PATH instead.
-    - name: Install toolchain and libraries
+    - name: Install toolchain
       shell: bash
       run: |
         sudo apt-get update
-        sudo apt-get install -y --no-install-recommends \
-          gfortran \
-          libarmadillo-dev \
-          libhdf5-dev \
-          libopenblas-dev \
-          liblapack-dev
+        sudo apt-get install -y --no-install-recommends gfortran
         if [ "${{ inputs.doxygen }}" = "true" ]; then
           sudo apt-get install -y --no-install-recommends doxygen graphviz
         fi
 
-    # cmake_minimum_required(VERSION 4.2) is well ahead of what Ubuntu ships, so
-    # the runner's apt CMake will not configure this project. This action also
-    # brings Ninja, which the presets use.
+    # cmake_minimum_required is well ahead of what Ubuntu ships, so the runner's
+    # apt CMake will not configure this project. This action also brings Ninja,
+    # which the presets use.
     - name: Install CMake and Ninja
       uses: lukka/get-cmake@latest
 
@@ -77,9 +64,81 @@ runs:
           exit 1
         fi
 
+    # Armadillo and HDF5 come from vcpkg, not apt, and the reason is specific:
+    # the project finds both in CONFIG mode, and Debian's libarmadillo-dev ships
+    # no ArmadilloConfig.cmake at all. CMake's bundled FindArmadillo would find
+    # the library but defines only variables, no imported target, so it cannot
+    # satisfy `target_link_libraries(bayests_core PUBLIC armadillo)`; and its
+    # FindHDF5 defines HDF5::HDF5, not the hdf5::hdf5-shared this project links.
+    # Only the upstream CMake configs provide those names, and vcpkg installs
+    # them. It is also what the author builds against locally, so CI and a
+    # desktop build resolve their dependencies the same way.
+    #
+    # The triplet has to be dynamic. x64-linux is static-only, and a static HDF5
+    # provides hdf5::hdf5-static rather than the -shared target linked here.
+    # Only the built packages are cached, never the vcpkg checkout: restoring a
+    # tree into the clone target would make `git clone` refuse a non-empty
+    # directory, so the two live side by side and the clone is always fresh.
+    - name: Cache vcpkg packages
+      id: vcpkg-cache
+      uses: actions/cache@v4
+      with:
+        path: ${{ runner.temp }}/vcpkg-installed
+        # Bumping the trailing -vN is the way to discard a tree that has gone
+        # bad; nothing about time or upstream vcpkg is in the key, so a hit is a
+        # hit until the requested package set changes.
+        key: vcpkg-x64-linux-dynamic-armadillo-hdf5-${{ runner.os }}-v1
+
+    - name: Install Armadillo and HDF5
+      id: vcpkg
+      shell: bash
+      run: |
+        set -euo pipefail
+        root="$RUNNER_TEMP/vcpkg"
+        inst="$RUNNER_TEMP/vcpkg-installed"
+        triplet=x64-linux-dynamic
+        prefix="$inst/$triplet"
+
+        # A cache hit is the whole point: the installed tree is all CMake reads,
+        # so on a hit neither vcpkg nor a compiler has to run at all.
+        if [ -d "$prefix" ]; then
+          echo "vcpkg tree restored from cache"
+        else
+          sudo apt-get install -y --no-install-recommends \
+            curl zip unzip tar pkg-config
+          git clone --depth 1 https://github.com/microsoft/vcpkg "$root"
+          "$root/bootstrap-vcpkg.sh" -disableMetrics
+          # --x-install-root keeps the built packages outside the checkout, which
+          # is what lets the cache above cover them on their own. It carries
+          # vcpkg's experimental x- prefix; if a future vcpkg drops it, the fix is
+          # to cache "$root/installed" instead and delete $inst from this step --
+          # the clone is skipped on a cache hit either way, so nothing else moves.
+          "$root/vcpkg" install --triplet "$triplet" \
+            --x-install-root="$inst" armadillo hdf5
+        fi
+
+        # Fail here rather than at find_package, whose message names a missing
+        # .cmake file and says nothing about vcpkg. Matched case-insensitively on
+        # both spellings CMake accepts -- ArmadilloConfig.cmake and
+        # armadillo-config.cmake -- so a port that renames its config does not
+        # block a build that would in fact have worked.
+        for pkg in armadillo hdf5; do
+          found=$(find "$prefix/share" -maxdepth 2 -iname '*config.cmake' \
+                    -ipath "*$pkg*" 2>/dev/null | head -3)
+          if [ -z "$found" ]; then
+            echo "::error::no CMake config for $pkg under $prefix; the vcpkg install did not produce a usable one."
+            find "$prefix/share" -maxdepth 2 -iname '*config.cmake' | head -30
+            exit 1
+          fi
+          echo "$pkg: $found"
+        done
+        echo "prefix=$prefix" >> "$GITHUB_OUTPUT"
+
     # Header-only, and the project locates it by looking for
     # include/highfive/H5File.hpp under the given prefix -- which is exactly the
-    # layout of the source tree, so no build or install step is needed.
+    # layout of the source tree, so no build or install step is needed. Not taken
+    # from vcpkg: its port tracks the 2.x line, and this project is developed
+    # against 3.x.
     #
     # The URL is the old BlueBrain path on purpose. Upstream has moved to
     # github.com/highfive-devs/highfive and BlueBrain/HighFive now redirects;

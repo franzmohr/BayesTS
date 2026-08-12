@@ -71,6 +71,7 @@ jobs:
           git checkout --detach --force "${{ github.event.pull_request.base.sha }}"
           cmake -S . -B build/bin/base -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="${{ steps.deps.outputs.prefix-path }}" \
             -DHIGHFIVE_DIR="${{ steps.deps.outputs.highfive-dir }}" \
             -DBAYESTS_BUILD_DOCS=OFF -DBAYESTS_NATIVE_ARCH=OFF
           cmake --build build/bin/base --parallel
@@ -85,6 +86,7 @@ jobs:
           git checkout --detach --force "${{ github.sha }}"
           cmake -S . -B build/bin/head -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="${{ steps.deps.outputs.prefix-path }}" \
             -DHIGHFIVE_DIR="${{ steps.deps.outputs.highfive-dir }}" \
             -DBAYESTS_BUILD_DOCS=OFF -DBAYESTS_NATIVE_ARCH=OFF
           cmake --build build/bin/head --parallel

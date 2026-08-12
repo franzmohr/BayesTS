@@ -97,6 +97,7 @@ jobs:
         run: |
           cmake -S . -B build/bin/release -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="${{ steps.deps.outputs.prefix-path }}" \
             -DHIGHFIVE_DIR="${{ steps.deps.outputs.highfive-dir }}" \
             -DBAYESTS_BUILD_DOCS=OFF \
             -DBAYESTS_BUILD_TESTS=ON \

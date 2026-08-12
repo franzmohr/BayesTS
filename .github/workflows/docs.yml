@@ -48,6 +48,7 @@ jobs:
         run: |
           cmake -S . -B build/bin/docs -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="${{ steps.deps.outputs.prefix-path }}" \
             -DHIGHFIVE_DIR="${{ steps.deps.outputs.highfive-dir }}" \
             -DBAYESTS_BUILD_DOCS=ON \
             -DBAYESTS_BUILD_TESTS=OFF
