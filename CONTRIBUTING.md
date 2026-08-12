@@ -114,6 +114,25 @@ Fixtures are generated into the build tree. Nothing writes a `*.h5` into the
 source tree, and nothing should — see `test/CMakeLists.txt` for the generation
 matrix and add to it when a new branch needs covering.
 
+## Recording the change
+
+Whatever that diff told you, write it down in `CHANGELOG.md` under *Unreleased*.
+The answer to "did this move the numbers" is expensive to obtain — a build of the
+old sources on the same machine — and impossible to recover later from the diff
+alone, so it is worth the two lines it takes to state.
+
+The rule the file asks for is that every entry touching a sampler says whether
+draws are unchanged, change by a rounding error, or change; and if they change,
+which models and configurations, and why the new numbers are the right ones. A
+commit message is not a substitute. A refactor and a fix that moves a posterior
+travel in the same commit more often than anyone intends, and the message
+normally describes only the refactor.
+
+This matters more than it would in a standalone library because the core is
+vendored — copied, not linked — into downstream packages that keep their own
+release notes and have to tell their users the same thing. An entry that omits
+the effect on draws just moves the work to whoever propagates the change.
+
 ## Including Armadillo
 
 Include `"bayests/arma.h"`, never `<armadillo>` directly. It is the one place

@@ -29,7 +29,8 @@ OUTPUT_LANGUAGE        = English
 INPUT                  = "@PROJECT_SOURCE_DIR@/include" \
                          "@PROJECT_SOURCE_DIR@/src" \
                          "@PROJECT_SOURCE_DIR@/README.md" \
-                         "@PROJECT_SOURCE_DIR@/CONTRIBUTING.md"
+                         "@PROJECT_SOURCE_DIR@/CONTRIBUTING.md" \
+                         "@PROJECT_SOURCE_DIR@/CHANGELOG.md"
 RECURSIVE              = YES
 FILE_PATTERNS          = *.c *.cc *.cpp *.h *.hpp *.md
 EXCLUDE_PATTERNS       = */build/* */.git/*

@@ -1,5 +1,12 @@
 # BayesTS
 
+[![CI](https://github.com/franzmohr/BayesTS/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/franzmohr/BayesTS/actions/workflows/ci.yml)
+[![Docs](https://github.com/franzmohr/BayesTS/actions/workflows/docs.yml/badge.svg?branch=main)](https://github.com/franzmohr/BayesTS/actions/workflows/docs.yml)
+[![License: BSD-3-Clause](https://img.shields.io/badge/license-BSD--3--Clause-blue.svg)](LICENSE)
+[![C++20](https://img.shields.io/badge/C%2B%2B-20-blue.svg)](https://en.cppreference.com/w/cpp/20)
+[![CMake](https://img.shields.io/badge/CMake-%E2%89%A5%203.25-blue.svg)](CMakeLists.txt)
+[![Platforms](https://img.shields.io/badge/platforms-Linux%20%7C%20Windows-lightgrey.svg)](https://github.com/franzmohr/BayesTS/actions/workflows/ci.yml)
+
 Bayesian time series estimation in C++: Gibbs samplers for vector autoregressive
 models, driven either from the command line or from an embedded host such as an
 R package.
