@@ -95,14 +95,27 @@ jobs:
         with:
           path: build/bin/docs/docs/html
 
-  # Requires Settings -> Pages -> Source set to "GitHub Actions" on the
-  # repository. Until that is switched on this job fails and the build job above
-  # is unaffected.
+  # Requires Settings -> Pages -> Source set to "GitHub Actions" on the repository.
+  # Until that is switched on, this job cannot succeed -- but it does not fail
+  # either, which is the trap: deploy-pages creates a deployment and then waits for
+  # it to go live, and with Pages disabled nothing ever processes it, so the action
+  # polls until the job's timeout. The default timeout is six hours. Hence both the
+  # preflight check and the timeout below. The build job above is unaffected either
+  # way, and its doxygen-html artifact holds the site.
   deploy:
     name: publish to pages
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     needs: build
     runs-on: ubuntu-latest
+    # A deployment that is genuinely in flight must not be cancelled by the next
+    # push, so this group deliberately does not cancel in progress -- unlike the
+    # workflow-level group, which exists to drop superseded PR doc builds.
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    # Generous enough for a real deployment, short enough that a misconfiguration
+    # is reported the same morning.
+    timeout-minutes: 10
     permissions:
       pages: write
       id-token: write
@@ -110,5 +123,29 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      # Two distinct misconfigurations both end in the same silent wait: Pages not
+      # enabled at all, and Pages enabled with a *branch* source, which ignores
+      # deployments made from a workflow. `build_type` tells them apart -- it reads
+      # "workflow" only when the source is GitHub Actions.
+      - name: Check that Pages is enabled for Actions
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # gh's own --jq does the extraction, so this needs no jq on the runner.
+          # A missing jq would otherwise report an empty build_type and blame the
+          # source setting for what is really an absent tool.
+          if ! build_type=$(gh api "repos/${{ github.repository }}/pages" \
+                              --jq '.build_type // "unknown"' 2>&1); then
+            echo "::error::GitHub Pages is not enabled for ${{ github.repository }}. Enable it under Settings -> Pages and set Source to \"GitHub Actions\", then re-run. Until then the site is available as the doxygen-html artifact of the build job."
+            echo "$build_type"
+            exit 1
+          fi
+
+          echo "Pages source: $build_type"
+          if [ "$build_type" != "workflow" ]; then
+            echo "::error::Pages is enabled but its source is '$build_type', not GitHub Actions, so a deployment made by this workflow would never be published. Change it under Settings -> Pages."
+            exit 1
+          fi
+
       - id: deployment
         uses: actions/deploy-pages@v4
