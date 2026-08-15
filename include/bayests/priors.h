@@ -20,6 +20,13 @@ struct NormalPrior
     arma::mat v_inv;
 };
 
+/// Prior on the cointegration space.
+struct ConstantCointSpacePrior
+{
+    double v_inv;
+    arma::mat p_tau_inv;
+};
+
 /// Wishart prior on an inverse covariance matrix.
 struct WishartPrior
 {

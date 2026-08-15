@@ -266,6 +266,47 @@ struct VarTvpStochvolInput
     void validate() const;
 };
 
+/// Where the VecNormalWishart chain starts.
+struct VecNormalWishartInitial
+{
+    arma::vec a;
+    arma::vec a_lambda;
+    arma::vec beta;
+    arma::mat u_sigma_inv;
+};
+
+/// The complete argument of the VecNormalWishart sampler.
+///
+/// This is the contract every host fills in: the HDF5 reader builds one out of
+/// a file, an R binding builds one out of an S4 object, and neither of them
+/// appears anywhere in the numeric code. Adding a field here is how a new
+/// input reaches the sampler; there is no other channel.
+struct VecNormalWishartInput
+{
+    VarSpec spec;
+    TrainData train;
+    ForecastData forecast; ///< `z` empty when no forecast was requested.
+
+    NormalPrior a_prior;          ///< Unused when there are no regressors.
+    VarSelPrior varsel_prior;     ///< Unused when spec.varsel is none.
+
+    ConstantCointSpacePrior beta_prior; ///< Unused when there are no regressors, i.e., r = 0.
+    
+    WishartPrior u_sigma_prior;    
+
+    VecNormalWishartInitial initial;
+
+    /// Whether the model has coefficients to draw at all.
+    bool use_a() const { return train.nparams() > 0; }
+    bool use_beta() const { return spec.uses_coint(); }
+    
+    /// Throws std::invalid_argument describing the first inconsistency it
+    /// finds. Called by the sampler before the first draw, so a host that
+    /// forgets to call it still gets the message rather than a crash a
+    /// thousand iterations in.
+    void validate() const;
+};
+
 } // namespace bayests
 
 #endif // BAYESTS_INPUTS_H

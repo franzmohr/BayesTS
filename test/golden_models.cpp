@@ -37,12 +37,20 @@ namespace
 constexpr arma::arma_rng::seed_type kSeed = 20260808u;
 
 // Datasets the models refuse to overwrite. They have to go before a rerun.
-// This is the union over all four samplers; the ones a given model does not
-// produce are reported as absent, which is itself part of the fingerprint.
+// This is the union over every sampler; the ones a given model does not produce
+// are reported as absent, which is itself part of the fingerprint.
+//
+// A path missing from this list is invisible twice over: stage_fixture() leaves
+// it in place, so the sampler that would have written it returns early and the
+// rerun silently reports the previous run's numbers -- and nothing fingerprints
+// it, so a draw that stopped being written at all still passes. /posterior/beta
+// was absent here while the VEC was being added, which is exactly how its
+// cointegration draws went missing without a test noticing.
 constexpr const char *kOutputs[] = {
     "/posterior/a/coeffs",
     "/posterior/a/lambda",
     "/posterior/a/sigma",
+    "/posterior/beta/coeffs",
     "/posterior/psi/coeffs",
     "/posterior/psi/lambda",
     "/posterior/psi/sigma",

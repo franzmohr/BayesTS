@@ -57,6 +57,9 @@ VarSpec read_spec(const HighFive::File &file, const char *covar_error);
 /// The (mu, v_inv) pair every normal prior is stored as.
 NormalPrior read_normal_prior(const HighFive::File &file, const std::string &group);
 
+/// The (v_inv, p_tau_inv) pair every constant cointegration-space prior is stored as.
+ConstantCointSpacePrior read_coint_space_prior_constant(const HighFive::File &file, const std::string &group);
+
 /// The (shape, rate) pair every gamma prior is stored as.
 GammaPrior read_gamma_prior(const HighFive::File &file, const std::string &group);
 

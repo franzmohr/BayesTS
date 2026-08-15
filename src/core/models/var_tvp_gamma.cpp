@@ -22,6 +22,8 @@ using core::draw_normal_precision;
 using core::fill_psi_path;
 using core::fill_strict_lower_triangle;
 using core::stacked_response;
+using core::require_forecast_regressors;
+using core::update_forecast_lags;
 
 VarTvpGammaDraws VarTvpGammaSampler::draw_coefficients(const VarTvpGammaInput &input,
                                                        Reporter &reporter) const
@@ -41,7 +43,6 @@ VarTvpGammaDraws VarTvpGammaSampler::draw_coefficients(const VarTvpGammaInput &i
     const bool use_a = nparams > 0;
     const int tt = static_cast<int>(y.n_elem) / k;
     const arma::mat diag_k = arma::eye<arma::mat>(k, k);
-    const arma::mat diag_tt = arma::eye<arma::mat>(tt, tt);
     arma::mat ymat = arma::reshape(y, k, tt);
 
     const bool use_psi = input.use_psi();
@@ -66,9 +67,9 @@ VarTvpGammaDraws VarTvpGammaSampler::draw_coefficients(const VarTvpGammaInput &i
     std::optional<BvsBlock> a_bvs;
     arma::mat z_bvs;
 
-    // Residuals of a candidate coefficient path, preallocated: the selection
-    // step evaluates two of them per position it revisits.
-    arma::vec a_theta_res;
+    // Residuals of a candidate coefficient path, k x tt and preallocated: the
+    // selection step evaluates two of them per position it revisits.
+    arma::mat a_theta_res;
 
     if (use_a)
     {
@@ -95,7 +96,7 @@ VarTvpGammaDraws VarTvpGammaSampler::draw_coefficients(const VarTvpGammaInput &i
             {
                 z_bvs = z;
                 a_bvs.emplace(input.initial.a_lambda, input.a_varsel_prior);
-                a_theta_res = arma::zeros<arma::vec>(y.n_elem);
+                a_theta_res = arma::zeros<arma::mat>(k, tt);
             }
         }
     }
@@ -113,8 +114,8 @@ VarTvpGammaDraws VarTvpGammaSampler::draw_coefficients(const VarTvpGammaInput &i
 
     bool use_varsel_psi = false;
     std::optional<BvsBlock> psi_bvs;
-    arma::vec psi_theta_res;
-    arma::mat Psi_lambda, psi_u_omega_inv_diag;
+    arma::mat psi_theta_res;
+    arma::mat Psi_lambda, psi_u_omega_inv;
 
     if (use_psi)
     {
@@ -144,7 +145,7 @@ VarTvpGammaDraws VarTvpGammaSampler::draw_coefficients(const VarTvpGammaInput &i
             out.psi_lambda = arma::mat(k * k, iterations);
             Psi_lambda = arma::eye<arma::mat>(k, k);
             psi_bvs.emplace(input.initial.psi_lambda, input.psi_varsel_prior);
-            psi_theta_res = arma::zeros<arma::vec>((k - 1) * tt);
+            psi_theta_res = arma::zeros<arma::mat>(k - 1, tt);
         }
     }
 
@@ -163,16 +164,38 @@ VarTvpGammaDraws VarTvpGammaSampler::draw_coefficients(const VarTvpGammaInput &i
 
     arma::mat u_sigma = arma::zeros<arma::mat>(k * tt, k);
 
-    arma::mat u_omega_inv_diag, u_sigma_inv_diag;
-    if (use_psi)
+    // The error precision, held as one k x k block per period rather than as the
+    // (k tt) x (k tt) block diagonal this used to spell out. Every reader of it
+    // is per-period already -- the smoother inverts one block at a time, the
+    // selection step sums a quadratic form period by period, and the output
+    // stores one block per period -- so the off-diagonal zeros were never read.
+    //
+    // With a covariance block they were also expensive to produce: Psi is
+    // itself k tt square, so kron(I_tt, u_omega_inv) followed by
+    // Psi' Omega Psi ran two dense products of order (k tt)^3 to fill a matrix
+    // whose tt diagonal blocks are each just Psi_j' u_omega_inv Psi_j. That is a
+    // factor tt^2 more arithmetic than the tt small products below, and 72 MB
+    // of it for k = 6, tt = 500. Blocks are stacked row-wise, matching u_sigma
+    // above, which the smoother reads the same way.
+    arma::mat u_sigma_inv_blocks(k * tt, k);
+    const auto refresh_u_sigma_inv_blocks = [&]()
     {
-        u_omega_inv_diag = arma::kron(diag_tt, u_omega_inv);
-        u_sigma_inv_diag = arma::trans(Psi) * u_omega_inv_diag * Psi;
-    }
-    else
-    {
-        u_sigma_inv_diag = arma::kron(diag_tt, u_omega_inv);
-    }
+        for (int i = 0; i < tt; i++)
+        {
+            if (use_psi)
+            {
+                u_sigma_inv_blocks.rows(k * i, k * (i + 1) - 1) =
+                    arma::trans(Psi.submat(k * i, k * i, k * (i + 1) - 1, k * (i + 1) - 1)) *
+                    u_omega_inv *
+                    Psi.submat(k * i, k * i, k * (i + 1) - 1, k * (i + 1) - 1);
+            }
+            else
+            {
+                u_sigma_inv_blocks.rows(k * i, k * (i + 1) - 1) = u_omega_inv;
+            }
+        }
+    };
+    refresh_u_sigma_inv_blocks();
 
     out.u_omega_inv = arma::mat(k, iterations);
     if (use_psi)
@@ -194,7 +217,7 @@ VarTvpGammaDraws VarTvpGammaSampler::draw_coefficients(const VarTvpGammaInput &i
         {
             for (int i = 0; i < tt; i++)
             {
-                u_sigma.rows(k * i, k * (i + 1) - 1) = arma::solve(u_sigma_inv_diag.submat(k * i, k * i, k * (i + 1) - 1, k * (i + 1) - 1), diag_k);
+                u_sigma.rows(k * i, k * (i + 1) - 1) = arma::solve(u_sigma_inv_blocks.rows(k * i, k * (i + 1) - 1), diag_k);
             }
 
             if (a_bvs)
@@ -228,16 +251,22 @@ VarTvpGammaDraws VarTvpGammaSampler::draw_coefficients(const VarTvpGammaInput &i
                 // The coefficients are a path, so a regressor is in or out for
                 // the whole sample: switching a position off zeroes its row in
                 // every period.
+                //
+                // The precision differs from period to period, so the quadratic
+                // form is summed block by block -- sum_t r_t' S_t r_t -- rather
+                // than as one dot product against a matrix that is all zeros
+                // outside those blocks.
                 bvs_sweep(*a_bvs, a, BvsScope::path_row, [&](const arma::mat &theta) {
+                    double quadratic_form = 0.0;
                     for (int i = 0; i < tt; i++)
                     {
-                        a_theta_res.subvec(i * k, (i + 1) * k - 1) =
-                            y.subvec(i * k, (i + 1) * k - 1) -
-                            z.rows(i * k, (i + 1) * k - 1) * theta.col(i);
+                        a_theta_res.col(i) =
+                            ymat.col(i) - z.rows(i * k, (i + 1) * k - 1) * theta.col(i);
+                        quadratic_form += arma::dot(a_theta_res.col(i),
+                                                    u_sigma_inv_blocks.rows(k * i, k * (i + 1) - 1) *
+                                                        a_theta_res.col(i));
                     }
-                    return -arma::as_scalar(arma::trans(a_theta_res) * u_sigma_inv_diag *
-                                            a_theta_res) /
-                           2;
+                    return -quadratic_form / 2;
                 });
             }
 
@@ -285,7 +314,13 @@ VarTvpGammaDraws VarTvpGammaSampler::draw_coefficients(const VarTvpGammaInput &i
             if (psi_bvs)
             {
                 psi_z = psi_z_bvs;
-                psi_u_omega_inv_diag = arma::kron(diag_tt, u_omega_inv.submat(1, 1, k - 1, k - 1));
+
+                // Equation i is explained by the errors above it, so the psi
+                // block carries k - 1 rows per period and its precision is the
+                // corresponding corner of u_omega_inv -- the same corner in
+                // every period, unlike the coefficient block above, so the
+                // quadratic form collapses to trace(S R R').
+                psi_u_omega_inv = u_omega_inv.submat(1, 1, k - 1, k - 1);
 
                 // path_row, as for `a` above: `psi` is a path, n_psi x tt, and
                 // excluding a contemporaneous coefficient has to exclude it in
@@ -306,13 +341,11 @@ VarTvpGammaDraws VarTvpGammaSampler::draw_coefficients(const VarTvpGammaInput &i
                 bvs_sweep(*psi_bvs, psi, BvsScope::path_row, [&](const arma::mat &theta) {
                     for (int i = 0; i < tt; i++)
                     {
-                        psi_theta_res.subvec(i * (k - 1), (i + 1) * (k - 1) - 1) =
+                        psi_theta_res.col(i) =
                             psi_y.col(i) -
                             psi_z.rows(i * (k - 1), (i + 1) * (k - 1) - 1) * theta.col(i);
                     }
-                    return -arma::as_scalar(arma::trans(psi_theta_res) * psi_u_omega_inv_diag *
-                                            psi_theta_res) /
-                           2;
+                    return -arma::accu((psi_u_omega_inv * psi_theta_res) % psi_theta_res) / 2;
                 });
             }
             fill_psi_path(Psi, psi, k);
@@ -330,15 +363,7 @@ VarTvpGammaDraws VarTvpGammaSampler::draw_coefficients(const VarTvpGammaInput &i
         }
 
         // Update u_sigma_inv
-        if (use_psi)
-        {
-            u_omega_inv_diag = arma::kron(diag_tt, u_omega_inv);
-            u_sigma_inv_diag = arma::trans(Psi) * u_omega_inv_diag * Psi;
-        }
-        else
-        {
-            u_sigma_inv_diag = arma::kron(diag_tt, u_omega_inv);
-        }
+        refresh_u_sigma_inv_blocks();
 
         // Store draws
         if (draw >= burnin)
@@ -380,7 +405,7 @@ VarTvpGammaDraws VarTvpGammaSampler::draw_coefficients(const VarTvpGammaInput &i
             {
                 for (int i = 0; i < tt; i++)
                 {
-                    out.u_sigma_inv.submat(i * kk, draw_pos, (i + 1) * kk - 1, draw_pos) = arma::vectorise(u_sigma_inv_diag.submat(i * k, i * k, (i + 1) * k - 1, (i + 1) * k - 1));
+                    out.u_sigma_inv.submat(i * kk, draw_pos, (i + 1) * kk - 1, draw_pos) = arma::vectorise(u_sigma_inv_blocks.rows(i * k, (i + 1) * k - 1));
                 }
             }
             else
@@ -420,6 +445,8 @@ ForecastDraws VarTvpGammaSampler::forecast(const VarTvpGammaInput &input,
     }
 
     arma::mat z = input.forecast.z;
+
+    require_forecast_regressors(input.spec, z);
 
     // Counted off the model's dimensions rather than off `z`: the coefficients
     // move with time, so what the forecast starts from is the last in-sample
@@ -466,14 +493,7 @@ ForecastDraws VarTvpGammaSampler::forecast(const VarTvpGammaInput &input,
                 // Update z
                 if (i > 0 && p_larger_than_0)
                 {
-                    if (i < p)
-                    {
-                        z.submat(i * k, 0, (i + 1) * k - 1, i * k * k - 1) = arma::kron(arma::trans(fcst.submat(0, draw, i * k - 1, draw)), diag_k);
-                    }
-                    else
-                    {
-                        z.submat(i * k, 0, (i + 1) * k - 1, p * k * k - 1) = arma::kron(arma::trans(fcst.submat((i - p) * k, draw, i * k - 1, draw)), diag_k);
-                    }
+                    update_forecast_lags(z, fcst, draw, i, k, p, diag_k);
                 }
                 // Update forecast
                 fcst.submat(i * k, draw, (i + 1) * k - 1, draw) = z.rows(i * k, (i + 1) * k - 1) * a.col(draw);

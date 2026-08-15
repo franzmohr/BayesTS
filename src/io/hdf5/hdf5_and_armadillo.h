@@ -43,6 +43,11 @@ arma::mat hdf5_dataset_to_armadillo_matrix_integer(const HighFive::File &file, c
 // Read integer value from dataset
 int get_dataset_int(const HighFive::File &file, const std::string &dataset_name);
 
+/// A single number held as a dataset rather than as an attribute, which is how
+/// these files carry a scalar prior. Not read through the matrix path: those
+/// datasets are one-dimensional, and the Armadillo conversion wants two.
+double get_dataset_double(const HighFive::File &file, const std::string &dataset_name);
+
 // Write Armadillo matrix to HDF5 dataset
 void write_armadillo_matrix_to_hdf5(HighFive::File &file, const std::string &dataset_name, const arma::mat &matrix, const bool add_mcpar);
 

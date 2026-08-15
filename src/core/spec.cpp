@@ -50,6 +50,21 @@ void VarSpec::validate() const
     {
         throw std::invalid_argument("model dimensions (p, s, m, n, h) cannot be negative");
     }
+    if (rank < 0)
+    {
+        throw std::invalid_argument("cointegration rank cannot be negative");
+    }
+    if (n_restricted < 0)
+    {
+        throw std::invalid_argument("the number of restricted deterministic terms cannot be "
+                                    "negative");
+    }
+    if (rank > k_ect())
+    {
+        throw std::invalid_argument("cointegration rank (" + std::to_string(rank) +
+                                    ") cannot exceed the " + std::to_string(k_ect()) +
+                                    " rows of the cointegration matrix (k + m + n_restricted)");
+    }
     if (iterations <= 0)
     {
         throw std::invalid_argument("iterations must be positive");

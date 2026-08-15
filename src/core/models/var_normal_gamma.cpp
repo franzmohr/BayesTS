@@ -23,6 +23,8 @@ using core::fill_strict_lower_triangle;
 using core::SsvsBlock;
 using core::ssvs_sweep;
 using core::stacked_response;
+using core::require_forecast_regressors;
+using core::update_forecast_lags;
 
 VarNormalGammaDraws VarNormalGammaSampler::draw_coefficients(const VarNormalGammaInput &input,
                                                              Reporter &reporter) const
@@ -40,7 +42,13 @@ VarNormalGammaDraws VarNormalGammaSampler::draw_coefficients(const VarNormalGamm
     const int nparams = static_cast<int>(z.n_cols);
     const bool use_a = nparams > 0;
     const int tt = static_cast<int>(y.n_elem) / k;
-    const arma::mat diag_tt = arma::eye(tt, tt);
+
+    // Both SUR blocks below need a precision that is the same in every period
+    // spread over the whole sample, kron(I_tt, .): tt identical blocks, and
+    // hence a density of 1/tt. Dense, the coefficient block alone would be
+    // k^2 tt^2 doubles rebuilt on every draw -- 72 MB for k = 6, tt = 500 --
+    // against k^2 tt nonzeros.
+    const arma::sp_mat diag_tt = arma::speye<arma::sp_mat>(tt, tt);
 
     const bool use_psi = input.use_psi();
 
@@ -89,7 +97,9 @@ VarNormalGammaDraws VarNormalGammaSampler::draw_coefficients(const VarNormalGamm
     // Covariance block
     int n_psi = 0;
     arma::vec psi, psi_prior_mu, psi_y;
-    arma::mat Psi, Psi_lambda, psi_prior_vinv, psi_post_v, psi_u_omega_inv_diag, psi_z;
+    arma::mat Psi, Psi_lambda, psi_prior_vinv, psi_post_v, psi_z, dpsi_z;
+    arma::mat psi_u_omega_inv;
+    arma::sp_mat psi_u_omega_inv_diag;
 
     std::optional<SsvsBlock> psi_ssvs;
     std::optional<BvsBlock> psi_bvs;
@@ -136,7 +146,8 @@ VarNormalGammaDraws VarNormalGammaSampler::draw_coefficients(const VarNormalGamm
     arma::mat u_omega_inv = u_sigma_inv;
     out.u_omega_inv = arma::mat(k, iterations);
     out.u_sigma_inv = arma::mat(k * k, iterations);
-    arma::mat u_sigma_inv_diag;
+    arma::sp_mat u_sigma_inv_diag;
+    arma::mat dz;
     arma::mat u = arma::reshape(y, k, tt);
 
     // Start simulation
@@ -147,7 +158,7 @@ VarNormalGammaDraws VarNormalGammaSampler::draw_coefficients(const VarNormalGamm
 
         if (use_a)
         {
-            u_sigma_inv_diag = arma::kron(diag_tt, u_sigma_inv);
+            u_sigma_inv_diag = arma::kron(diag_tt, arma::sp_mat(u_sigma_inv));
 
             if (a_bvs)
             {
@@ -155,9 +166,16 @@ VarNormalGammaDraws VarNormalGammaSampler::draw_coefficients(const VarNormalGamm
             }
 
             // Update a
-            a_post_v = a_prior_vinv + arma::trans(z) * u_sigma_inv_diag * z;
+            //
+            // The precision is symmetric, so z' D = (D z)' and one sparse
+            // product serves both the posterior precision and its right-hand
+            // side. Keeping the sparse operand on the left is also what picks
+            // Armadillo's sparse-times-dense path rather than promoting the
+            // whole block diagonal back to dense.
+            dz = u_sigma_inv_diag * z;
+            a_post_v = a_prior_vinv + arma::trans(dz) * z;
             a = draw_normal_precision(a_post_v,
-                                      a_prior_vinv * a_prior_mu + arma::trans(z) * u_sigma_inv_diag * y);
+                                      a_prior_vinv * a_prior_mu + arma::trans(dz) * y);
 
             if (a_ssvs)
             {
@@ -167,9 +185,15 @@ VarNormalGammaDraws VarNormalGammaSampler::draw_coefficients(const VarNormalGamm
             if (a_bvs)
             {
                 z = z_bvs;
+                // res' kron(I_tt, S) res is sum_t u_t' S u_t, that is
+                // trace(S U U') for the k x tt error matrix U. Contracting over
+                // k rather than forming the (k tt) quadratic form matters here
+                // and nowhere else: this closure runs twice per selected
+                // coefficient per draw, so it is the hottest arithmetic in the
+                // sampler.
                 bvs_sweep(*a_bvs, a, BvsScope::element, [&](const arma::vec &theta) {
-                    const arma::vec res = y - z * theta;
-                    return -arma::as_scalar(arma::trans(res) * u_sigma_inv_diag * res) / 2;
+                    const arma::mat res = arma::reshape(y - z * theta, k, tt);
+                    return -arma::accu((u_sigma_inv * res) % res) / 2;
                 });
             }
 
@@ -186,10 +210,15 @@ VarNormalGammaDraws VarNormalGammaSampler::draw_coefficients(const VarNormalGamm
             psi_y = arma::vectorise(u.rows(1, k - 1));
             build_psi_regressors(psi_z, u);
 
-            psi_u_omega_inv_diag = arma::kron(diag_tt, u_omega_inv.submat(1, 1, k - 1, k - 1));
-            psi_post_v = psi_prior_vinv + arma::trans(psi_z) * psi_u_omega_inv_diag * psi_z;
+            // Equation i is explained by the errors above it, so the psi block
+            // carries k - 1 rows per period rather than k, and its precision is
+            // the corresponding corner of u_omega_inv.
+            psi_u_omega_inv = u_omega_inv.submat(1, 1, k - 1, k - 1);
+            psi_u_omega_inv_diag = arma::kron(diag_tt, arma::sp_mat(psi_u_omega_inv));
+            dpsi_z = psi_u_omega_inv_diag * psi_z;
+            psi_post_v = psi_prior_vinv + arma::trans(dpsi_z) * psi_z;
             psi = draw_normal_precision(psi_post_v,
-                                        psi_prior_vinv * psi_prior_mu + arma::trans(psi_z) * psi_u_omega_inv_diag * psi_y);
+                                        psi_prior_vinv * psi_prior_mu + arma::trans(dpsi_z) * psi_y);
 
             if (psi_ssvs)
             {
@@ -200,8 +229,8 @@ VarNormalGammaDraws VarNormalGammaSampler::draw_coefficients(const VarNormalGamm
             {
                 psi_z = psi_z_bvs;
                 bvs_sweep(*psi_bvs, psi, BvsScope::element, [&](const arma::vec &theta) {
-                    const arma::vec res = psi_y - psi_z * theta;
-                    return -arma::as_scalar(arma::trans(res) * psi_u_omega_inv_diag * res) / 2;
+                    const arma::mat res = arma::reshape(psi_y - psi_z * theta, k - 1, tt);
+                    return -arma::accu((psi_u_omega_inv * res) % res) / 2;
                 });
             }
 
@@ -282,6 +311,8 @@ ForecastDraws VarNormalGammaSampler::forecast(const VarNormalGammaInput &input,
 
     arma::mat z = input.forecast.z;
 
+    require_forecast_regressors(input.spec, z);
+
     // The coefficient draws are only consulted when there are regressors to
     // apply them to or a contemporaneous matrix to split off; without either,
     // the path is the error process alone.
@@ -328,14 +359,7 @@ ForecastDraws VarNormalGammaSampler::forecast(const VarNormalGammaInput &input,
                 // Update z
                 if (i > 0 && p_larger_than_0)
                 {
-                    if (i < p)
-                    {
-                        z.submat(i * k, 0, (i + 1) * k - 1, i * k * k - 1) = arma::kron(arma::trans(fcst.submat(0, draw, i * k - 1, draw)), diag_k);
-                    }
-                    else
-                    {
-                        z.submat(i * k, 0, (i + 1) * k - 1, p * k * k - 1) = arma::kron(arma::trans(fcst.submat((i - p) * k, draw, i * k - 1, draw)), diag_k);
-                    }
+                    update_forecast_lags(z, fcst, draw, i, k, p, diag_k);
                 }
                 // Update forecast
                 fcst.submat(i * k, draw, (i + 1) * k - 1, draw) = z.rows(i * k, (i + 1) * k - 1) * a.col(draw);

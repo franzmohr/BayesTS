@@ -411,4 +411,88 @@ void VarTvpStochvolInput::validate() const
     require_shape(initial.h, tt, k, "initial log-volatility path");
 }
 
+
+void VecNormalWishartInput::validate() const
+{
+    const arma::uword k = static_cast<arma::uword>(spec.k);
+    const arma::uword tt = checked_periods(spec, train);
+    const arma::uword n_a = train.nparams();
+
+    if (use_a())
+    {
+        require_stacked_regressors(train, tt, k);
+
+        // The columns of z have to be the ones the dimensions describe. Counted
+        // rather than trusted, because the two arrive from different places in a
+        // file -- z from /data/train, the dimensions from /model -- and a spec
+        // that disagrees with its data fails nowhere on its own: the sampler
+        // sizes everything off z and runs to completion on a model that is not
+        // the one the dimensions name. That is the worst kind of wrong, because
+        // the output looks like output.
+        const arma::uword expected = static_cast<arma::uword>(spec.nparams_per_period_vec());
+        if (n_a != expected)
+        {
+            throw std::invalid_argument(
+                "z has " + std::to_string(n_a) + " columns but the model dimensions describe " +
+                std::to_string(expected) + " coefficients (k*rank + k*(k*(p-1) + m*s + n) with "
+                "k=" + std::to_string(spec.k) + ", p=" + std::to_string(spec.p) +
+                ", m=" + std::to_string(spec.m) + ", s=" + std::to_string(spec.s) +
+                ", n=" + std::to_string(spec.n) + ", rank=" + std::to_string(spec.rank) + ")");
+        }
+
+        validate_normal_block(a_prior, initial.a, n_a, "a");
+
+        if (spec.uses_varsel())
+        {
+            validate_varsel(varsel_prior, initial.a_lambda, n_a, spec.varsel, "a");
+
+            // Selection may not reach the loadings. Their prior precision is
+            // rebuilt from the cointegration space prior at the top of every
+            // draw -- the same matrix SSVS moves between spike and slab, and the
+            // same block whose regressors BVS masks -- so whichever writes last
+            // wins and neither gets what it meant. Excluding a loading is also a
+            // change in the rank of Pi, which beta's normalisation does not
+            // model. Both schemes take their positions from the same `include`,
+            // so one rule covers them.
+            if (use_beta() && varsel_prior.include.n_elem > 0 &&
+                varsel_prior.include.min() < static_cast<arma::uword>(spec.n_alpha()))
+            {
+                throw std::invalid_argument(
+                    "variable selection cannot be applied to the " +
+                    std::to_string(spec.n_alpha()) +
+                    " loading coefficients at the front of a VEC's a; restrict the selected "
+                    "positions to the coefficients after them");
+            }
+        }
+    }
+
+    if (use_beta())
+    {
+        const arma::uword n_beta = static_cast<arma::uword>(spec.n_beta());
+        require_length(initial.beta, n_beta, "initial beta");
+
+        // The error correction regressors, which nothing checked: the sampler
+        // transposes w to k_ect x tt and multiplies beta' into it, so a w of the
+        // wrong width fails inside a Kronecker product rather than here.
+        require_shape(train.w, tt, static_cast<arma::uword>(spec.k_ect()),
+                      "error correction regressors w");
+
+        // k_ect square, not n_beta square: P_tau^-1 is the prior's central
+        // location for the cointegration *space*, so it is indexed by the rows of
+        // beta and carries no rank dimension. It enters the draws only through
+        // kron(., P_tau^-1) and beta' P_tau^-1 beta, both of which want k_ect.
+        // Demanding n_beta here happened to pass at rank one, where the two
+        // coincide, and rejected every well-formed file above it.
+        require_square(beta_prior.p_tau_inv, static_cast<arma::uword>(spec.k_ect()),
+                       "prior precision of the cointegration space");
+    }
+
+    if (u_sigma_prior.df <= 0)
+    {
+        throw std::invalid_argument("Wishart prior degrees of freedom must be positive");
+    }
+    require_square(u_sigma_prior.scale, k, "Wishart prior scale");
+    require_square(initial.u_sigma_inv, k, "initial error precision");
+}
+
 } // namespace bayests

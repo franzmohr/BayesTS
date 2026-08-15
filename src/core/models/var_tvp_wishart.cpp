@@ -20,6 +20,8 @@ using core::BvsScope;
 using core::bvs_sweep;
 using core::draw_normal_precision;
 using core::stacked_response;
+using core::require_forecast_regressors;
+using core::update_forecast_lags;
 
 VarTvpWishartDraws VarTvpWishartSampler::draw_coefficients(const VarTvpWishartInput &input,
                                                        Reporter &reporter) const
@@ -226,6 +228,8 @@ ForecastDraws VarTvpWishartSampler::forecast(const VarTvpWishartInput &input,
     }
 
     arma::mat z = input.forecast.z;
+
+    require_forecast_regressors(input.spec, z);
     const int nparams = static_cast<int>(z.n_cols);
     const bool use_a = nparams > 0;
 
@@ -268,14 +272,7 @@ ForecastDraws VarTvpWishartSampler::forecast(const VarTvpWishartInput &input,
                 // Update z
                 if (i > 0 && p_larger_than_0)
                 {
-                    if (i < p)
-                    {
-                        z.submat(i * k, 0, (i + 1) * k - 1, i * k * k - 1) = arma::kron(arma::trans(fcst.submat(0, draw, i * k - 1, draw)), diag_k);
-                    }
-                    else
-                    {
-                        z.submat(i * k, 0, (i + 1) * k - 1, p * k * k - 1) = arma::kron(arma::trans(fcst.submat((i - p) * k, draw, i * k - 1, draw)), diag_k);
-                    }
+                    update_forecast_lags(z, fcst, draw, i, k, p, diag_k);
                 }
                 // Update forecast
                 fcst.submat(i * k, draw, (i + 1) * k - 1, draw) = z.rows(i * k, (i + 1) * k - 1) * a.col(draw);

@@ -22,6 +22,8 @@ using core::draw_normal_precision;
 using core::SsvsBlock;
 using core::ssvs_sweep;
 using core::stacked_response;
+using core::require_forecast_regressors;
+using core::update_forecast_lags;
 
 VarNormalWishartDraws VarNormalWishartSampler::draw_coefficients(const VarNormalWishartInput &input,
                                                                  Reporter &reporter) const
@@ -48,8 +50,14 @@ VarNormalWishartDraws VarNormalWishartSampler::draw_coefficients(const VarNormal
 
     // Coefficients
     arma::vec a, prior_a_mu;
-    arma::mat prior_a_vinv, diag_tt;
-    arma::mat post_a_v, u_sigma_inv_diag;
+    arma::mat prior_a_vinv;
+    arma::mat post_a_v, dz;
+
+    // The error precision is the same in every period, so the block diagonal
+    // the SUR form needs is kron(I_tt, u_sigma_inv): tt identical k x k blocks,
+    // and hence a density of 1/tt. Dense, it would be k^2 tt^2 doubles rebuilt
+    // on every draw -- 72 MB for k = 6, tt = 500 -- against k^2 tt nonzeros.
+    arma::sp_mat diag_tt, u_sigma_inv_diag;
 
     // Variable selection. Only one of the two is ever engaged.
     std::optional<SsvsBlock> a_ssvs;
@@ -58,7 +66,7 @@ VarNormalWishartDraws VarNormalWishartSampler::draw_coefficients(const VarNormal
 
     if (use_a)
     {
-        diag_tt = arma::eye(tt, tt);
+        diag_tt = arma::speye<arma::sp_mat>(tt, tt);
         prior_a_mu = input.a_prior.mu;
         prior_a_vinv = input.a_prior.v_inv;
         a = input.initial.a;
@@ -96,7 +104,7 @@ VarNormalWishartDraws VarNormalWishartSampler::draw_coefficients(const VarNormal
 
         if (use_a)
         {
-            u_sigma_inv_diag = arma::kron(diag_tt, u_sigma_inv);
+            u_sigma_inv_diag = arma::kron(diag_tt, arma::sp_mat(u_sigma_inv));
 
             if (a_bvs)
             {
@@ -104,9 +112,16 @@ VarNormalWishartDraws VarNormalWishartSampler::draw_coefficients(const VarNormal
             }
 
             // Update a
-            post_a_v = prior_a_vinv + arma::trans(z) * u_sigma_inv_diag * z;
+            //
+            // The precision is symmetric, so z' D = (D z)' and one sparse
+            // product serves both the posterior precision and its right-hand
+            // side. Keeping the sparse operand on the left is also what picks
+            // Armadillo's sparse-times-dense path rather than promoting the
+            // whole block diagonal back to dense.
+            dz = u_sigma_inv_diag * z;
+            post_a_v = prior_a_vinv + arma::trans(dz) * z;
             a = draw_normal_precision(post_a_v,
-                                      prior_a_vinv * prior_a_mu + arma::trans(z) * u_sigma_inv_diag * y);
+                                      prior_a_vinv * prior_a_mu + arma::trans(dz) * y);
 
             if (a_ssvs)
             {
@@ -116,9 +131,15 @@ VarNormalWishartDraws VarNormalWishartSampler::draw_coefficients(const VarNormal
             if (a_bvs)
             {
                 z = z_bvs;
+                // res' kron(I_tt, S) res is sum_t u_t' S u_t, that is
+                // trace(S U U') for the k x tt error matrix U. Contracting over
+                // k rather than forming the (k tt) quadratic form matters here
+                // and nowhere else: this closure runs twice per selected
+                // coefficient per draw, so it is the hottest arithmetic in the
+                // sampler.
                 bvs_sweep(*a_bvs, a, BvsScope::element, [&](const arma::vec &theta) {
-                    const arma::vec res = y - z * theta;
-                    return -arma::as_scalar(arma::trans(res) * u_sigma_inv_diag * res) / 2;
+                    const arma::mat res = arma::reshape(y - z * theta, k, tt);
+                    return -arma::accu((u_sigma_inv * res) % res) / 2;
                 });
             }
 
@@ -170,6 +191,8 @@ ForecastDraws VarNormalWishartSampler::forecast(const VarNormalWishartInput &inp
     }
 
     arma::mat z = input.forecast.z;
+
+    require_forecast_regressors(input.spec, z);
     const int nparams = static_cast<int>(z.n_cols);
     const bool use_a = nparams > 0;
 
@@ -211,14 +234,7 @@ ForecastDraws VarNormalWishartSampler::forecast(const VarNormalWishartInput &inp
                 // Update z
                 if (i > 0 && p_larger_than_0)
                 {
-                    if (i < p)
-                    {
-                        z.submat(i * k, 0, (i + 1) * k - 1, i * k * k - 1) = arma::kron(arma::trans(fcst.submat(0, draw, i * k - 1, draw)), diag_k);
-                    }
-                    else
-                    {
-                        z.submat(i * k, 0, (i + 1) * k - 1, p * k * k - 1) = arma::kron(arma::trans(fcst.submat((i - p) * k, draw, i * k - 1, draw)), diag_k);
-                    }
+                    update_forecast_lags(z, fcst, draw, i, k, p, diag_k);
                 }
                 // Update forecast
                 fcst.submat(i * k, draw, (i + 1) * k - 1, draw) = z.rows(i * k, (i + 1) * k - 1) * coefficients.a.col(draw);

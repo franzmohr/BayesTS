@@ -102,6 +102,18 @@ public:
     void log_likelihood(const std::filesystem::path& filepath) override;
 };
 
+class VecNormalWishart : public BaseModel
+{
+private:
+    // File path
+    std::filesystem::path filepath;
+public:
+    VecNormalWishart();
+    ~VecNormalWishart() override;
+    void draw_coefficients(const std::filesystem::path &filepath_arg) override;
+    void forecast(const std::filesystem::path& filepath) override;
+    void log_likelihood(const std::filesystem::path& filepath) override;
+};
 
 // Factory function to create models based on type string
 std::unique_ptr<BaseModel> create_model(const std::string& model_type);

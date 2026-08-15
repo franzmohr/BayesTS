@@ -19,7 +19,8 @@ add_library(bayests_core
             models/var_normal_wishart.cpp
             models/var_tvp_gamma.cpp
             models/var_tvp_wishart.cpp
-            models/var_tvp_stochvol.cpp)
+            models/var_tvp_stochvol.cpp
+            models/vec_normal_wishart.cpp)
 
 # Namespaced alias. Target names are global to a build tree, so the real names
 # carry a bayests_ prefix; this is the name a parent project that pulls BayesTS

@@ -21,6 +21,9 @@ struct TrainData
     /// read the same way, which is how the HDF5 files store it.
     arma::mat y;
 
+    /// Observations of the error correction term.
+    arma::mat w;
+
     /// Regressors, (tt * k) rows by nparams columns, laid out to multiply the
     /// stacked response directly. Empty when the model has no regressors at
     /// all -- that is the switch the samplers test, not a separate flag.

@@ -35,10 +35,9 @@ structs underneath get reshaped several times on the way there.
    * `results.h` gets `<Model>Draws`,
    * `priors.h` gets any prior block that is new rather than shared, and
    * `spec.h` only if the model needs a knob no other model has.
-   Settle the member names
-   and the matrix dimensions here and write them into the comments: everything
-   in the three steps that follow is written against them, so a rename at this
-   point costs one file and a rename after step 4 costs five.
+   Settle the member names and the matrix dimensions here and write them into
+   the comments: everything in the three steps that follow is written against
+   them, so a rename at this point costs one file and a rename after step 4 costs five.
 2. **The sampler declaration, `include/bayests/<model>.h`.** One class,
    `<Model>Sampler`, with `draw_coefficients`, `forecast` and `log_likelihood`.
    This is the whole contract an embedded host sees; nothing below `src/` is

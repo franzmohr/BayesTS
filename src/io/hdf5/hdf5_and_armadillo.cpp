@@ -6,6 +6,7 @@
 #include <vector>
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 
 // Returns true if the path has an HDF5 extension (.hdf5 or .h5), case-insensitive
 bool is_hdf5_file(const std::filesystem::path &filepath)
@@ -59,6 +60,31 @@ int get_attribute_int(const HighFive::File &file, const std::string &group_name,
 	try {
 		HighFive::Group group = file.getGroup(group_name);
 		HighFive::Attribute attr = group.getAttribute(attr_name);
+
+		// The class is read rather than assumed, because a writer does not
+		// reliably pick the one the value deserves. R has no integer literal
+		// unless it is asked for -- `p = 2` is a double, `p = 2L` an integer --
+		// so a dimension written from that side arrives as H5T_IEEE_F64LE as
+		// often as H5T_STD_I32LE, and the recorded VEC model files carry
+		// /model/p exactly that way while every dimension beside it is an int.
+		// Rejecting those files would be rejecting them over a detail of how
+		// their numbers were typed, not over anything they mean.
+		if (attr.getDataType().getClass() == HighFive::DataTypeClass::Float) {
+			double value;
+			attr.read(value);
+
+			// These are counts, so a fractional one is a file that does not say
+			// what it appears to say. Truncating would silently turn a lag order
+			// of 2.5 into 2; the caller would rather hear about it.
+			const double rounded = std::round(value);
+			if (std::abs(value - rounded) > 1e-9) {
+				throw std::runtime_error("Attribute '" + attr_name + "' of group '" +
+				                         group_name + "' is " + std::to_string(value) +
+				                         ", which is not a whole number");
+			}
+			return static_cast<int>(rounded);
+		}
+
 		int value;
 		attr.read(value);
 		return value;
@@ -189,10 +215,45 @@ arma::mat hdf5_dataset_to_armadillo_matrix_integer(const HighFive::File &file, c
 }
 
 // Read integer value from dataset
+double get_dataset_double(const HighFive::File &file, const std::string &dataset_name)
+{
+	try {
+		HighFive::DataSet dataset = file.getDataSet(dataset_name);
+		double value;
+		dataset.read(value);
+		return value;
+	}
+	catch (const HighFive::Exception &e) {
+		throw std::runtime_error("Failed to read double from dataset '" + dataset_name + "': " + std::string(e.what()));
+	}
+}
+
 int get_dataset_int(const HighFive::File &file, const std::string &dataset_name)
 {
 	try {
 		HighFive::DataSet dataset = file.getDataSet(dataset_name);
+
+		// The class is read rather than assumed, for the same reason as in
+		// get_attribute_int(): a whole number written from R is a double unless
+		// the writer asked for an integer, so /priors/u_sigma/df arrives as
+		// H5T_IEEE_F64LE in the recorded model files. HDF5 converts it happily,
+		// but HighFive logs a warning on every such read, and a warning that
+		// fires on correct input is one a reader learns to ignore.
+		if (dataset.getDataType().getClass() == HighFive::DataTypeClass::Float) {
+			double value;
+			dataset.read(value);
+
+			// A degrees-of-freedom or dimension that is not whole is a file that
+			// does not say what it appears to; truncating would hide it.
+			const double rounded = std::round(value);
+			if (std::abs(value - rounded) > 1e-9) {
+				throw std::runtime_error("Dataset '" + dataset_name + "' is " +
+				                         std::to_string(value) +
+				                         ", which is not a whole number");
+			}
+			return static_cast<int>(rounded);
+		}
+
 		int value;
 		dataset.read(value);
 		return value;

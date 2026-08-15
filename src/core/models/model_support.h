@@ -5,9 +5,37 @@
 #define BAYESTS_CORE_MODELS_MODEL_SUPPORT_H
 
 #include "bayests/data.h"
+#include "bayests/spec.h"
+
+#include <stdexcept>
+#include <string>
 
 namespace bayests::core
 {
+
+/// Rejects a forecast that was given no regressors by a model whose dimensions
+/// say it has coefficients to apply to them.
+///
+/// `/data/forecast/z` is read with read_mat_if_present(), so a file that omits it
+/// leaves this empty rather than failing. Empty then reads as "this model has no
+/// regressors": use_a comes out false, the signal term drops out of the
+/// recursion, and every horizon is drawn from the error distribution alone. That
+/// path is written to /posterior/forecast and reported as success, which is worse
+/// than producing nothing -- nothing downstream can tell it from a model whose
+/// coefficients are genuinely all zero.
+///
+/// Counted from the spec rather than from the posterior, so the message can say
+/// what was expected even when the draws are missing as well.
+inline void require_forecast_regressors(const VarSpec &spec, const arma::mat &z)
+{
+    if (spec.nparams_per_period() > 0 && z.n_elem == 0)
+    {
+        throw std::invalid_argument(
+            "the model has " + std::to_string(spec.nparams_per_period()) +
+            " coefficients but no forecast regressors were supplied; a forecast without them "
+            "would be drawn from the error distribution alone");
+    }
+}
 
 /// The response the samplers actually work with: the observations stacked
 /// period by period, vec(y'). Storing `y` period-per-row and stacking here
@@ -39,8 +67,16 @@ inline arma::vec stacked_response(const TrainData &train)
 /// V used to survive the mean solve and only fail on the draw.
 inline arma::vec draw_normal_precision(const arma::mat &precision, const arma::vec &rhs)
 {
-    // precision = r.t() * r, with r upper triangular.
-    const arma::mat r = arma::chol(precision);
+    // Symmetrised on the way in. Every caller builds this as a prior precision
+    // plus a Gram matrix, so it is symmetric in exact arithmetic -- but only in
+    // exact arithmetic: z' D z is accumulated as two products, and the (i,j) and
+    // (j,i) sums differ in their last bits. arma::chol() checks symmetry before
+    // factorising and warns when the difference exceeds its tolerance, which a
+    // flat prior makes easy to reach because there is nothing on the diagonal to
+    // dominate it. Reflecting the upper triangle costs one pass and is exactly
+    // right for a matrix that is symmetric up to rounding; the alternative is a
+    // warning on every draw and, when the asymmetry grows, a failure.
+    const arma::mat r = arma::chol(arma::symmatu(precision));
 
     // mean = precision^-1 rhs, by forward then back substitution.
     const arma::vec mean = arma::solve(arma::trimatu(r),
@@ -88,6 +124,33 @@ inline void fill_psi_path(arma::mat &Psi, const arma::mat &psi, const int k)
             Psi.submat(j * k + i, j * k, j * k + i, j * k + i - 1) =
                 arma::trans(psi.submat(i * (i - 1) / 2, j, (i + 1) * i / 2 - 1, j));
         }
+    }
+}
+
+/// Writes the simulated path into the lagged-endogenous columns of a forecast's
+/// regressor matrix, for horizon `i` of draw `draw`.
+///
+/// The lag blocks run most recent first: column block j carries y_{t-j}, which is
+/// how the training regressors are laid out -- verified against the recorded
+/// fixtures, whose first observation has the immediately preceding period in
+/// block one and the one before it in block two. At horizon i the block for lag j
+/// is therefore the forecast made for horizon i - j, and the blocks past lag i
+/// are still actual observations, which the caller supplied and this leaves alone.
+///
+/// Writing the path in chronological order instead -- one kron over
+/// fcst[0 .. i*k-1], which is what every forecast here used to do -- reverses the
+/// lags, putting A_1 on the oldest forecast rather than the newest. Only p <= 1
+/// is insensitive to it, a single block having no order to get wrong, which is
+/// why this survived: it needs p >= 2 and h >= 3 before the two spellings differ.
+inline void update_forecast_lags(arma::mat &z, const arma::mat &fcst, const arma::uword draw,
+                                 const int i, const int k, const int p, const arma::mat &diag_k)
+{
+    const int filled = i < p ? i : p;
+    for (int j = 1; j <= filled; j++)
+    {
+        z.submat(i * k, (j - 1) * k * k, (i + 1) * k - 1, j * k * k - 1) =
+            arma::kron(arma::trans(fcst.submat((i - j) * k, draw, (i - j + 1) * k - 1, draw)),
+                       diag_k);
     }
 }
 

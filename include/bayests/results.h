@@ -150,6 +150,32 @@ struct VarTvpStochvolDraws
     bool has_psi() const { return psi.n_elem > 0; }
 };
 
+
+/// Posterior draws of a VEC with a normal prior on the coefficients and a
+/// Wishart prior on the error precision.
+///
+/// Draws run along the columns, which is the layout the samplers accumulate in
+/// and the one that keeps a single draw contiguous. Hosts that want the
+/// convention their ecosystem expects -- draws in rows, for both the HDF5
+/// files and R -- transpose at the boundary.
+struct VecNormalWishartDraws
+{
+    arma::mat a;          ///< nparams x iterations. Empty when the model has no regressors.
+    arma::mat a_lambda;   ///< nparams x iterations of zeros and ones. Empty unless variable
+
+    arma::mat beta;     ///< n_beta x iterations. Empty when the model has no cointegration.
+
+    /// (k * k) x iterations; each column is a vectorised precision matrix.
+    arma::mat u_sigma_inv;
+
+    /// Length of the chain these draws came from.
+    arma::uword iterations() const { return u_sigma_inv.n_cols; }
+
+    bool has_a() const { return a.n_elem > 0; }
+    bool has_beta() const { return beta.n_elem > 0; }
+    bool has_lambda() const { return a_lambda.n_elem > 0; }
+};
+
 /// Simulated forecast paths, (h * k) x draws: one column per posterior draw,
 /// horizons stacked within a column in the same variable order as the sample.
 struct ForecastDraws

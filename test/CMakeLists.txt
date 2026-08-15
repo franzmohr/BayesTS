@@ -37,6 +37,32 @@ if(OpenMP_CXX_FOUND)
 endif()
 
 #####################################################################
+# Unit tests
+#
+# A different kind of test from the harnesses above, and registered separately
+# because it needs none of their machinery: no fixture, no recorded input, no
+# pinned thread count. The transformation it covers is a change of basis rather
+# than a draw, so it has an expected value that holds on every machine, and it
+# asserts against it and returns non-zero -- which is what lets these be
+# regressions rather than something to diff by hand.
+#
+# Linked against the algorithms library alone. That the test needs nothing from
+# bayests_models is the point: an algorithm that can be tested without standing
+# up a sampler belongs in src/core/algorithms.
+
+add_executable(bayests_unit_vec_to_var unit_vec_to_var.cpp)
+add_executable(bayests_unit_forecast_lags unit_forecast_lags.cpp)
+
+foreach(_unit bayests_unit_vec_to_var bayests_unit_forecast_lags)
+    target_link_libraries(${_unit} PRIVATE bayests_algorithms)
+    target_link_libraries(${_unit} PRIVATE bayests_warnings)
+
+    if(OpenMP_CXX_FOUND)
+        target_link_libraries(${_unit} PRIVATE OpenMP::OpenMP_CXX)
+    endif()
+endforeach()
+
+#####################################################################
 # Tests
 #
 # `ctest` is the entry point. Fixtures are generated into the build tree, never
@@ -115,6 +141,15 @@ elseif(UNIX AND NOT APPLE)
         endif()
     endforeach()
 endif()
+
+# The unit tests, which need only the shared libraries on the path: no fixture
+# to set up, and no thread pinning, since an exact identity does not care how
+# many threads computed it.
+foreach(_unit vec_to_var forecast_lags)
+    add_test(NAME "unit.${_unit}" COMMAND "bayests_unit_${_unit}")
+    set_tests_properties("unit.${_unit}" PROPERTIES
+        ENVIRONMENT_MODIFICATION "${_bayests_test_env_mod}")
+endforeach()
 
 # One generated model file plus the golden run over it.
 #
@@ -220,6 +255,43 @@ if(BAYESTS_WISHART_FIXTURE AND EXISTS "${BAYESTS_WISHART_FIXTURE}")
     message(STATUS "VarNormalWishart fixtures derived from ${BAYESTS_WISHART_FIXTURE}")
 else()
     message(STATUS "BAYESTS_WISHART_FIXTURE not set - VarNormalWishart tests skipped")
+endif()
+
+#####################################################################
+# VecNormalWishart
+#
+# Same arrangement as VarNormalWishart above and for the same reason -- no tool
+# here can write a VEC model file, so the test exists only when one is supplied:
+#
+#   cmake --preset <preset> -DBAYESTS_VEC_FIXTURE=path/to/recorded.h5
+#
+# The fixture step is a copy rather than a generator. bayests_golden writes the
+# posterior it draws back into the file it was given, so pointing it at the
+# supplied path directly would edit the caller's model file -- which is why the
+# whole fixture directory lives in the build tree.
+set(BAYESTS_VEC_FIXTURE "" CACHE FILEPATH
+    "Recorded VecNormalWishart model file the vec-* regression fixture is derived from")
+
+if(BAYESTS_VEC_FIXTURE AND EXISTS "${BAYESTS_VEC_FIXTURE}")
+    # `cmake -E copy` writes the file but will not create the directory holding
+    # it, and the generators that usually create this one may not have run.
+    file(MAKE_DIRECTORY "${BAYESTS_FIXTURE_DIR}")
+
+    add_test(NAME "fixture.vec-none"
+        COMMAND "${CMAKE_COMMAND}" -E copy
+                "${BAYESTS_VEC_FIXTURE}" "${BAYESTS_FIXTURE_DIR}/vec-none.h5")
+    set_tests_properties("fixture.vec-none" PROPERTIES
+        FIXTURES_SETUP "fx.vec-none")
+
+    add_test(NAME "golden.vec-none"
+        COMMAND bayests_golden "${BAYESTS_FIXTURE_DIR}/vec-none.h5")
+    set_tests_properties("golden.vec-none" PROPERTIES
+        FIXTURES_REQUIRED "fx.vec-none"
+        ENVIRONMENT "${_bayests_pin_threads}"
+        ENVIRONMENT_MODIFICATION "${_bayests_test_env_mod}")
+    message(STATUS "VecNormalWishart fixture copied from ${BAYESTS_VEC_FIXTURE}")
+else()
+    message(STATUS "BAYESTS_VEC_FIXTURE not set - VecNormalWishart tests skipped")
 endif()
 
 # VarTvpWishart carries no psi block, so it has no covar fixture. It is also the

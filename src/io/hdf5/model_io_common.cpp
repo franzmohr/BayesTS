@@ -28,6 +28,11 @@ bool optional_attribute_bool(const HighFive::File &file, const std::string &grou
     return attribute_exists(file, group, name) ? get_attribute_bool(file, group, name) : fallback;
 }
 
+double read_double(const HighFive::File &file, const std::string &dataset, const std::string &attr_name)
+{
+    return get_attribute_double(file, dataset, attr_name);
+}
+
 arma::vec read_vec(const HighFive::File &file, const std::string &dataset)
 {
     return arma::vectorise(hdf5_dataset_to_armadillo_matrix_double(file, dataset));
@@ -98,8 +103,17 @@ VarSpec read_spec(const HighFive::File &file, const char *covar_error)
     spec.p = optional_attribute_int(file, "/model", "p", 0);
     spec.m = optional_attribute_int(file, "/model", "m", 0);
     spec.s = optional_attribute_int(file, "/model", "s", 0);
-    spec.n = optional_attribute_int(file, "/model", "n", 0);
     spec.h = optional_attribute_int(file, "/model", "h", 0);
+
+    // Deterministic terms entering outside the cointegration space, under the one
+    // name every model uses for them. A VEC's terms restricted to that space are
+    // counted separately, below.
+    spec.n = optional_attribute_int(file, "/model", "n", 0);
+
+    // Absent from every VAR file, and left at zero there, which is what says
+    // "no cointegration relation" rather than "one of rank zero".
+    spec.rank = optional_attribute_int(file, "/model", "rank", 0);
+    spec.n_restricted = optional_attribute_int(file, "/model", "n_restricted", 0);
     spec.varsel = var_selection_from_string(
         optional_attribute_string(file, "/model", "varsel", "none"));
     spec.structural = optional_attribute_bool(file, "/model", "structural", false);
@@ -117,6 +131,20 @@ NormalPrior read_normal_prior(const HighFive::File &file, const std::string &gro
     NormalPrior prior;
     prior.mu = read_vec(file, group + "/mu");
     prior.v_inv = read_mat(file, group + "/v_inv");
+    return prior;
+}
+
+ConstantCointSpacePrior read_coint_space_prior_constant(const HighFive::File &file, const std::string &group)
+{
+    ConstantCointSpacePrior prior;
+
+    // A dataset, as every other prior in these files is -- the group holds
+    // /v_inv and /p_tau_inv next to the /type the reader dispatches on -- and not
+    // an attribute of the group.
+    prior.v_inv = get_dataset_double(file, group + "/v_inv");
+
+    // k_ect x k_ect, the shape of the cointegration space, not n_beta square.
+    prior.p_tau_inv = read_mat(file, group + "/p_tau_inv");
     return prior;
 }
 
