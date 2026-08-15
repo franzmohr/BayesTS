@@ -105,9 +105,28 @@ means the change did not move any number; any hunk is either the effect you
 intended or a regression, and it is worth being able to say which before opening
 a pull request.
 
-Two gaps to know about: `VarNormalWishart` has no generator and its tests appear
-only when `BAYESTS_WISHART_FIXTURE` points at a recorded model file, and
-`VarTvpWishart` has no fixture at all, so nothing currently exercises it.
+Two models have no generator, because `test/make_model_fixture.cpp` cannot write
+them. Their tests are registered only when pointed at a recorded model file, and
+are skipped with a note at configure time otherwise:
+
+```bash
+cmake --preset <your-preset> \
+      -DBAYESTS_WISHART_FIXTURE=path/to/VarNormalWishart.h5 \
+      -DBAYESTS_VEC_FIXTURE=path/to/VecNormalWishart.h5
+```
+
+`VarNormalWishart` derives three fixtures from its file, one per selection
+scheme, and so has a generation step; `VecNormalWishart` reads its file as it
+stands. Neither is at risk of being modified: `bayests_golden` stages its own
+copy under the temporary directory and clears the posterior there, so a recorded
+model file is only ever read.
+
+There is also a coverage gap worth knowing rather than a configuration one: no
+fixture yet has a forecast horizon for `VecNormalWishart`, so the path that
+rewrites its draws as a level VAR and forecasts from those is not exercised.
+Note that supplying `h` is not enough on its own -- `/data/forecast/z` has to be
+in the level layout, with `p + 1` blocks of endogenous lags, not the differenced
+layout `/data/train/z` uses.
 
 Fixtures are generated into the build tree. Nothing writes a `*.h5` into the
 source tree, and nothing should — see `test/CMakeLists.txt` for the generation
