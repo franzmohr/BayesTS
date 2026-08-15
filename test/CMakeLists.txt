@@ -265,31 +265,21 @@ endif()
 #
 #   cmake --preset <preset> -DBAYESTS_VEC_FIXTURE=path/to/recorded.h5
 #
-# The fixture step is a copy rather than a generator. bayests_golden writes the
-# posterior it draws back into the file it was given, so pointing it at the
-# supplied path directly would edit the caller's model file -- which is why the
-# whole fixture directory lives in the build tree.
+# No fixture step, unlike the block above. That one derives three files from a
+# single recording, one per selection scheme, and so needs a generator; this
+# needs the file exactly as it stands. Nothing has to be copied first either:
+# bayests_golden stages its own copy under the temporary directory and clears the
+# outputs there, so the supplied file is read and never written -- see
+# stage_fixture() in golden_models.cpp.
 set(BAYESTS_VEC_FIXTURE "" CACHE FILEPATH
-    "Recorded VecNormalWishart model file the vec-* regression fixture is derived from")
+    "Recorded VecNormalWishart model file the vec-* regression test reads")
 
 if(BAYESTS_VEC_FIXTURE AND EXISTS "${BAYESTS_VEC_FIXTURE}")
-    # `cmake -E copy` writes the file but will not create the directory holding
-    # it, and the generators that usually create this one may not have run.
-    file(MAKE_DIRECTORY "${BAYESTS_FIXTURE_DIR}")
-
-    add_test(NAME "fixture.vec-none"
-        COMMAND "${CMAKE_COMMAND}" -E copy
-                "${BAYESTS_VEC_FIXTURE}" "${BAYESTS_FIXTURE_DIR}/vec-none.h5")
-    set_tests_properties("fixture.vec-none" PROPERTIES
-        FIXTURES_SETUP "fx.vec-none")
-
-    add_test(NAME "golden.vec-none"
-        COMMAND bayests_golden "${BAYESTS_FIXTURE_DIR}/vec-none.h5")
+    add_test(NAME "golden.vec-none" COMMAND bayests_golden "${BAYESTS_VEC_FIXTURE}")
     set_tests_properties("golden.vec-none" PROPERTIES
-        FIXTURES_REQUIRED "fx.vec-none"
         ENVIRONMENT "${_bayests_pin_threads}"
         ENVIRONMENT_MODIFICATION "${_bayests_test_env_mod}")
-    message(STATUS "VecNormalWishart fixture copied from ${BAYESTS_VEC_FIXTURE}")
+    message(STATUS "VecNormalWishart test reads ${BAYESTS_VEC_FIXTURE}")
 else()
     message(STATUS "BAYESTS_VEC_FIXTURE not set - VecNormalWishart tests skipped")
 endif()
