@@ -388,15 +388,153 @@ if(WIN32)
         list(APPEND CPACK_GENERATOR "NSIS")
         message(STATUS "NSIS found: ${BAYESTS_MAKENSIS_EXECUTABLE} - 'package' also builds an installer")
 
+        # NSIS_MAX_STRLEN is compiled into makensis and into the stubs it
+        # embeds, so it is a property of the machine building the installer,
+        # not of the machine running it. The large-strings distribution that
+        # raises it is a zip unpacked over an ordinary install, which means
+        # any NSIS update silently restores the 1024-character default. The
+        # PATH code below is written to be correct at either limit -- report
+        # which one is in force so a reversion is at least visible. Note that
+        # execute_process spawns makensis directly, so /HDRINFO reaches it as
+        # a switch and not as a path some shell has helpfully rewritten.
+        execute_process(
+            COMMAND "${BAYESTS_MAKENSIS_EXECUTABLE}" /HDRINFO
+            OUTPUT_VARIABLE _bayests_hdrinfo
+            ERROR_VARIABLE _bayests_hdrinfo
+            RESULT_VARIABLE _bayests_hdrinfo_status)
+        if(_bayests_hdrinfo_status EQUAL 0
+           AND _bayests_hdrinfo MATCHES "NSIS_MAX_STRLEN=([0-9]+)")
+            if(CMAKE_MATCH_1 GREATER 1024)
+                set(_bayests_strlen_kind "large-strings build")
+            else()
+                set(_bayests_strlen_kind "stock build")
+            endif()
+            message(STATUS "NSIS string limit: ${CMAKE_MATCH_1} characters"
+                           " - ${_bayests_strlen_kind}")
+        endif()
+
         # CPack repeats the search on its own and only consults PATH and the
         # 64-bit registry key, so hand it the path we already resolved.
         set(CPACK_NSIS_EXECUTABLE "${BAYESTS_MAKENSIS_EXECUTABLE}")
 
         set(CPACK_NSIS_PACKAGE_NAME "${PROJECT_NAME} ${PROJECT_VERSION}")
         set(CPACK_NSIS_DISPLAY_NAME "${PROJECT_NAME} ${PROJECT_VERSION}")
-        # bayests is a command-line tool and useless unless it can be typed.
-        set(CPACK_NSIS_MODIFY_PATH ON)
         set(CPACK_NSIS_ENABLE_UNINSTALL_BEFORE_INSTALL ON)
+
+        # bayests is a command-line tool and useless unless it can be typed,
+        # so the installer asks whether to put <install dir>\bin on PATH, on a
+        # page of its own offering "for all users", "for the current user" and
+        # "do not add". Both that page and the code behind it come from here.
+        set(CPACK_NSIS_MODIFY_PATH ON)
+
+        # The AddToPath function CPack generates opens with
+        #
+        #     ReadEnvStr $1 PATH
+        #
+        # and stock makensis hands back an empty string for anything longer
+        # than NSIS_MAX_STRLEN (1024 characters). On a machine whose merged
+        # machine+user PATH is over that -- forty-odd entries will do it --
+        # the read comes back empty and the installer ends with "Warning! PATH
+        # too long installer unable to modify PATH!", leaving PATH untouched.
+        #
+        # That read feeds only the "is the directory already listed?" test;
+        # every read and write that matters goes to the registry hive picked
+        # on the page. So point the test at that same hive: its raw,
+        # unexpanded value is far shorter than the merged PATH, and it is the
+        # string being rewritten anyway. The length check stays, now measuring
+        # what is actually about to be written.
+        #
+        # CPack resolves its NSIS templates through CPACK_MODULE_PATH before
+        # falling back to the copies shipped with CMake, so patch copies at
+        # configure time rather than vendor a thousand lines that would then
+        # have to track CMake releases. It searches the module path for the
+        # bare file names, so the patched copies sit at the top of this
+        # directory. Clear it first: a patch that stops applying must not
+        # leave last configure's copy behind to be picked up anyway.
+        set(_bayests_nsis_dir "${CMAKE_CURRENT_BINARY_DIR}/CPackNSIS")
+        file(REMOVE_RECURSE "${_bayests_nsis_dir}")
+        set(CPACK_MODULE_PATH ${CMAKE_MODULE_PATH} "${_bayests_nsis_dir}")
+
+        set(_bayests_nsis_stock
+            "${CMAKE_ROOT}/Modules/Internal/CPack/NSIS.template.in")
+        set(_bayests_nsis_before [=[  ReadEnvStr $1 PATH
+  ; if the path is too long for a NSIS variable NSIS will return a 0
+  ; length string.  If we find that, then warn and skip any path
+  ; modification as it will trash the existing path.
+  StrLen $2 $1
+  IntCmp $2 0 CheckPathLength_ShowPathWarning CheckPathLength_Done CheckPathLength_Done]=])
+        set(_bayests_nsis_after [=[  ; Patched by the BayesTS build. Upstream reads the expanded PATH out of
+  ; the environment block here, which makensis truncates to nothing past
+  ; NSIS_MAX_STRLEN and which is not the string this function rewrites.
+  ; Read whichever hive the options page selected -- the one the writes
+  ; further down target -- and warn only if the result would not fit.
+  StrCmp $ADD_TO_PATH_ALL_USERS "1" 0 +3
+    ReadRegStr $1 ${NT_all_env} "PATH"
+    Goto +2
+    ReadRegStr $1 ${NT_current_env} "PATH"
+  StrLen $2 $1
+  StrLen $3 "$0;"
+  IntOp $2 $2 + $3
+  IntCmp $2 ${NSIS_MAX_STRLEN} CheckPathLength_ShowPathWarning CheckPathLength_Done CheckPathLength_ShowPathWarning]=])
+
+        if(NOT EXISTS "${_bayests_nsis_stock}")
+            message(WARNING
+                "CPack's NSIS template is not at ${_bayests_nsis_stock} - the "
+                "installer will refuse to edit a PATH over 1024 characters.")
+        else()
+            file(READ "${_bayests_nsis_stock}" _bayests_nsis_text)
+            string(FIND "${_bayests_nsis_text}" "${_bayests_nsis_before}"
+                   _bayests_nsis_hit)
+            if(_bayests_nsis_hit LESS 0)
+                message(WARNING
+                    "CPack's NSIS template no longer contains the PATH-length "
+                    "check this project patches - the installer will refuse to "
+                    "edit a PATH over 1024 characters.")
+            else()
+                string(REPLACE "${_bayests_nsis_before}" "${_bayests_nsis_after}"
+                       _bayests_nsis_text "${_bayests_nsis_text}")
+                file(WRITE "${_bayests_nsis_dir}/NSIS.template.in"
+                     "${_bayests_nsis_text}")
+            endif()
+        endif()
+
+        # The page starts on "Do not add", so a user who clicks straight
+        # through gets no PATH entry and a bayests that cannot be typed.
+        # Start on "for current user" instead: it is the one option that
+        # needs no elevation, and it writes to the same hive an unprivileged
+        # install puts its files under. "For all users" stays one click away.
+        #
+        # Field 2 is "do not add" and field 4 is "for current user"; their
+        # Top/Bottom coordinates tell those State lines apart from the three
+        # others in the file. The \r? is not optional-by-accident -- this
+        # template is CRLF where NSIS.template.in is LF.
+        set(_bayests_ini_stock
+            "${CMAKE_ROOT}/Modules/Internal/CPack/NSIS.InstallOptions.ini.in")
+        if(NOT EXISTS "${_bayests_ini_stock}")
+            message(WARNING
+                "CPack's NSIS options page is not at ${_bayests_ini_stock} - "
+                "the installer will default to leaving PATH alone.")
+        else()
+            file(READ "${_bayests_ini_stock}" _bayests_ini)
+            string(REGEX REPLACE "(Top=30\r?\nBottom=40\r?\n)State=1"
+                   "\\1State=0" _bayests_ini "${_bayests_ini}")
+            string(REGEX REPLACE "(Top=50\r?\nBottom=60\r?\n)State=0"
+                   "\\1State=1" _bayests_ini "${_bayests_ini}")
+            # The label above the buttons announces the old default.
+            string(REPLACE
+                "By default @CPACK_PACKAGE_INSTALL_DIRECTORY@ does not add its directory to the system PATH."
+                "@CPACK_PACKAGE_NAME@ is a command-line tool. Its directory has to be on the PATH to run it from anywhere."
+                _bayests_ini "${_bayests_ini}")
+            if(_bayests_ini MATCHES "Top=50\r?\nBottom=60\r?\nState=1")
+                file(WRITE "${_bayests_nsis_dir}/NSIS.InstallOptions.ini.in"
+                     "${_bayests_ini}")
+            else()
+                message(WARNING
+                    "CPack's NSIS options page no longer has the radio buttons "
+                    "this project re-orders - the installer will default to "
+                    "leaving PATH alone.")
+            endif()
+        endif()
     else()
         message(STATUS "NSIS not found - 'package' produces a ZIP archive only. "
                        "Install it from https://nsis.sourceforge.io/ to get an installer.")
