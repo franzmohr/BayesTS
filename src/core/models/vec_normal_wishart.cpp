@@ -41,12 +41,12 @@ namespace bayests
 
         const int n_a = static_cast<int>(z.n_cols);
         const int rank = static_cast<int>(input.spec.rank);
+        const int k_beta = static_cast<int>(input.spec.k_beta);
         const int n_alpha = static_cast<int>(input.spec.n_alpha());
         const bool use_non_alpha = n_a > n_alpha;
         const int n_beta = static_cast<int>(input.spec.n_beta());
-        const int k_beta = static_cast<int>(input.spec.k_beta);
         const bool use_a = n_a > 0;
-        const bool use_beta = n_beta > 0;
+        const bool use_beta = rank > 0;
         const int tt = static_cast<int>(y.n_elem) / k;
 
         const bool use_ssvs = input.spec.varsel == VarSelection::ssvs;
