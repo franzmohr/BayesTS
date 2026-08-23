@@ -6,6 +6,10 @@
 
 #include "bayests/data.h"
 #include "bayests/spec.h"
+// Both unit lower triangular matrices a model carries are unpacked there, and
+// the two are packed in different orders -- read that file before reaching for
+// either. Included here so that a model needs one header, not two.
+#include "core/algorithms/triangular_packing.h"
 
 #include <stdexcept>
 #include <string>
@@ -84,27 +88,6 @@ inline arma::vec draw_normal_precision(const arma::mat &precision, const arma::v
 
     // Cov(r^-1 z) = r^-1 r^-T = (r.t() * r)^-1 = precision^-1.
     return mean + arma::solve(arma::trimatu(r), arma::randn<arma::vec>(precision.n_rows));
-}
-
-/// Writes `packed` into the strict lower triangle of `dest`, row by row.
-///
-/// The contemporaneous matrix Psi is unit lower triangular, so the sampler
-/// carries only its free elements, packed row-major: row i holds i of them,
-/// starting at i(i-1)/2. This is the one place that indexing is spelled out --
-/// it is the same arithmetic whether the packed source is a psi draw, a
-/// psi_lambda indicator vector, or a column of structural coefficients out of a
-/// posterior, and whether `dest` is dense or sparse.
-///
-/// `dest` must already hold the unit diagonal; only the strict lower triangle is
-/// touched.
-template <class Matrix, class Packed>
-inline void fill_strict_lower_triangle(Matrix &dest, const Packed &packed)
-{
-    for (arma::uword i = 1; i < dest.n_rows; i++)
-    {
-        dest.submat(i, 0, i, i - 1) =
-            arma::trans(packed.subvec(i * (i - 1) / 2, (i + 1) * i / 2 - 1));
-    }
 }
 
 /// The same fill, once per period, into the block diagonal a time-varying Psi

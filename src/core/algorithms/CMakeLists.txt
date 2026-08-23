@@ -6,7 +6,7 @@ add_library(bayests_algorithms
             wishart.cpp wishart.h
             bvs.cpp bvs.h
             ssvs.cpp ssvs.h
-            vec_to_var.cpp vec_to_var.h
+            vec_to_var.cpp
             )
 
 add_library(BayesTS::algorithms ALIAS bayests_algorithms)

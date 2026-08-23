@@ -1,13 +1,18 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright (c) 2026 Franz X. Mohr
 
-#include "core/algorithms/vec_to_var.h"
+#include "bayests/vec_to_var.h"
+
+#include "core/algorithms/triangular_packing.h"
 
 #include <algorithm>
 #include <stdexcept>
 #include <string>
 
-namespace bayests::core
+// Declared in include/, unlike the rest of this directory: the transformation
+// is part of the contract an embedded host sees. The numerics stay here, with
+// the other algorithms.
+namespace bayests
 {
 
 namespace
@@ -137,9 +142,24 @@ VarNormalWishartDraws vec_to_var_coefficients(const VarSpec &spec,
     const arma::mat diag_k = arma::eye<arma::mat>(k, k);
     arma::mat vec_coef, var_coef(k, ncols_var), pi;
 
+    // A_0, which is the identity unless the model is structural. It multiplies
+    // the differences on the left of the VEC and the levels on the left of the
+    // VAR, so the substitution below leaves it where it is -- but it is also
+    // what y_{t-1} picks up on the way, which is why A_1 is A_0 + Pi_y + Gamma_1
+    // and not I + Pi_y + Gamma_1. Redrawn per draw, since the contemporaneous
+    // coefficients are sampled along with the rest.
+    arma::mat a_0 = diag_k;
+
     for (arma::uword draw = 0; draw < iterations; draw++)
     {
         var_coef.zeros();
+
+        if (n_structural > 0)
+        {
+            a_0 = diag_k;
+            core::fill_strict_lower_triangle_by_column(
+                a_0, draws.a.submat(nparams_vec - n_structural, draw, nparams_vec - 1, draw));
+        }
 
         // Pi = alpha beta', whose columns are the loadings on the levels of the
         // endogenous and unmodelled variables and on the restricted
@@ -158,11 +178,11 @@ VarNormalWishartDraws vec_to_var_coefficients(const VarSpec &spec,
                                      k, ncols_vec);
         }
 
-        // A_i = Gamma_i - Gamma_{i-1}, with the identity and Pi_y joining the
-        // first block and Gamma_{p-1} appearing in A_p with a negative sign
-        // only. Blocks the model does not have simply drop out of the sum, which
-        // is what makes p <= 1 -- a VEC with no lagged differences, whose level
-        // VAR is the single block A_1 = I + Pi_y -- fall out of the same loop.
+        // A_i = Gamma_i - Gamma_{i-1}, with A_0 and Pi_y joining the first block
+        // and Gamma_{p-1} appearing in A_p with a negative sign only. Blocks the
+        // model does not have simply drop out of the sum, which is what makes
+        // p <= 1 -- a VEC with no lagged differences, whose level VAR is the
+        // single block A_1 = A_0 + Pi_y -- fall out of the same loop.
         for (arma::uword i = 0; i < n_a; i++)
         {
             const arma::uword first = i * k;
@@ -178,7 +198,7 @@ VarNormalWishartDraws vec_to_var_coefficients(const VarSpec &spec,
             }
             else
             {
-                var_coef.cols(first, last) += diag_k;
+                var_coef.cols(first, last) += a_0;
                 if (use_coint)
                 {
                     var_coef.cols(first, last) += pi.cols(0, k - 1);
@@ -240,4 +260,4 @@ VarNormalWishartDraws vec_to_var_coefficients(const VarSpec &spec,
     return out;
 }
 
-} // namespace bayests::core
+} // namespace bayests

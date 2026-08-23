@@ -20,6 +20,7 @@ using core::BvsScope;
 using core::bvs_sweep;
 using core::draw_normal_precision;
 using core::fill_strict_lower_triangle;
+using core::fill_strict_lower_triangle_by_column;
 using core::SsvsBlock;
 using core::ssvs_sweep;
 using core::stacked_response;
@@ -372,7 +373,9 @@ ForecastDraws VarNormalGammaSampler::forecast(const VarNormalGammaInput &input,
             if (structural)
             {
                 A0_inv = arma::eye<arma::mat>(k, k);
-                fill_strict_lower_triangle(A0_inv, a0.col(draw));
+                // By column, unlike Psi a few lines up: see
+                // core/algorithms/triangular_packing.h.
+                fill_strict_lower_triangle_by_column(A0_inv, a0.col(draw));
                 A0_inv = arma::solve(A0_inv, diag_k);
                 fcst.submat(i * k, draw, (i + 1) * k - 1, draw) = A0_inv * fcst.submat(i * k, draw, (i + 1) * k - 1, draw);
             }

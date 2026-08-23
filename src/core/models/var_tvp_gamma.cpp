@@ -21,6 +21,7 @@ using core::bvs_sweep;
 using core::draw_normal_precision;
 using core::fill_psi_path;
 using core::fill_strict_lower_triangle;
+using core::fill_strict_lower_triangle_by_column;
 using core::stacked_response;
 using core::require_forecast_regressors;
 using core::update_forecast_lags;
@@ -506,10 +507,9 @@ ForecastDraws VarTvpGammaSampler::forecast(const VarTvpGammaInput &input,
             if (structural)
             {
                 A0_inv = arma::eye<arma::mat>(k, k);
-                for (int j = 1; j < k; j++)
-                {
-                    A0_inv.submat(j, 0, j, j - 1) = arma::trans(a0.submat(j * (j - 1) / 2, draw, (j + 1) * j / 2 - 1, draw));
-                }
+                // By column, unlike Psi: see
+                // core/algorithms/triangular_packing.h.
+                fill_strict_lower_triangle_by_column(A0_inv, a0.col(draw));
                 A0_inv = arma::solve(A0_inv, diag_k);
                 fcst.submat(i * k, draw, (i + 1) * k - 1, draw) = A0_inv * fcst.submat(i * k, draw, (i + 1) * k - 1, draw);
             }

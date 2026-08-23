@@ -4,9 +4,9 @@
 #include "bayests/vec_normal_wishart.h"
 
 #include "bayests/var_normal_wishart.h"
+#include "bayests/vec_to_var.h"
 #include "core/algorithms/bvs.h"
 #include "core/algorithms/ssvs.h"
-#include "core/algorithms/vec_to_var.h"
 #include "core/algorithms/wishart.h"
 #include "core/models/model_support.h"
 
@@ -326,11 +326,11 @@ namespace bayests
         // the VAR's forecast rejects a `z` that does not match the converted
         // coefficients.
         VarNormalWishartInput var_input;
-        var_input.spec = core::vec_to_var_spec(input.spec);
+        var_input.spec = vec_to_var_spec(input.spec);
         var_input.forecast = input.forecast;
 
         const VarNormalWishartDraws var_coefficients =
-            core::vec_to_var_coefficients(input.spec, coefficients);
+            vec_to_var_coefficients(input.spec, coefficients);
 
         return VarNormalWishartSampler{}.forecast(var_input, var_coefficients, reporter);
     }

@@ -26,6 +26,45 @@ Dates are ISO. Versions follow the `project(VERSION)` in `CMakeLists.txt`.
 
 ### Fixed
 
+* **The VEC-to-VAR transformation put the identity where A_0 belongs.**
+  `vec_to_var_coefficients()` built the first level lag as `I + Pi_y + Gamma_1`.
+  For a structural model it is `A_0 + Pi_y + Gamma_1`: the contemporaneous matrix
+  stands to the left of `dy_t`, hence to the left of `y_t`, and the `y_{t-1}` that
+  substituting `dy_t = y_t - y_{t-1}` gives back carries `A_0` into `A_1`. Every
+  other block was already right — `A_0` does not enter them — and so was the
+  pass-through of the contemporaneous coefficients themselves.
+
+  *Draws change* for structural VEC models, and for nothing else: `A_0` is the
+  identity whenever `spec.structural` is false, which restores the old
+  expression exactly. What moves is `A_1`, by `A_0 - I`, which is strictly lower
+  triangular — so the first equation was right and every other one was wrong by
+  the loadings of the equations above it. The visible effect is on
+  `VecNormalWishartSampler::forecast()`, which converts before it simulates, and
+  on any host that asks for the level parameterisation. Nothing recorded covers
+  it: no fixture is a structural VEC, and the full suite passes unchanged.
+
+  `test/unit_vec_to_var.cpp` gained a case that pins the identity for `k = 3`
+  and asserts that the identity matrix would *not* satisfy it.
+
+* **A_0 was unpacked in Psi's order, which is not A_0's order.** Both are unit
+  lower triangular and stored as their `k(k-1)/2` free elements, but Psi is packed
+  row by row and `A_0` column by column — the order the surviving columns of
+  `kron(-y, I_k)` are in once the diagonal and everything above it is dropped.
+  One function, `fill_strict_lower_triangle()`, was reading both, and its comment
+  claimed the two were the same arithmetic. They agree up to `k = 3` and diverge
+  from `k = 4` on. The forecast of a structural `VarNormalGamma`,
+  `VarNormalStochvol` or `VarTvpGamma` therefore inverted a transposed-in-part
+  `A_0` for four variables or more. The two orders now have a function each, in
+  `core/algorithms/triangular_packing.h`, which says why they differ.
+
+  *Draws change* for structural models with `k >= 4`, in the forecast only —
+  `A_0` is not read anywhere else — and by an amount that has no bound worth
+  quoting, since it is a different matrix being inverted rather than the same one
+  computed differently. For `k <= 3` the two orders coincide element for element
+  and *draws are unchanged*: the fixtures are all `k = 3` and include a structural
+  forecast for each of the three models, and all 67 tests pass with the recorded
+  fingerprints.
+
 * **BVS was not selecting over the contemporaneous coefficients in the
   time-varying models.** `VarTvpGamma` and `VarTvpStochvol` hold `psi` as a path,
   `n_psi x tt`, but the candidate the likelihood ratio scored switched a position
@@ -48,6 +87,21 @@ Dates are ISO. Versions follow the `project(VERSION)` in `CMakeLists.txt`.
   byte-identical.
 
 ### Changed
+
+* **The VEC-to-VAR transformation is now part of the public contract.**
+  `vec_to_var_spec()` and `vec_to_var_coefficients()` moved from
+  `src/core/algorithms/vec_to_var.h` to `include/bayests/vec_to_var.h` and, with
+  the header, from namespace `bayests::core` to `bayests`. The implementation
+  did not move and is unchanged, so *draws are unchanged* — the arithmetic is
+  the same instructions on the same inputs; the full `ctest` suite, 67 tests
+  including the golden fingerprints, passes untouched.
+
+  The reason to promote it: a VEC and its level VAR are the same model in two
+  parameterisations, and an embedded host that wants the level one for impulse
+  responses, variance decompositions or a forecast in levels had no way to ask
+  for it. `VecNormalWishartSampler::forecast()` already used the transformation
+  internally, so the numerics were there and only the declaration was out of
+  reach. bvartools' `bvecmodel_to_bvarmodel()` is the first outside caller.
 
 * `ctest` now carries the shared library search path on Linux as well as Windows.
   The Windows half already prepended each `CMAKE_PREFIX_PATH` entry's `bin/` to

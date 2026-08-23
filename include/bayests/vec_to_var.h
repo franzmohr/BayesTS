@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright (c) 2026 Franz X. Mohr
 
-#ifndef BAYESTS_CORE_ALGORITHMS_VEC_TO_VAR_H
-#define BAYESTS_CORE_ALGORITHMS_VEC_TO_VAR_H
+#ifndef BAYESTS_VEC_TO_VAR_H
+#define BAYESTS_VEC_TO_VAR_H
 
 #include "bayests/results.h"
 #include "bayests/spec.h"
 
-namespace bayests::core
+namespace bayests
 {
 
 /// The VEC-to-VAR transformation: posterior draws of a vector error correction
@@ -18,20 +18,23 @@ namespace bayests::core
 /// only a change of basis applied draw by draw. What it buys is that everything
 /// written for a VAR posterior (impulse responses, forecast error variance
 /// decompositions, a forecast path in levels) applies to a VEC without being
-/// written twice.
+/// written twice. VecNormalWishartSampler::forecast() is one caller; an
+/// embedded host that wants the level parameterisation for its own sake is the
+/// other, which is why this sits in the public contract rather than under
+/// `src/`.
 ///
 /// A VEC of level lag order `p` and rank `r` carries p - 1 lagged differences,
 ///
-///     dy_t = alpha beta' w_{t-1} + sum_{i=1..p-1} Gamma_i dy_{t-i}
-///            + sum_{j=0..s-1} Upsilon_j dx_{t-j} + C d_t + u_t,
+///     A_0 dy_t = alpha beta' w_{t-1} + sum_{i=1..p-1} Gamma_i dy_{t-i}
+///                + sum_{j=0..s-1} Upsilon_j dx_{t-j} + C d_t + u_t,
 ///
 /// with w_{t-1} = (y_{t-1}, x_{t-1}, d^r_{t-1}) and Pi = alpha beta' split
 /// column-wise into Pi_y, Pi_x and Pi_d. The level VAR is then
 ///
-///     y_t = sum_{i=1..p} A_i y_{t-i} + sum_{j=0..s} B_j x_{t-j}
-///           + C d_t + Pi_d d^r_{t-1} + u_t,
+///     A_0 y_t = sum_{i=1..p} A_i y_{t-i} + sum_{j=0..s} B_j x_{t-j}
+///               + C d_t + Pi_d d^r_{t-1} + u_t,
 ///
-///     A_1 = I + Pi_y + Gamma_1,  A_i = Gamma_i - Gamma_{i-1},  A_p = -Gamma_{p-1},
+///     A_1 = A_0 + Pi_y + Gamma_1,  A_i = Gamma_i - Gamma_{i-1},  A_p = -Gamma_{p-1},
 ///     B_0 = Upsilon_0,  B_1 = Pi_x - Upsilon_0 + Upsilon_1,
 ///     B_j = Upsilon_j - Upsilon_{j-1},  B_s = -Upsilon_{s-1}.
 ///
@@ -41,6 +44,14 @@ namespace bayests::core
 /// matrix product against the transformation matrices W and J that bvartools'
 /// vec_to_var_transformation_matrix() builds, and costs O(k^2 p) rather than the
 /// O(k^3 p^2) the product does.
+///
+/// A_0 is the identity for every model that is not structural, which is why the
+/// two recursions are usually written with an I in the first block and no left
+/// factor at all. It is a matrix here because the substitution multiplies
+/// y_{t-1} by it: the same A_0 that stands to the left of dy_t stands to the
+/// left of y_t, and the y_{t-1} that differencing gives back joins A_1. Getting
+/// that wrong is silent -- A_0 is unit lower triangular, so the error is
+/// confined to the subdiagonal of the first lag.
 ///
 /// How a VEC's VarSpec is read. `p` and `s` are the *level* orders, the same
 /// convention bvartools uses at the R level, so they count one block more than
@@ -84,9 +95,12 @@ VarSpec vec_to_var_spec(const VarSpec &spec);
 /// puts d_t first and the cointegration space's d^r_{t-1} last.
 ///
 /// `u_sigma_inv` is shared, not transformed: the two parameterisations have the
-/// same errors. `a_lambda` is left empty even when the VEC selected over its
-/// coefficients, because inclusion does not survive the transformation -- A_i is
-/// Gamma_i - Gamma_{i-1}, and one indicator cannot say which half was in.
+/// same errors, and so are the contemporaneous coefficients, which describe a
+/// relation among those errors. They are read as well as copied, though: A_1
+/// needs them, per the recursion above. `a_lambda` is left empty even when the
+/// VEC selected over its coefficients, because inclusion does not survive the
+/// transformation -- A_i is Gamma_i - Gamma_{i-1}, and one indicator cannot say
+/// which half was in.
 ///
 /// Throws std::invalid_argument if `spec` cannot describe a model or if the
 /// draws do not have the shape it describes. `spec.iterations` is not among the
@@ -95,6 +109,6 @@ VarSpec vec_to_var_spec(const VarSpec &spec);
 VarNormalWishartDraws vec_to_var_coefficients(const VarSpec &spec,
                                               const VecNormalWishartDraws &draws);
 
-} // namespace bayests::core
+} // namespace bayests
 
-#endif // BAYESTS_CORE_ALGORITHMS_VEC_TO_VAR_H
+#endif // BAYESTS_VEC_TO_VAR_H
