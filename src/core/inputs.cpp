@@ -472,18 +472,18 @@ void VecNormalWishartInput::validate() const
         require_length(initial.beta, n_beta, "initial beta");
 
         // The error correction regressors, which nothing checked: the sampler
-        // transposes w to k_ect x tt and multiplies beta' into it, so a w of the
+        // transposes w to k_beta x tt and multiplies beta' into it, so a w of the
         // wrong width fails inside a Kronecker product rather than here.
-        require_shape(train.w, tt, static_cast<arma::uword>(spec.k_ect()),
+        require_shape(train.w, tt, static_cast<arma::uword>(spec.k_beta),
                       "error correction regressors w");
 
-        // k_ect square, not n_beta square: P_tau^-1 is the prior's central
+        // k_beta square, not n_beta square: P_tau^-1 is the prior's central
         // location for the cointegration *space*, so it is indexed by the rows of
         // beta and carries no rank dimension. It enters the draws only through
-        // kron(., P_tau^-1) and beta' P_tau^-1 beta, both of which want k_ect.
+        // kron(., P_tau^-1) and beta' P_tau^-1 beta, both of which want k_beta.
         // Demanding n_beta here happened to pass at rank one, where the two
         // coincide, and rejected every well-formed file above it.
-        require_square(beta_prior.p_tau_inv, static_cast<arma::uword>(spec.k_ect()),
+        require_square(beta_prior.p_tau_inv, static_cast<arma::uword>(spec.k_beta),
                        "prior precision of the cointegration space");
     }
 

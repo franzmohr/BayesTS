@@ -64,7 +64,7 @@ VarNormalWishartDraws vec_to_var_coefficients(const VarSpec &spec,
     const arma::uword k = static_cast<arma::uword>(spec.k);
     const arma::uword m = static_cast<arma::uword>(spec.m);
     const arma::uword rank = static_cast<arma::uword>(spec.rank);
-    const arma::uword k_ect = static_cast<arma::uword>(spec.k_ect());
+    const arma::uword k_beta = static_cast<arma::uword>(spec.k_beta);
     const arma::uword n_alpha = static_cast<arma::uword>(spec.n_alpha());
     const arma::uword n_structural = static_cast<arma::uword>(spec.n_structural());
 
@@ -147,7 +147,7 @@ VarNormalWishartDraws vec_to_var_coefficients(const VarSpec &spec,
         if (use_coint)
         {
             pi = arma::reshape(draws.a.submat(0, draw, n_alpha - 1, draw), k, rank) *
-                 arma::trans(arma::reshape(draws.beta.col(draw), k_ect, rank));
+                 arma::trans(arma::reshape(draws.beta.col(draw), k_beta, rank));
         }
 
         // [Gamma_1 .. Gamma_p, Upsilon_0 .. Upsilon_s, C], recovered from the
@@ -223,7 +223,7 @@ VarNormalWishartDraws vec_to_var_coefficients(const VarSpec &spec,
         }
         if (n_restricted > 0)
         {
-            var_coef.cols(det_var + n_unrestricted, ncols_var - 1) = pi.cols(k + m, k_ect - 1);
+            var_coef.cols(det_var + n_unrestricted, ncols_var - 1) = pi.cols(k + m, k_beta - 1);
         }
 
         out.a.submat(0, draw, k * ncols_var - 1, draw) = arma::vectorise(var_coef);

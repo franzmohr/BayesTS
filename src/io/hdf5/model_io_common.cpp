@@ -113,6 +113,7 @@ VarSpec read_spec(const HighFive::File &file, const char *covar_error)
     // Absent from every VAR file, and left at zero there, which is what says
     // "no cointegration relation" rather than "one of rank zero".
     spec.rank = optional_attribute_int(file, "/model", "rank", 0);
+    spec.k_beta = optional_attribute_int(file, "/model", "k_beta", 0);
     spec.n_restricted = optional_attribute_int(file, "/model", "n_restricted", 0);
     spec.varsel = var_selection_from_string(
         optional_attribute_string(file, "/model", "varsel", "none"));
