@@ -27,6 +27,17 @@ compile_commands.json
 # Machine-specific compiler/toolchain paths -- must stay local
 CMakeUserPresets.json
 
+# ---- Snapcraft ----
+#
+# snapcraft builds into three directories beside snap/, and drops the finished
+# package in the root. Anchored to the root so a source directory that happens
+# to be called parts/ or stage/ is not caught by them.
+/parts/
+/stage/
+/prime/
+*.snap
+snap/.snapcraft/
+
 # ---- Ninja ----
 .ninja_deps
 .ninja_log

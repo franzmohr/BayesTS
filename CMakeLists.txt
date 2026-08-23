@@ -115,10 +115,46 @@ endif()
 #     message(FATAL_ERROR "OpenBLAS not found via vcpkg. Please install: vcpkg install openblas")
 # endif()
 
-find_package(Armadillo CONFIG REQUIRED)
+# CONFIG first: vcpkg, MSYS2 and a source build of Armadillo all install
+# ArmadilloConfig.cmake, and that is the only mode which defines the `armadillo`
+# imported target the four internal libraries link.
+#
+# A distribution package need not install it. Debian's libarmadillo-dev has
+# shipped without a CMake config, which leaves CMake's own FindArmadillo -- a
+# module that locates the library but defines variables only, no target, so
+# `target_link_libraries(bayests_core PUBLIC armadillo)` fails on a name that
+# was never created. The variables carry everything the target would have, so
+# the fallback below builds it from them. That is what lets a .deb or a snap
+# link the distribution's Armadillo rather than carry a private copy.
+find_package(Armadillo CONFIG QUIET)
+
+if(TARGET armadillo)
+    message(STATUS "Armadillo: CONFIG package (target 'armadillo')")
+elseif(TARGET Armadillo::Armadillo)
+    # Some packagings namespace it. Wrap rather than alias: an ALIAS of an
+    # IMPORTED target requires that target to be GLOBAL, which is not ours to
+    # decide from here.
+    add_library(armadillo INTERFACE IMPORTED)
+    target_link_libraries(armadillo INTERFACE Armadillo::Armadillo)
+    message(STATUS "Armadillo: CONFIG package (target 'Armadillo::Armadillo')")
+else()
+    find_package(Armadillo MODULE REQUIRED)
+    add_library(armadillo INTERFACE IMPORTED)
+    set_target_properties(armadillo PROPERTIES
+        INTERFACE_INCLUDE_DIRECTORIES "${ARMADILLO_INCLUDE_DIRS}"
+        INTERFACE_LINK_LIBRARIES "${ARMADILLO_LIBRARIES}"
+    )
+    message(STATUS "Armadillo: FindArmadillo module, version ${ARMADILLO_VERSION_STRING}, "
+                   "libraries ${ARMADILLO_LIBRARIES}")
+endif()
 
 # HDF5 (needed by HighFive)
-find_package(hdf5 CONFIG REQUIRED)
+#
+# QUIET rather than REQUIRED: a distribution's libhdf5-dev installs pkg-config
+# files and a compiler wrapper but no hdf5-config.cmake, so CONFIG mode finds
+# nothing there. CMake's FindHDF5 module reads those instead and is tried below
+# once the CONFIG targets have had their chance.
+find_package(hdf5 CONFIG QUIET)
 
 # Which target the HDF5 config exports is not part of any contract: it depends on
 # how that HDF5 was built and by whom. Two things vary independently --
@@ -151,6 +187,17 @@ foreach(_bayests_hdf5_candidate IN LISTS BAYESTS_HDF5_CANDIDATE_TARGETS)
 endforeach()
 unset(_bayests_hdf5_candidate)
 
+# Last resort, and the one a distribution build takes: FindHDF5 locates the
+# library through h5cc or pkg-config and defines HDF5::HDF5 itself. It is tried
+# after the config targets so that a machine with both -- vcpkg on the prefix
+# path and libhdf5-dev in /usr -- keeps linking the one it always did.
+if(NOT BAYESTS_HDF5_TARGET)
+    find_package(HDF5 MODULE QUIET COMPONENTS C)
+    if(TARGET HDF5::HDF5)
+        set(BAYESTS_HDF5_TARGET HDF5::HDF5)
+    endif()
+endif()
+
 if(NOT BAYESTS_HDF5_TARGET)
     # Report what this HDF5 actually offers, so adding the missing name is one
     # edit rather than a guess. IMPORTED_TARGETS is a directory property, so it
@@ -159,13 +206,16 @@ if(NOT BAYESTS_HDF5_TARGET)
     get_property(_bayests_imported DIRECTORY PROPERTY IMPORTED_TARGETS)
     list(FILTER _bayests_imported INCLUDE REGEX "(hdf5|HDF5)")
     message(FATAL_ERROR
-        "find_package(hdf5) succeeded but exported none of the targets this "
-        "project knows how to link:\n"
-        "    ${BAYESTS_HDF5_CANDIDATE_TARGETS}\n"
+        "No usable HDF5 found. Neither find_package(hdf5 CONFIG) nor "
+        "find_package(HDF5 MODULE) produced a target this project knows how to "
+        "link:\n"
+        "    ${BAYESTS_HDF5_CANDIDATE_TARGETS} HDF5::HDF5\n"
         "HDF5 version: ${HDF5_VERSION}\n"
         "HDF5-related imported targets that do exist:\n"
         "    ${_bayests_imported}\n"
-        "Add the right name to BAYESTS_HDF5_CANDIDATE_TARGETS in CMakeLists.txt.")
+        "Install HDF5 (vcpkg install hdf5, pacman -S mingw-w64-ucrt-x86_64-hdf5, "
+        "apt install libhdf5-dev), or add the right target name to "
+        "BAYESTS_HDF5_CANDIDATE_TARGETS in CMakeLists.txt.")
 endif()
 
 message(STATUS "HDF5 target: ${BAYESTS_HDF5_TARGET}")
@@ -178,17 +228,38 @@ if(DEFINED ENV{HIGHFIVE_DIR})
 elseif(DEFINED HIGHFIVE_DIR)
     set(HIGHFIVE_INCLUDE_DIR "${HIGHFIVE_DIR}/include" CACHE PATH "HighFive include directory")
 else()
-    # Search in CMAKE_PREFIX_PATH directories
+    # CMAKE_PREFIX_PATH first, then the compiler's default include directories.
+    # The default search used to be suppressed, which made a HighFive installed
+    # the way a distribution installs one -- /usr/include/highfive -- invisible,
+    # and that is precisely the layout a .deb or a snap builds against.
     message(STATUS "Searching for HighFive in CMAKE_PREFIX_PATH: ${CMAKE_PREFIX_PATH}")
     find_path(HIGHFIVE_INCLUDE_DIR
         NAMES highfive/H5File.hpp
         PATHS ${CMAKE_PREFIX_PATH}
         PATH_SUFFIXES include
-        NO_DEFAULT_PATH
     )
     if(NOT HIGHFIVE_INCLUDE_DIR)
         message(FATAL_ERROR "HighFive not found. Current CMAKE_PREFIX_PATH: ${CMAKE_PREFIX_PATH}\nSet HIGHFIVE_DIR or add to CMAKE_PREFIX_PATH, or install via: vcpkg install highfive")
     endif()
+endif()
+
+# Searching the system directories is what makes this check worth having: the
+# 2.x line is what a distribution ships today and what vcpkg's port tracks,
+# this project is written against 3.x, and the difference surfaces as a wall of
+# template errors that name neither version. The header is enough to separate
+# the two major versions -- it is only within 3.x that it cannot be trusted,
+# since the betas already report 3.0.0.
+if(EXISTS "${HIGHFIVE_INCLUDE_DIR}/highfive/H5Version.hpp")
+    file(STRINGS "${HIGHFIVE_INCLUDE_DIR}/highfive/H5Version.hpp" _bayests_hf_major
+         REGEX "^#define[ \t]+HIGHFIVE_VERSION_MAJOR[ \t]+[0-9]+")
+    string(REGEX MATCH "[0-9]+" _bayests_hf_major "${_bayests_hf_major}")
+    if(_bayests_hf_major AND _bayests_hf_major LESS 3)
+        message(FATAL_ERROR
+            "HighFive ${_bayests_hf_major}.x found in ${HIGHFIVE_INCLUDE_DIR}, but this "
+            "project requires 3.x (see .github/highfive-version for the tested tag).\n"
+            "Point HIGHFIVE_DIR at a 3.x tree.")
+    endif()
+    unset(_bayests_hf_major)
 endif()
 
 if(EXISTS "${HIGHFIVE_INCLUDE_DIR}/highfive/H5File.hpp")

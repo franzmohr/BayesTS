@@ -1,0 +1,173 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (c) 2026 Franz X. Mohr
+
+# Snap package for the bayests command-line tool.
+#
+#   snapcraft                       # build here (needs LXD)
+#   snapcraft remote-build          # build amd64 and arm64 on Launchpad
+#   sudo snap install --dangerous ./bayests_*.snap    # try it before uploading
+#   snapcraft upload --release=edge ./bayests_*.snap
+#
+# What a snap changes about the build, compared with the CI job in
+# .github/workflows/ci.yml: the dependencies come from the base's archive
+# instead of vcpkg. That is the whole reason CMakeLists.txt grew MODULE-mode
+# fallbacks for Armadillo and HDF5 -- Ubuntu's libarmadillo-dev and libhdf5-dev
+# install no CMake config package, and CONFIG mode alone would find neither. If
+# a configure here fails at find_package, that is the first place to look.
+#
+# HighFive is the exception: the archive is still on the 2.x line and this
+# project is written against 3.x, so it is pulled from git the same way CI does
+# it. Nothing is compiled -- it is header-only -- and nothing of it ships in the
+# snap.
+
+name: bayests
+title: BayesTS
+base: core24
+adopt-info: bayests
+summary: Bayesian time series estimation for VAR and VEC models
+description: |
+  BayesTS estimates Bayesian vector autoregressive (VAR) and vector error
+  correction (VEC) models by Gibbs sampling, reading its data and writing its
+  posterior draws as HDF5 files.
+
+  Available samplers cover normal-Wishart, normal-gamma and stochastic
+  volatility error structures, with time-varying parameters and stochastic
+  search variable selection where the specification asks for them.
+
+  The command is `bayests`. Under strict confinement it can read and write
+  files below your home directory; for data on another filesystem, connect the
+  removable-media interface:
+
+      sudo snap connect bayests:removable-media
+
+license: BSD-3-Clause
+grade: stable
+confinement: strict
+
+platforms:
+  amd64:
+  arm64:
+
+apps:
+  bayests:
+    command: usr/bin/bayests
+    plugs:
+      - home
+      - removable-media
+    # The threads are deliberately not pinned here. test/ runs every sampler
+    # with OMP_NUM_THREADS=1 because a multi-threaded BLAS reassociates
+    # floating-point reductions and the fingerprints would not reproduce -- but
+    # that is a property of the comparison, not of the tool, and forcing it on
+    # every user would quietly make the sampler single-threaded. Anyone who
+    # needs bit-identical draws sets the two variables in their own shell:
+    #
+    #     OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 bayests ...
+
+parts:
+  # Header-only, so there is nothing to build: the snap needs the tree at the
+  # layout `-DHIGHFIVE_DIR=<dir>` expects, which is <dir>/include/highfive, and
+  # that is exactly how the repository is arranged. Staged for the bayests part
+  # to compile against and then excluded from prime, since headers are of no use
+  # at runtime.
+  #
+  # The BlueBrain URL is the one CI uses. Upstream has moved to
+  # github.com/highfive-devs/highfive and this path now redirects; the redirect
+  # is what is known to work, so it stays until the new one is confirmed.
+  #
+  # source-tag must match .github/highfive-version. It cannot be read from that
+  # file here -- this part has no copy of the repository -- and it cannot be
+  # verified from the headers either, because 3.0.0's betas already report
+  # 3.0.0 in H5Version.hpp. A bump is therefore two edits, and this comment is
+  # the only thing joining them.
+  highfive:
+    plugin: dump
+    source: https://github.com/BlueBrain/HighFive.git
+    source-type: git
+    source-tag: v3.0.0-beta2
+    source-depth: 1
+    stage:
+      - include/highfive
+    prime:
+      - -include
+
+  bayests:
+    after: [highfive]
+    plugin: cmake
+    source: "."
+    source-type: local
+    override-pull: |
+      craftctl default
+
+      # A local source is copied wholesale, build/ included -- the generated
+      # HDF5 fixtures under it alone run to some 140 MB, and none of it is an
+      # input to this build.
+      rm -rf build
+
+      # project(VERSION) is the one place the version is declared; release.yml
+      # reads it with the same expression to check a tag against it. Snap
+      # versions and CMake versions therefore cannot drift apart.
+      declared=$(sed -n 's/^ *VERSION \([0-9][0-9.]*\).*/\1/p' CMakeLists.txt | head -1)
+      if [ -z "$declared" ]; then
+        echo "could not read project(VERSION ...) out of CMakeLists.txt" >&2
+        exit 1
+      fi
+      echo "version from CMakeLists.txt: $declared"
+      craftctl set version="$declared"
+
+    cmake-parameters:
+      - -DCMAKE_INSTALL_PREFIX=/usr
+      - -DCMAKE_BUILD_TYPE=Release
+      # $CRAFT_STAGE/include/highfive is what the part above put there.
+      - -DHIGHFIVE_DIR=$CRAFT_STAGE
+      - -DBAYESTS_BUILD_DOCS=OFF
+      # The fixtures the harness needs are generated by running the samplers,
+      # which would multiply the build time for no gain: a snap build is not
+      # where this project checks its numbers. ci.yml and fingerprints.yml are.
+      - -DBAYESTS_BUILD_TESTS=OFF
+      # -march=native would bake this builder's instruction set into a binary
+      # that then dies with an illegal instruction on an older CPU. Off by
+      # default, and named here because it is the one setting that would be
+      # silently wrong rather than loudly broken.
+      - -DBAYESTS_NATIVE_ARCH=OFF
+      # A snap carries its runtime libraries as stage-packages, below. The
+      # copy-the-DLLs path exists for Windows and defaults off here anyway.
+      - -DBAYESTS_BUNDLE_RUNTIME_DEPS=OFF
+
+    build-packages:
+      # project() declares Fortran because the BLAS and LAPACK underneath
+      # Armadillo are Fortran; without gfortran the configure fails on
+      # "No CMAKE_Fortran_COMPILER could be found", which names neither the
+      # package nor this line.
+      - gfortran
+      - libarmadillo-dev
+      - libhdf5-dev
+      - libopenblas-dev
+      - pkg-config
+
+    # apt resolves each of these recursively, so the BLAS, LAPACK, ARPACK and
+    # SuperLU that Armadillo pulls in arrive without being named. Only the
+    # libraries the executable itself loads belong here.
+    #
+    # The sonames are those of core24, i.e. Ubuntu 24.04, and they are the part
+    # of this file most likely to break on a base bump -- libhdf5-103-1t64 in
+    # particular carries the 64-bit time_t rename that noble introduced. A wrong
+    # name fails at pull with "package not found"; the right one comes from
+    #
+    #     ldd prime/usr/bin/bayests | grep -E 'armadillo|hdf5|gomp'
+    #     dpkg -S <the .so it names>
+    #
+    # run in an Ubuntu 24.04 container.
+    stage-packages:
+      - libarmadillo12
+      - libhdf5-103-1t64
+      - libgfortran5
+      - libgomp1
+
+    # Nothing needs the headers or the CMake package files of the staged
+    # dependencies at runtime, and they are a large fraction of what apt
+    # unpacked.
+    prime:
+      - -usr/include
+      - -usr/lib/*/cmake
+      - -usr/lib/*/pkgconfig
+      - -usr/share/man

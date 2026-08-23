@@ -1,0 +1,104 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (c) 2026 Franz X. Mohr
+
+# Build the snap and check that the result starts.
+#
+# This is the only job that builds against a distribution's own packages rather
+# than vcpkg, which makes it the only one that exercises the MODULE-mode
+# fallbacks for Armadillo and HDF5 in CMakeLists.txt. ci.yml cannot: it installs
+# both from vcpkg, so CONFIG mode always wins there.
+#
+# The other thing it catches is the part of snapcraft.yaml that no local check
+# can: the stage-package sonames are those of the core24 base, and a base bump
+# or an archive rename turns one of them into a pull-time "package not found".
+#
+# It does not upload anything. Publishing needs a store credential this
+# repository does not hold; `snapcraft upload` is a manual step, documented in
+# the Packaging section of README.md.
+
+name: Snap
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'snap/**'
+      - 'CMakeLists.txt'
+      - 'src/**'
+      - 'include/**'
+      - '.github/highfive-version'
+      - '.github/workflows/snap.yml'
+  pull_request:
+    paths:
+      - 'snap/**'
+      - 'CMakeLists.txt'
+      - 'src/**'
+      - 'include/**'
+      - '.github/highfive-version'
+      - '.github/workflows/snap.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: snap-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: snap / core24 / amd64
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      # The HighFive tag is written twice -- in .github/highfive-version, which
+      # ci.yml and release.yml read, and as source-tag in snapcraft.yaml, which
+      # has no copy of this repository to read it from. Nothing in a snap build
+      # would notice them disagreeing: it would just compile against a different
+      # HighFive than every other job. So the comparison happens here, where both
+      # files are present.
+      - name: Check the HighFive pin agrees with .github/highfive-version
+        run: |
+          pinned=$(tr -d '[:space:]' < .github/highfive-version)
+          insnap=$(sed -n 's/^ *source-tag: *\(.*\)$/\1/p' snap/snapcraft.yaml | tr -d '[:space:]')
+          echo ".github/highfive-version: $pinned"
+          echo "snap/snapcraft.yaml:      $insnap"
+          if [ "$pinned" != "$insnap" ]; then
+            echo "::error::the HighFive pin differs between the two files; bump both."
+            exit 1
+          fi
+
+      - name: Build the snap
+        id: build
+        uses: snapcore/action-build@v1
+
+      # A snap that builds and does not run is the failure mode worth guarding
+      # against here: a missing stage-package produces a working build and a
+      # binary that cannot find its libraries. With no arguments bayests prints
+      # its usage and exits 2, so that exit code is the evidence it loaded.
+      - name: Install and run it
+        run: |
+          sudo snap install --dangerous "${{ steps.build.outputs.snap }}"
+          set +e
+          out=$(bayests 2>&1)
+          status=$?
+          set -e
+          echo "$out"
+          echo "exit=$status"
+          if [ "$status" -ne 2 ]; then
+            echo "::error::expected the usage message and exit 2, got exit $status."
+            # /snap/bin/bayests is a wrapper script, so ldd wants the real ELF
+            # inside the mounted snap.
+            echo "If it did not start at all, the libraries are the place to look:"
+            ldd /snap/bayests/current/usr/bin/bayests 2>&1 | grep -i "not found" || true
+            exit 1
+          fi
+
+      - name: Upload the snap
+        uses: actions/upload-artifact@v7
+        with:
+          name: bayests-snap-amd64
+          path: ${{ steps.build.outputs.snap }}
+          if-no-files-found: error

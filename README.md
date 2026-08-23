@@ -207,6 +207,44 @@ Graphviz is optional and only adds the class and include graphs. Make sure both
 directories are on `Path`, or point CMake at the installation with
 `-DDOXYGEN_EXECUTABLE=...`. See the *API documentation* section below.
 
+### Linux
+
+Everything comes from the distribution's own packages; no vcpkg is needed. On
+Debian or Ubuntu:
+
+```bash
+sudo apt install cmake ninja-build gfortran libarmadillo-dev libhdf5-dev libopenblas-dev
+```
+
+HighFive is the one exception. The archive is still on the 2.x line and this
+project is written against 3.x, so clone the tag recorded in
+`.github/highfive-version` and point the build at it — it is header-only, so
+there is nothing to install:
+
+```bash
+git clone --depth 1 --branch "$(cat .github/highfive-version)" \
+    https://github.com/BlueBrain/HighFive.git ~/src/highfive
+
+cmake -S . -B build/bin/linux -G Ninja \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DHIGHFIVE_DIR="$HOME/src/highfive" \
+    -DBAYESTS_BUILD_DOCS=OFF
+cmake --build build/bin/linux
+```
+
+Neither `libarmadillo-dev` nor `libhdf5-dev` installs a CMake config package, so
+configuration falls back to `FindArmadillo` and `FindHDF5` and builds the
+imported targets from what those report. The configure output says which route
+each dependency took:
+
+```
+-- Armadillo: FindArmadillo module, version 12.6.7, libraries /usr/lib/x86_64-linux-gnu/libarmadillo.so
+-- HDF5 target: HDF5::HDF5
+```
+
+A `-- Armadillo: CONFIG package` line instead means a config package was found —
+from vcpkg, or a source build — and that is used in preference.
+
 ### Configure and build
 
 ```bash
@@ -396,6 +434,55 @@ cpack --config build/bin/my-windows-release/CPackSourceConfig.cmake
 Produces `BayesTS-0.0.1-src.zip` and `.tar.gz`. The ignore list drops the build
 tree, `.git/`, `CMakeUserPresets.json` and every `*.h5`, since model files are
 derived data and run to hundreds of megabytes.
+
+**Snap package (Linux)**
+
+`snap/snapcraft.yaml` builds `bayests` as a strictly confined snap for amd64 and
+arm64. It needs [snapcraft](https://snapcraft.io/snapcraft) and LXD:
+
+```bash
+sudo snap install snapcraft --classic
+sudo snap install lxd && sudo lxd init --auto
+
+snapcraft                                       # builds for the host architecture
+sudo snap install --dangerous ./bayests_0.0.1_amd64.snap
+bayests
+```
+
+`snapcraft remote-build` builds both architectures on Launchpad instead, which
+is the only practical way to produce the arm64 package from an x86 machine. To
+publish, register the name once and upload:
+
+```bash
+snapcraft login
+snapcraft register bayests
+snapcraft upload --release=edge ./bayests_0.0.1_amd64.snap
+```
+
+The version is not written in `snapcraft.yaml`. It is read out of
+`project(VERSION ...)` during the pull step, by the same expression
+`release.yml` uses to check a tag, so the snap cannot claim a version the source
+does not.
+
+Dependencies come from the base's archive rather than vcpkg — this is the build
+the `FindArmadillo` and `FindHDF5` fallbacks exist for. HighFive is cloned from
+the tag in `.github/highfive-version`, which is also spelled out as `source-tag`
+in `snapcraft.yaml`: **bumping the pin means editing both files.** Nothing joins
+them automatically, because reading the version out of the headers cannot
+distinguish the 3.0.0 betas from each other.
+
+Confinement is strict, so `bayests` reads and writes below `$HOME` through the
+`home` interface and nothing else. Data on another filesystem needs the
+`removable-media` interface, which is not connected automatically:
+
+```bash
+sudo snap connect bayests:removable-media
+```
+
+The `stage-packages` sonames — `libarmadillo12`, `libhdf5-103-1t64` — are those
+of `core24`, meaning Ubuntu 24.04, and are what a base bump breaks first. A name
+that no longer exists fails at pull with *package not found*; `ldd
+prime/usr/bin/bayests` and `dpkg -S` on what it names give the replacements.
 
 **Portable binaries and `-march=native`**
 

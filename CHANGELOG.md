@@ -88,6 +88,27 @@ Dates are ISO. Versions follow the `project(VERSION)` in `CMakeLists.txt`.
 
 ### Changed
 
+* **Armadillo and HDF5 are found without a CMake config package.** Both were
+  required in CONFIG mode, which is what vcpkg, MSYS2 and a source build install
+  — and what a distribution does not. Debian's `libarmadillo-dev` ships no
+  `ArmadilloConfig.cmake`, so `find_package(Armadillo CONFIG REQUIRED)` failed
+  outright; `libhdf5-dev` ships pkg-config files and `h5cc` but no
+  `hdf5-config.cmake`, so the target-name search added above had nothing to
+  search. CMake's own `FindArmadillo` and `FindHDF5` read both, and are now tried
+  after the config packages: the module defines variables but no target for
+  Armadillo, so the `armadillo` target the four internal libraries link is built
+  from them, and `FindHDF5`'s `HDF5::HDF5` joins the candidate list as its last
+  entry. A machine with both a config package and a system one keeps linking
+  what it always did. This is what makes a build against distribution packages
+  possible at all, and the snap below is its first consumer.
+
+  *Draws are unchanged* on any machine that was already building — the fallbacks
+  are reached only where the configure previously failed. On a machine reaching
+  them for the first time the numbers are a separate question, and not one this
+  change decides: a distribution's Armadillo links whichever BLAS the
+  distribution chose, and fingerprints have never been comparable across
+  toolchains. Full suite, 67 tests, passes unchanged against vcpkg.
+
 * **The VEC-to-VAR transformation is now part of the public contract.**
   `vec_to_var_spec()` and `vec_to_var_coefficients()` moved from
   `src/core/algorithms/vec_to_var.h` to `include/bayests/vec_to_var.h` and, with
@@ -178,6 +199,26 @@ Dates are ISO. Versions follow the `project(VERSION)` in `CMakeLists.txt`.
   *Draws are unchanged*, verified the same way.
 
 ### Added
+
+* A snap package, in `snap/snapcraft.yaml`. `bayests` builds as a strictly
+  confined snap for amd64 and arm64 on the `core24` base, taking Armadillo,
+  HDF5, OpenBLAS and the Fortran runtime from Ubuntu 24.04 rather than vcpkg —
+  which the dependency-discovery change above is what allows. HighFive is the
+  exception and is cloned from the tag in `.github/highfive-version`, because
+  the archive is still on 2.x; that pin is repeated as `source-tag` in the yaml
+  and the two have to be bumped together, since 3.0.0's betas all report 3.0.0
+  in their headers and no check can tell them apart. The snap's version is read
+  out of `project(VERSION)` at pull time by the expression `release.yml` already
+  uses, so it cannot drift from the source. Confinement is strict: `$HOME`
+  through the `home` interface, anything else through `removable-media`, which
+  the user connects.
+
+  HighFive's major version is now checked wherever it is found. The search no
+  longer suppresses the compiler's default include directories — it had to stop,
+  or a HighFive installed at `/usr/include/highfive` would have been invisible
+  to exactly the builds this is for — and 2.x is what a system directory is
+  likely to hold. It fails with the version it found instead of a page of
+  template errors naming neither.
 
 * Golden fixtures combining a covariance block with variable selection, for the
   four models that have a psi block. `make_model_fixture` only writes
