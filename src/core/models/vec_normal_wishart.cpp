@@ -234,7 +234,7 @@ namespace bayests
                 // forward together.
                 BB_sqrt = arma::sqrtmat_sympd(arma::trans(Beta_mat) * Beta_mat);
                 beta_mat = Beta_mat * arma::solve(BB_sqrt, diag_r);
-                
+
                 alpha = Alpha * BB_sqrt;
                 a.subvec(0, n_alpha - 1) = arma::vectorise(alpha);
 
@@ -355,7 +355,7 @@ namespace bayests
         const int k_beta = static_cast<int>(input.spec.k_beta);
         const int rank = static_cast<int>(input.spec.rank);
         const bool use_a = z.n_cols > 0;
-        const bool use_beta = input.spec.n_beta() > 0;
+        const bool use_beta = rank > 0;
         const int n_alpha = static_cast<int>(input.spec.n_alpha());
         const arma::mat diag_k = arma::eye<arma::mat>(k, k);
 
