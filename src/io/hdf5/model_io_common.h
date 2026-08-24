@@ -60,6 +60,14 @@ NormalPrior read_normal_prior(const HighFive::File &file, const std::string &gro
 /// The (v_inv, p_tau_inv) pair every constant cointegration-space prior is stored as.
 ConstantCointSpacePrior read_coint_space_prior_constant(const HighFive::File &file, const std::string &group);
 
+/// The time-varying counterpart: the (mu, v_inv) of the state before the sample
+/// plus the state equation's autoregression. The same group name as the constant
+/// prior above, holding different datasets -- a cointegration space that moves is
+/// a state equation rather than a shrinkage towards a central location, so there
+/// is nothing shared to read. `rho` is optional; TvpCointSpacePrior says what it
+/// defaults to and why.
+TvpCointSpacePrior read_coint_space_prior_tvp(const HighFive::File &file, const std::string &group);
+
 /// The (shape, rate) pair every gamma prior is stored as.
 GammaPrior read_gamma_prior(const HighFive::File &file, const std::string &group);
 

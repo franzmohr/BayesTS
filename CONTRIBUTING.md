@@ -106,7 +106,9 @@ intended or a regression, and it is worth being able to say which before opening
 a pull request.
 
 Two models have no generator, because `test/make_model_fixture.cpp` cannot write
-them. Their tests are registered only when pointed at a recorded model file, and
+them — `VarNormalWishart` and `VecNormalWishart`, not every VEC: the other five
+are generated like the VAR models, from the VEC block at the bottom of that
+file. Their tests are registered only when pointed at a recorded model file, and
 are skipped with a note at configure time otherwise:
 
 ```bash
@@ -122,11 +124,22 @@ copy under the temporary directory and clears the posterior there, so a recorded
 model file is only ever read.
 
 There is also a coverage gap worth knowing rather than a configuration one: no
-fixture yet has a forecast horizon for `VecNormalWishart`, so the path that
-rewrites its draws as a level VAR and forecasts from those is not exercised.
-Note that supplying `h` is not enough on its own -- `/data/forecast/z` has to be
-in the level layout, with `p + 1` blocks of endogenous lags, not the differenced
-layout `/data/train/z` uses.
+fixture yet has a forecast horizon for `VecNormalWishart`. The path it would
+exercise -- rewriting the draws as a level VAR and forecasting from those -- is
+covered by the other five VECs, which all reach the same code, so what is
+missing is that model's own conversion rather than the shared recursion. Note
+that supplying `h` is not enough on its own: `/data/forecast/z` has to be in the
+level layout, with `p + 1` blocks of endogenous lags, not the differenced layout
+`/data/train/z` uses.
+
+A note on what the golden harness does *not* catch, since it has cost real bugs
+twice now. `bayests_golden` exits non-zero only if a fixture throws all the way
+out, and the `BaseModel` front-ends catch every exception and print it to
+stderr. A sampler that fails on one of the three subcommands therefore leaves
+that dataset absent and the test green. When adding a fixture, read the
+fingerprints once and check that every dataset the model should carry is there --
+`absent` next to a `/posterior/forecast` in a fixture whose `h` is positive is a
+failure, not a configuration.
 
 Fixtures are generated into the build tree. Nothing writes a `*.h5` into the
 source tree, and nothing should — see `test/CMakeLists.txt` for the generation

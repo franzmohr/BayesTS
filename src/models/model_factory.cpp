@@ -13,7 +13,12 @@ std::unique_ptr<BaseModel> create_model(const std::string& model_type) {
 		{"VarTvpGamma", []() { return std::make_unique<VarTvpGamma>(); }},
 		{"VarTvpWishart", []() { return std::make_unique<VarTvpWishart>(); }},
 		{"VarTvpStochvol", []() { return std::make_unique<VarTvpStochvol>(); }},
-		{"VecNormalWishart", []() { return std::make_unique<VecNormalWishart>(); }}
+		{"VecNormalGamma", []() { return std::make_unique<VecNormalGamma>(); }},
+		{"VecNormalStochvol", []() { return std::make_unique<VecNormalStochvol>(); }},
+		{"VecNormalWishart", []() { return std::make_unique<VecNormalWishart>(); }},
+		{"VecTvpGamma", []() { return std::make_unique<VecTvpGamma>(); }},
+		{"VecTvpStochvol", []() { return std::make_unique<VecTvpStochvol>(); }},
+		{"VecTvpWishart", []() { return std::make_unique<VecTvpWishart>(); }}
 	};
 
 	auto it = factory.find(model_type);

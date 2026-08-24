@@ -53,8 +53,10 @@ endif()
 add_executable(bayests_unit_vec_to_var unit_vec_to_var.cpp)
 add_executable(bayests_unit_forecast_lags unit_forecast_lags.cpp)
 add_executable(bayests_unit_stochvol unit_stochvol.cpp)
+add_executable(bayests_unit_kalman unit_kalman.cpp)
+add_executable(bayests_unit_chan_jeliazkov unit_chan_jeliazkov.cpp)
 
-foreach(_unit bayests_unit_vec_to_var bayests_unit_forecast_lags bayests_unit_stochvol)
+foreach(_unit bayests_unit_vec_to_var bayests_unit_forecast_lags bayests_unit_stochvol bayests_unit_kalman bayests_unit_chan_jeliazkov)
     target_link_libraries(${_unit} PRIVATE bayests_algorithms)
     target_link_libraries(${_unit} PRIVATE bayests_warnings)
 
@@ -62,6 +64,17 @@ foreach(_unit bayests_unit_vec_to_var bayests_unit_forecast_lags bayests_unit_st
         target_link_libraries(${_unit} PRIVATE OpenMP::OpenMP_CXX)
     endif()
 endforeach()
+
+# The exception: this one covers validate(), which lives in bayests_core rather
+# than in the algorithms library. Still no sampler and still no fixture -- it
+# builds inputs in memory and asserts on what validate() does with them.
+add_executable(bayests_unit_identification unit_identification.cpp)
+target_link_libraries(bayests_unit_identification PRIVATE bayests_core)
+target_link_libraries(bayests_unit_identification PRIVATE bayests_warnings)
+
+if(OpenMP_CXX_FOUND)
+    target_link_libraries(bayests_unit_identification PRIVATE OpenMP::OpenMP_CXX)
+endif()
 
 #####################################################################
 # Tests
@@ -146,7 +159,7 @@ endif()
 # The unit tests, which need only the shared libraries on the path: no fixture
 # to set up, and no thread pinning, since an exact identity does not care how
 # many threads computed it.
-foreach(_unit vec_to_var forecast_lags stochvol)
+foreach(_unit vec_to_var forecast_lags stochvol kalman chan_jeliazkov identification)
     add_test(NAME "unit.${_unit}" COMMAND "bayests_unit_${_unit}")
     set_tests_properties("unit.${_unit}" PROPERTIES
         ENVIRONMENT_MODIFICATION "${_bayests_test_env_mod}")
@@ -210,9 +223,9 @@ bayests_add_model_fixture(VarTvpGamma-structural VarTvpGamma none 0 1 4)
 bayests_add_model_fixture(VarTvpGamma-nofcst     VarTvpGamma none 0 0 0)
 bayests_add_model_fixture(VarTvpGamma-bvs-covar  VarTvpGamma bvs  1 0 4)
 
-bayests_add_model_fixture(VarTvpWishart-plain  VarTvpWishart none 0 0 4)
-bayests_add_model_fixture(VarTvpWishart-bvs    VarTvpWishart bvs  0 0 4)
-bayests_add_model_fixture(VarTvpWishart-nofcst VarTvpWishart none 0 0 0)
+bayests_add_model_fixture(VarTvpWishart-plain      VarTvpWishart none 0 0 4)
+bayests_add_model_fixture(VarTvpWishart-bvs        VarTvpWishart bvs  0 0 4)
+bayests_add_model_fixture(VarTvpWishart-nofcst     VarTvpWishart none 0 0 0)
 
 bayests_add_model_fixture(VarTvpStochvol-plain      VarTvpStochvol none 0 0 4)
 bayests_add_model_fixture(VarTvpStochvol-bvs        VarTvpStochvol bvs  0 0 4)
@@ -220,6 +233,50 @@ bayests_add_model_fixture(VarTvpStochvol-covar      VarTvpStochvol none 1 0 4)
 bayests_add_model_fixture(VarTvpStochvol-structural VarTvpStochvol none 0 1 4)
 bayests_add_model_fixture(VarTvpStochvol-nofcst     VarTvpStochvol none 0 0 0)
 bayests_add_model_fixture(VarTvpStochvol-bvs-covar  VarTvpStochvol bvs  1 0 4)
+
+# The VECs that have a generator -- every one but VecNormalWishart. Their
+# dimensions differ from the rows above (rank 1, a restricted constant and one
+# lagged difference) and their forecast regressors are in levels; see the VEC
+# block in make_model_fixture.cpp. SSVS reaches VecNormalGamma only, for the same
+# reason it reaches VarNormalGamma only.
+#
+# The structural rows are what cover the level-VAR forecast's contemporaneous
+# split from the VEC side: every VEC forecast converts to a level VAR and hands
+# the path to VarNormalWishartSampler, so these five and the VAR rows above
+# exercise the same code from both ends.
+bayests_add_model_fixture(VecNormalGamma-plain      VecNormalGamma none 0 0 4)
+bayests_add_model_fixture(VecNormalGamma-ssvs       VecNormalGamma ssvs 0 0 4)
+bayests_add_model_fixture(VecNormalGamma-bvs        VecNormalGamma bvs  0 0 4)
+bayests_add_model_fixture(VecNormalGamma-covar      VecNormalGamma none 1 0 4)
+bayests_add_model_fixture(VecNormalGamma-structural VecNormalGamma none 0 1 4)
+bayests_add_model_fixture(VecNormalGamma-nofcst     VecNormalGamma none 0 0 0)
+bayests_add_model_fixture(VecNormalGamma-bvs-covar  VecNormalGamma bvs  1 0 4)
+
+bayests_add_model_fixture(VecNormalStochvol-plain     VecNormalStochvol none 0 0 4)
+bayests_add_model_fixture(VecNormalStochvol-bvs       VecNormalStochvol bvs  0 0 4)
+bayests_add_model_fixture(VecNormalStochvol-covar     VecNormalStochvol none 1 0 4)
+bayests_add_model_fixture(VecNormalStochvol-structural VecNormalStochvol none 0 1 4)
+bayests_add_model_fixture(VecNormalStochvol-nofcst    VecNormalStochvol none 0 0 0)
+bayests_add_model_fixture(VecNormalStochvol-bvs-covar VecNormalStochvol bvs  1 0 4)
+
+# No covar row: like VarTvpWishart, this model carries no psi block.
+bayests_add_model_fixture(VecTvpWishart-plain  VecTvpWishart none 0 0 4)
+bayests_add_model_fixture(VecTvpWishart-bvs    VecTvpWishart bvs  0 0 4)
+bayests_add_model_fixture(VecTvpWishart-nofcst VecTvpWishart none 0 0 0)
+
+bayests_add_model_fixture(VecTvpGamma-plain     VecTvpGamma none 0 0 4)
+bayests_add_model_fixture(VecTvpGamma-bvs       VecTvpGamma bvs  0 0 4)
+bayests_add_model_fixture(VecTvpGamma-covar     VecTvpGamma none 1 0 4)
+bayests_add_model_fixture(VecTvpGamma-structural VecTvpGamma none 0 1 4)
+bayests_add_model_fixture(VecTvpGamma-nofcst    VecTvpGamma none 0 0 0)
+bayests_add_model_fixture(VecTvpGamma-bvs-covar VecTvpGamma bvs  1 0 4)
+
+bayests_add_model_fixture(VecTvpStochvol-plain     VecTvpStochvol none 0 0 4)
+bayests_add_model_fixture(VecTvpStochvol-bvs       VecTvpStochvol bvs  0 0 4)
+bayests_add_model_fixture(VecTvpStochvol-covar     VecTvpStochvol none 1 0 4)
+bayests_add_model_fixture(VecTvpStochvol-structural VecTvpStochvol none 0 1 4)
+bayests_add_model_fixture(VecTvpStochvol-nofcst    VecTvpStochvol none 0 0 0)
+bayests_add_model_fixture(VecTvpStochvol-bvs-covar VecTvpStochvol bvs  1 0 4)
 
 #####################################################################
 # VarNormalWishart
@@ -285,7 +342,11 @@ else()
     message(STATUS "BAYESTS_VEC_FIXTURE not set - VecNormalWishart tests skipped")
 endif()
 
-# VarTvpWishart carries no psi block, so it has no covar fixture. It is also the
+# VarTvpWishart carries no psi block, so it has no covar fixture -- and no
+# structural one either: its Wishart prior leaves Sigma unrestricted, which
+# validate() now refuses alongside contemporaneous coefficients. The same goes
+# for VecTvpWishart above. Every remaining structural row pairs A_0 with a
+# diagonal covariance, which is the only combination that identifies it. It is also the
 # one model whose R-side implementation no longer exists, which makes the
 # fingerprints recorded from these fixtures the only baseline it has: record
 # them before a change and diff them after, on the same machine and build.

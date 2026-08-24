@@ -16,7 +16,12 @@ add_library(bayests_hdf5_helper
             var_tvp_gamma_io.cpp var_tvp_gamma_io.h
             var_tvp_wishart_io.cpp var_tvp_wishart_io.h
             var_tvp_stochvol_io.cpp var_tvp_stochvol_io.h
-            vec_normal_wishart_io.cpp vec_normal_wishart_io.h)
+            vec_normal_gamma_io.cpp vec_normal_gamma_io.h
+            vec_normal_stochvol_io.cpp vec_normal_stochvol_io.h
+            vec_normal_wishart_io.cpp vec_normal_wishart_io.h
+            vec_tvp_gamma_io.cpp vec_tvp_gamma_io.h
+            vec_tvp_stochvol_io.cpp vec_tvp_stochvol_io.h
+            vec_tvp_wishart_io.cpp vec_tvp_wishart_io.h)
 
 add_library(BayesTS::hdf5_helper ALIAS bayests_hdf5_helper)
 target_link_libraries(bayests_hdf5_helper PRIVATE bayests_warnings)

@@ -259,6 +259,15 @@ inline bool draw_tridiagonal_normal(arma::vec &out, const arma::vec &main_diag, 
  * one block from its normal conditional posterior. Each column of `y` is handled
  * independently.
  *
+ * The random walk is the specification both papers give, and it is deliberately
+ * not parameterised. A unit transition and a fixed \f$h_{i0}\f$ are what make the
+ * posterior precision tridiagonal with a *constant* off-diagonal, and what leave
+ * the initial state in the first period alone -- the two facts the banded draw
+ * below is built on. A state equation with a transition coefficient, a
+ * time-varying innovation variance, or a random initial state is a different
+ * model and belongs in a general state path sampler, not here: see
+ * `kalman_durbin_koopman_2002`, which takes all three.
+ *
  * @param algorithm the name the caller is known by, used to prefix a message.
  * @param mixture the normal mixture standing in for the log chi-squared error.
  * @param y T x K matrix of error terms, one period per row. Must be finite;

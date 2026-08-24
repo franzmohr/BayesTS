@@ -115,6 +115,71 @@ public:
     void log_likelihood(const std::filesystem::path& filepath) override;
 };
 
+class VecNormalGamma : public BaseModel
+{
+private:
+    // File path
+    std::filesystem::path filepath;
+public:
+    VecNormalGamma();
+    ~VecNormalGamma() override;
+    void draw_coefficients(const std::filesystem::path &filepath_arg) override;
+    void forecast(const std::filesystem::path& filepath) override;
+    void log_likelihood(const std::filesystem::path& filepath) override;
+};
+
+class VecNormalStochvol : public BaseModel
+{
+private:
+    // File path
+    std::filesystem::path filepath;
+public:
+    VecNormalStochvol();
+    ~VecNormalStochvol() override;
+    void draw_coefficients(const std::filesystem::path &filepath_arg) override;
+    void forecast(const std::filesystem::path& filepath) override;
+    void log_likelihood(const std::filesystem::path& filepath) override;
+};
+
+class VecTvpGamma : public BaseModel
+{
+private:
+    // File path
+    std::filesystem::path filepath;
+public:
+    VecTvpGamma();
+    ~VecTvpGamma() override;
+    void draw_coefficients(const std::filesystem::path &filepath_arg) override;
+    void forecast(const std::filesystem::path& filepath) override;
+    void log_likelihood(const std::filesystem::path& filepath) override;
+};
+
+class VecTvpWishart : public BaseModel
+{
+private:
+    // File path
+    std::filesystem::path filepath;
+public:
+    VecTvpWishart();
+    ~VecTvpWishart() override;
+    void draw_coefficients(const std::filesystem::path &filepath_arg) override;
+    void forecast(const std::filesystem::path& filepath) override;
+    void log_likelihood(const std::filesystem::path& filepath) override;
+};
+
+class VecTvpStochvol : public BaseModel
+{
+private:
+    // File path
+    std::filesystem::path filepath;
+public:
+    VecTvpStochvol();
+    ~VecTvpStochvol() override;
+    void draw_coefficients(const std::filesystem::path &filepath_arg) override;
+    void forecast(const std::filesystem::path& filepath) override;
+    void log_likelihood(const std::filesystem::path& filepath) override;
+};
+
 // Factory function to create models based on type string
 std::unique_ptr<BaseModel> create_model(const std::string& model_type);
 

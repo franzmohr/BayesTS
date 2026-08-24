@@ -24,7 +24,498 @@ Dates are ISO. Versions follow the `project(VERSION)` in `CMakeLists.txt`.
 
 ## Unreleased
 
+### Added
+
+* **`chan_jeliazkov_2009`**, the precision based alternative to
+  `kalman_durbin_koopman_2002` for the same conditional posterior, after Chan and
+  Jeliazkov (2009). Rather than filtering forward and sampling backward, the
+  whole path is one Gaussian vector whose precision is block tridiagonal — the
+  state equation is first order Markov and each period's measurement touches one
+  state — and it is drawn in a single pass over a block banded Cholesky. Same
+  argument shapes as the smoother, including the constant and per-period forms of
+  `sigma_u`, `sigma_v` and `B`, and the same `M x (T+1)` return — column `i` is
+  the state period `i`'s observation loads on, and the last column is the
+  transition applied once past the end of the sample — so the two are
+  interchangeable and can be put through the same inputs.
+
+  *No draws change:* nothing calls it. The samplers still use the smoother, and
+  the measurements below are why.
+
+  **The transition may be of any order p.** `B` carries the p coefficient
+  matrices side by side — M x pM for a transition that holds throughout, MT x pM
+  for one per period — and p is read off the width, so an M x M argument is the
+  first order case and nothing about the existing interface moves. `a_init` and
+  `P_init` then cover the first p states jointly, pM and pM x pM, which for p = 1
+  is what they already were. The precision is block banded of bandwidth p, and
+  the same sweep factorises it whatever p is.
+  
+  This is where the precision formulation is *better* than the smoother rather
+  than merely different. An order p state equation reaches the simulation
+  smoother only in companion form, which inflates the state to pM and makes
+  `Sigma_v` singular — workable there, since it only ever takes a square root of
+  it, but not here, and not something a caller should have to construct. The
+  precision route takes `H = I - A_1 L - ... - A_p L^p` directly, at bandwidth p,
+  with `Sigma_v` the nonsingular M x M innovation covariance it actually is. A
+  dynamic factor model with a VAR on the factors is the case that wants this.
+
+  Cost at p > 1 grows with the band, not with the state: an order 4 transition on
+  three factors over 200 periods with 100 observed series costs 0.56 ms against
+  0.43 ms at order 1. The p = 1 timings below are unchanged by the
+  generalisation — measured before and after with the same harness, 5.54 ms
+  against 6.10 ms at T = 200, M = 45, which is within the run to run spread.
+
+  **It is about twice as slow as the smoother on the shapes this library runs.**
+  Measured against it in the same binary, constant covariances, `K = 3`, with the
+  BLAS pinned to one thread — the same pinning `test/CMakeLists.txt` applies to
+  the golden harness, and the regime an embedded host with a reference BLAS is in:
+
+  | T | M | `chan_jeliazkov_2009` | `kalman_durbin_koopman_2002` | ratio |
+  | --- | --- | --- | --- | --- |
+  | 89 | 21 | 0.79 ms | 0.43 ms | 0.54x |
+  | 200 | 21 | 1.86 ms | 0.88 ms | 0.47x |
+  | 500 | 21 | 4.13 ms | 2.19 ms | 0.53x |
+  | 89 | 45 | 2.59 ms | 1.35 ms | 0.52x |
+  | 200 | 45 | 6.10 ms | 2.95 ms | 0.48x |
+  | 500 | 45 | 17.05 ms | 7.52 ms | 0.44x |
+
+  The ratio is flat in both T and M, which is the useful part: the two are the
+  same order and differ by a constant. Both are O(T M^3) and neither ever forms a
+  `TM x TM` matrix, so there was no asymptotic advantage to win here — the
+  expectation going in was that there was, and that was simply wrong. Per period
+  this one does a Cholesky, a triangular solve with M right hand sides and one
+  symmetric product; the smoother's inner loop is two `gemm` calls. Roughly twice
+  the arithmetic, and `gemm` is the better optimised kernel of the two.
+
+  **A threaded BLAS makes it worse, not better, and badly so.** The same
+  measurement with OpenBLAS left to use every core puts M = 45, T = 200 at 18.7 ms
+  instead of 6.1 ms — a factor of three lost — while the smoother is unchanged at
+  2.9 ms. Per period this issues several small BLAS calls where the smoother
+  issues two larger ones, and thread synchronisation on a 45 x 45 operation costs
+  more than it saves. Anyone benchmarking these two against each other should pin
+  the threads first, or the answer is about the BLAS rather than about the
+  algorithms.
+
+  Two things were tried and are in the code: `solve_opts::fast` on the triangular
+  solves, worth about 20%, and skipping `B'Sigma_v^-1 B` when `B` is the identity,
+  which every time varying parameter model here uses. Three alternatives to the
+  M x M triangular solve were measured and all were slower, `inv(trimatl) * U`
+  by 2.5 times.
+
+  **Exploiting the structure inside the blocks was tried, and made it slower.**
+  With `B` the identity the off-diagonal block is `-Sigma_v^-1`, which is diagonal
+  in `VarTvpWishart` and `VarTvpGamma`, and the factor `S` is then exactly lower
+  triangular — verified, zero above the diagonal to the last bit. That licenses a
+  spelling in which `S` is never formed at all, since
+  `S_i'S_i = Lam_i D_i^-1 Lam_i` and the two other places `S` appears are products
+  with a vector: a symmetric inverse and some `M^2` scaling in place of a
+  triangular solve with M right hand sides and a full `M x M x M` product. Fewer
+  flops on paper, 15 to 30% slower at every size measured, because `inv_sympd`
+  factorises the block a second time and the inverse is a poorer LAPACK kernel
+  than the `gemm` it displaced. Measured, reverted, and the reasoning left in a
+  comment at the loop so the next reader does not spend the afternoon on it. The
+  lesson generalises: what matters at these block sizes is which kernel the
+  largest term lands in, not how many flops it is.
+
+  **And there is no third thing to try.** `Z_t'Sigma_u^-1 Z_t` has rank K, which
+  is 3 against an M of 21 or 45, so the first diagonal block is a rank 3 update to
+  a diagonal — but that is where it ends. `R_0` is nonsingular and `Lam_0` is a
+  nonsingular diagonal, so `S_0 = R_0^-T Lam_0` is nonsingular and `S_0'S_0` is
+  positive definite of *full* rank M. Subtracting it leaves `D_1` dense and of no
+  special form, and so is every block after it. The low rank measurement structure
+  is a one-period saving, not a per-period one, and the Schur complement destroys
+  it whatever the model does.
+
+  So for a random walk over diagonal state variances with no missing observations
+  — which is every model in this library — the cost is irreducibly O(T M^3) on
+  dense M x M blocks, and what is left of the gap to the smoother is which BLAS
+  kernel the largest term lands in rather than any structure still on the table.
+  A general sparse Cholesky is the wrong direction for the same reason: measured
+  through CHOLMOD on this exact matrix at T = 200, M = 45, the factorisation alone
+  takes 13.9 ms against this routine's 6.1 ms for the whole draw, and a
+  fill-reducing ordering makes it 17.7 ms, since a band has no fill to reduce.
+  Sparse libraries earn their keep when the pattern is irregular enough that it
+  cannot be hard-coded; a fixed band is the case where they have least to add.
+
+  **The picture inverts when the measurement is the large dimension.** A dynamic
+  factor model has a small state and many observed series, which is the mirror
+  image of a time varying parameter VAR, and the smoother's per-period
+  `inv(Z_t P Z_t' + Sigma_u)` is then an N x N inverse. Same harness, same
+  pinning, diagonal idiosyncratic errors, T = 200:
+
+  | N | r | `chan_jeliazkov_2009` | `kalman_durbin_koopman_2002` | ratio |
+  | --- | --- | --- | --- | --- |
+  | 20 | 3 | 0.24 ms | 1.66 ms | 6.9x |
+  | 50 | 3 | 0.28 ms | 6.83 ms | 24x |
+  | 100 | 3 | 0.53 ms | 231.5 ms | 439x |
+  | 200 | 3 | 1.24 ms | 681.0 ms | 549x |
+
+  Two honest qualifications. The smoother is being asked to do something a
+  factor model implementation would not ask of it — collapsing the N-dimensional
+  observation to an r-dimensional sufficient statistic first, which a diagonal
+  `Sigma_e` permits, recovers most of that. And this routine still forms
+  `Z_t'Sigma_u^-1` against the full N x N matrix rather than exploiting the
+  diagonal, and recomputes `Lambda'Sigma_e^-1 Lambda` every period although a
+  factor model's loadings do not vary with t; hoisting that is worth roughly
+  another order of magnitude at N = 200 and is the obvious thing to do if this is
+  ever put on a factor model's hot path.
+
+  So this is here as a second, independent implementation to validate the first
+  against, and as the algorithm of choice when the state is small, the
+  measurement is wide, or the transition is of order greater than one, rather
+  than as a replacement. Where the approach does win in this
+  library is already in use and at the other extreme of the same trade:
+  `stochvol_mixture.h` draws a scalar state, where the band is tridiagonal, the
+  blocks are numbers, and there is no dense block arithmetic to lose on.
+
+  One capability difference: `P_init` has to be invertible here, where the
+  smoother also takes a singular one. A precision based sampler needs
+  `P_init^-1`, and a state fixed at `a_init` rather than tightly distributed
+  around it is a model one state block shorter. It throws rather than pretending,
+  and the note on the function says so.
+
+* **`test/unit_chan_jeliazkov.cpp`**, registered as `unit.chan_jeliazkov`. The
+  load bearing check is agreement with `kalman_durbin_koopman_2002`: the same
+  inputs through both, 20,000 draws each, and the sample means have to match to
+  sampling error — they agree to 1.4% of a posterior standard deviation, against
+  a bound of four standard errors. That is what says this is the same
+  distribution and not merely a plausible one. Around it, three exact statements
+  about which period each block belongs to: a constant argument agreeing with its
+  replication, a state variance negligible in all but one period producing one
+  jump in that period, and a precise measurement with identity regressors pinning
+  each state to its own observation. The last two pin the transition and the
+  measurement blocks separately, which the first cannot — a uniform argument has
+  no period to be wrong about. `sigma_v` cannot be set to exactly zero as
+  `unit_kalman.cpp` does, since this sampler inverts it, so that identity is
+  stated with a tolerance instead.
+
+  Two more cover the order p band. The sharper one is that an order 2 transition
+  with a zero second lag, given the joint prior on `(s_0, s_1)` that the first
+  order model implies for its own first two states, *is* the first order model —
+  same precision, same factor, same right hand side, same random numbers in the
+  same order — so it has to give the first order draw. It does, to 7e-16
+  relative, which puts the whole of the banded machinery against a path already
+  validated against the smoother. The other pins what agreement cannot: with the
+  measurement uninformative and both variances negligible the posterior is the
+  prior, and the prior is a deterministic recursion the test computes for itself,
+  so `A_1` being the *first* block of columns of `B`, `a_init` running forward in
+  time, and the transition indexed `t - 1` producing column `t` are all
+  falsifiable.
+
+  Verified against mutations: dropping `B'Sigma_v^-1 B`, shifting the measurement
+  block by one period, reading the lag blocks in reverse order, indexing the
+  transition by `t` instead of `t - 1`, and dropping one term from the band
+  accumulation are all caught.
+
+* **`test/unit_kalman.cpp`**, covering the simulation smoother without standing
+  up a sampler. Three identities do the work. A constant argument and a stack of
+  `T` copies of it describe the same model, so they must give the same draw from
+  the same seed — which is what says the constant and time varying paths through
+  the function are the same path. With `sigma_v` zero in every period but one,
+  the state cannot move except at that period, so the drawn path is piecewise
+  constant with its single jump in exactly the right place — an exact statement
+  about which period a block governs, which the agreement test cannot make, since
+  a uniform argument has no period to be wrong about. And with identity
+  regressors and a measurement variance next to nothing the state has no freedom
+  left, so column `i` of the result has to be `y_i` — which is what fixes where
+  the `T + 1` returned columns sit against the `T` observations, the thing every
+  caller had wrong (see Fixed). Registered as `unit.kalman`. All three were
+  checked against deliberate mutations: a stride forced to zero, so time
+  variation is silently ignored, fails the second while passing the first; a
+  block off by one period fails the second; and the third fails on the
+  `.cols(1, T)` reading, which is asserted explicitly rather than left implied,
+  so a path flat enough for either alignment to fit cannot satisfy it.
+
+* **`VecNormalGamma`, `VecNormalStochvol`, `VecTvpWishart` and `VecTvpGamma`.**
+  With `VecTvpStochvol` below and `VecNormalWishart` already there, the VEC side
+  now mirrors the VAR side exactly: twelve registered algorithms, the same six
+  error and coefficient specifications with and without a cointegration
+  relation. Nothing new is invented — each is the VAR sampler of the same name
+  with the VEC's two coefficient blocks in front of it, so what to read is the
+  VAR for the error block and `VecNormalWishart` or `VecTvpStochvol` for the
+  rest.
+
+  *Draws are unchanged* for everything that already existed. Verified: the
+  golden output was recorded from a build of the sources as they stood before
+  any of this VEC work, on the same machine, and once the CTest indices are
+  stripped the diff against the run after is a pure insertion. All 396
+  pre-existing fingerprints are byte-identical, 288 lines were added, and
+  `ctest` is green at 116 tests.
+
+  Three things are worth knowing about the numbers the new models produce.
+
+  - **What the cointegration space prior conditions on.** It puts
+    `alpha | G ~ N(0, v^-1 (beta' P_tau^-1 beta)^-1 kron G)`, so it needs an
+    error precision. With a constant one that is simply the precision;
+    `VecNormalStochvol` has a different one in every period and takes their
+    average over the sample, which is the `g_i` of bvartools' `.bvecalg`. The
+    average appears only where the prior does — beta's own posterior uses the
+    per-period precisions in full.
+  - **What it contributes back.** Because the prior conditions alpha on Sigma,
+    Sigma's posterior owes it a term: `VecNormalWishart` adds
+    `v^-1 alpha (beta' P_tau^-1 beta) alpha'` to its scale and `rank` to its
+    degrees of freedom. Independent gammas and a stochastic volatility path have
+    no conjugate update for that, and `.bvecalg` attempts none, so
+    `VecNormalGamma` and `VecNormalStochvol` add nothing. The two time-varying
+    VECs add nothing either, for a different and stronger reason: their loadings
+    are a random walk whose innovation variance is drawn from a gamma of its own
+    and never sees Sigma at all.
+  - **Where beta's posterior cannot take the shortcut.** `VecNormalWishart`
+    contracts the data term to `kron(Alpha' S Alpha, sum_t w_t w_t')`, which
+    needs one `S` for the whole sample. `VecNormalStochvol` has tt of them, so it
+    builds the regressors out in full and contracts against the block diagonal,
+    as `.bvecalg` does.
+
+  Shared rather than copied five times: `src/core/models/vec_support.h` now holds
+  the four Kronecker forms of `alpha_t beta_t' w_t` and the alpha
+  reparameterisation, and `src/core/inputs.cpp` grew a set of validation helpers
+  — the time-varying state block, the VEC column count, the loadings-are-not-
+  selectable rule, the stochastic volatility block, the Wishart block. The three
+  existing time-varying VAR validators were collapsed onto the first of those.
+  Every message is byte-identical to what it was, which the fingerprint
+  comparison above covers along with everything else.
+
+  `test/make_model_fixture.cpp` writes all five generatable VECs from one set of
+  data builders, and the suite gained 19 fixtures: the plain, BVS, covariance,
+  both and no-forecast combinations of each, plus SSVS for `VecNormalGamma` and
+  no covariance row for `VecTvpWishart`, which has no psi block. Structural rows
+  came with the forecast fix below.
+
+* **`VecTvpStochvol`, a VEC with time-varying parameters and stochastic
+  volatility.** The eighth registered algorithm, and the port of bvartools'
+  `.bvectvpalg` for its `sv` and `sv+covar` error specifications: every
+  coefficient follows a random walk, the cointegration vectors among them, and
+  the errors carry stochastic volatility with an optional time-varying
+  covariance block. BVS is available for the coefficients and for that block;
+  SSVS is not, as in every other time-varying model.
+
+  *Draws are unchanged* elsewhere. Verified rather than assumed: the golden
+  output was recorded from a build of the pre-change sources on the same machine
+  and diffed against the same run after, and once the CTest indices are stripped
+  — every test after the new ones renumbered — the diff is a pure insertion of
+  the five `VecTvpStochvol-*` blocks. All 396 pre-existing fingerprints are
+  byte-identical. `ctest` is green, 78 tests.
+
+  What is new numerically is one Gibbs block. A VEC's first `k * rank`
+  regressors are `beta' w_{t-1}`, so the sampler alternates between two state
+  paths conditioned on each other: `a` given the regressors beta implies, then
+  beta given the loadings `a` carries, each drawn as a block with the Durbin and
+  Koopman (2002) smoother. Three things differ from the R implementation, and
+  each is documented where it happens:
+
+  - The coefficient blocks are drawn with the smoother, where `.bvectvpalg`
+    draws one `(n_a * tt)`-dimensional normal. Same target, and the same choice
+    every other time-varying model here already made.
+  - Variable selection may not reach the loadings. `.bvectvpalg` applies BVS to
+    the whole of `a`; excluding a loading is a change in the rank of Pi, which
+    beta's state equation does not model, so `validate()` rejects it — the rule
+    `VecNormalWishart` already enforced.
+  - `beta`'s state equation takes an autoregression `rho`, new in
+    `TvpCointSpacePrior` and read from `/priors/beta/rho`. `.bvectvpalg`
+    hardcodes the random walk; this defaults to `0.999`, the Koop,
+    Leon-Gonzalez and Strachan (2011) form, so that beta_t has a stationary
+    distribution and the prior on it is proper. A random walk in a parameter
+    identified only up to scale has nothing pulling it back, and its variance
+    grows over the sample. `rho = 1` is still accepted. The innovation variance
+    stays the identity either way — that is what pins beta's scale against
+    alpha's, and it is not a knob.
+
+  The forecast is the constant VEC's: the last in-sample period of `a`, `beta`
+  and the precision is rewritten as the level VAR it implies and simulated from
+  there, so `/data/forecast/z` is expected in the level layout. The log
+  likelihood scores every period under its own coefficients and its own
+  cointegration vectors.
+
+  `test/make_model_fixture.cpp` can write the model, unlike the other VEC, so
+  six fixtures cover it from a clean clone: plain, BVS, covariance block, both,
+  structural and no forecast.
+
+### Changed
+
+* **`kalman_durbin_koopman_2002` stops decomposing the same matrix once per
+  period.** Each of `sigma_u`, `sigma_v` and `B` may be given as one matrix that
+  holds for every period or as a stack of one per period, and both forms remain
+  supported in any combination — a time varying error covariance, state
+  innovation covariance and transition are all still available. What changed is
+  how the constant form is reached. It used to be replicated into `T` copies of
+  itself up front, which allocated a `KT x K` or `MT x M` matrix the caller had
+  not asked for and, worse, left the loops unable to see that the blocks were
+  identical: a constant covariance was eigendecomposed `T` times. The samplers
+  hand it constant covariances, and `VarTvpWishart` and `VarTvpGamma` hand it a
+  *diagonal* one, so most of that work produced a matrix whose square root is an
+  elementwise `sqrt`. The blocks are now indexed with a stride that is zero for
+  the constant form, so the body is written once, nothing is replicated, and a
+  covariance that holds throughout is decomposed once.
+
+  *Draws are unchanged.* Bit-identical, not to a rounding error: computing one
+  eigendecomposition instead of `T` copies of it yields the same numbers, and the
+  order in which the random number generator is consumed did not move. Verified
+  three ways. Against the previous implementation compiled alongside the new one,
+  over `T` in {2, 5, 40, 120}, `K` in {1, 3}, and all six combinations of
+  constant and time varying arguments: worst difference exactly zero. The 60
+  `Tvp` golden fixtures are green. And from R, through the vendored copy in
+  bvartools, the constant, stacked and genuinely time varying cases are all
+  `identical()` to draws recorded before the change.
+
+  1.9x faster on the shape the samplers use — `T = 89`, `K = 3`, `M = 21`,
+  constant covariances — measured against the previous implementation in the same
+  binary. The gain is entirely the removed decompositions, so it grows with `T`
+  and vanishes when every argument really is time varying.
+
+  Two further changes are deliberately *not* here, because both would move the
+  numbers while leaving the distribution intact, which is the most expensive kind
+  of change to verify: taking the square root by Cholesky rather than by
+  eigendecomposition (roughly three times cheaper per call, but a different `A`
+  and so a different draw from the same random numbers), and a fast path for the
+  diagonal case. `symmetric_sqrt` in that file records why it is an
+  eigendecomposition.
+
+  The signature also takes all seven arguments by `const` reference now. It used
+  to take three by value and mutate them, which is what the replication needed;
+  they are no longer touched. Existing call sites compile unchanged, and the
+  `const_cast` at `var_tvp_stochvol.cpp:195` is now redundant.
+
+* **A structural model now requires a diagonal error covariance, and is rejected
+  without one.** `A_0` is unit lower triangular with `k(k-1)/2` free elements;
+  the data determine only the reduced form, whose error covariance
+  `Omega = A_0^-1 Sigma A_0^-T` has `k(k+1)/2`. Against a diagonal `Sigma` the
+  count is exact and `(A_0, diag Sigma)` is the unique LDL factor of `Omega` —
+  the recursive SVAR. Against an unrestricted `Sigma` the structural side
+  carries `k^2` parameters, and a `k(k-1)/2` dimensional set of them fits
+  identically: the likelihood is flat along it and a draw of `A_0` is the prior
+  plus wherever the chain last wandered.
+
+  Two things leave `Sigma` unrestricted, and the second is the one easily
+  missed: a Wishart prior on the error precision, and a covariance block, since
+  `Psi` is then a second unit lower triangular matrix doing `A_0`'s job. Both
+  are now refused by `validate()` in all twelve models when
+  `spec.n_structural() > 0`, with a message that counts the parameters out and
+  names the way forward. `structural` therefore pairs with `gamma` or `sv`
+  without a covariance block, and nothing else. With `sv` it is better than
+  exactly identified — the volatility moving over the sample identifies `A_0`
+  through heteroskedasticity.
+
+  *Draws are unchanged.* Nothing that was estimable before is estimable
+  differently now; two configurations that used to run stop running. Both were
+  fixtures added earlier in this same release — `VarTvpWishart-structural` and
+  `VecTvpWishart-structural` — and neither is in any tagged version, so no
+  recorded result changes. Every remaining structural fixture pairs `A_0` with a
+  diagonal covariance and its fingerprints are byte-identical.
+
+  Rejected rather than warned about, deliberately. Inference on the unidentified
+  configurations would still be coherent under a proper prior, and everything
+  these models *report* is a function of the reduced form alone — forecasts and
+  the pointwise log likelihood are invariant to position on the ridge and would
+  be correct. But the reason to set the flag is to read `A_0`, and there it
+  would be noise wearing the shape of an estimate.
+
+  `test/unit_identification.cpp` pins both directions: the three sound
+  combinations are accepted and the two unidentified ones rejected. It is a unit
+  test rather than a fixture because the golden harness cannot express a
+  rejection — the front-ends swallow the exception, so a refused input reads
+  there as a passing test that wrote nothing. `make_model_fixture` refuses the
+  same combinations for the same reason.
+
 ### Fixed
+
+* **Every time varying parameter sampler read the simulation smoother's output
+  one period late.** `kalman_durbin_koopman_2002` returns `M x (T+1)` columns, of
+  which column `i` is the state period `i`'s observation loads on for
+  `i = 0 ... T-1`; column `T` is the transition applied once past the end of the
+  sample and is informed by no observation. Every caller kept `.cols(1, tt)` —
+  states 2 to T+1 — and then paired them with the regressors of periods 1 to T.
+
+  Within the same iteration that put the wrong period's coefficients into four
+  places at once. The residuals `u` were formed against next period's
+  coefficients, so `Sigma`'s posterior scale was inflated and fed straight back
+  into the next smoother pass. The state innovation variance saw `a_2 - a_0` as
+  one increment when its variance is `2Q`, never saw `a_1 - a_0` at all, and
+  counted `a_{T+1} - a_T` — a step drawn from the prior — in its place, so
+  `a_sigma` came out biased up. The initial state was drawn from `a_2` using
+  `Q^-1` where it needed `(2Q)^-1`. And BVS scored its inclusion candidates
+  against the shifted path. On the way out, every reported coefficient path was
+  shifted a period ahead of the data, with the last period carrying a draw the
+  data had never touched — which is also the period `read_draws_at_period()`
+  hands to the forecast.
+
+  Now `.cols(0, tt - 1)`, at all thirteen call sites: the `a` block of all six
+  TVP models, the `psi` block of `VarTvpGamma`, `VarTvpStochvol`, `VecTvpGamma`
+  and `VecTvpStochvol`, and the `beta` block of the three time varying VECs.
+  Nothing downstream of the slice needed changing — `a_lag`, the `a0` draw and
+  the residual loop were all already written for the correct alignment, which is
+  what made the slice the only thing wrong.
+
+  *Draws change*, for `VarTvpWishart`, `VarTvpGamma`, `VarTvpStochvol`,
+  `VecTvpWishart`, `VecTvpGamma` and `VecTvpStochvol`, in every configuration —
+  there is no path through any of them that did not go through the shift. The
+  size of the change scales with the state innovation variance, so a tightly
+  shrunk path moves little and a freely moving one moves a lot; either way the
+  old numbers answered a question about the wrong period. The constant
+  coefficient and constant covariance samplers are untouched: they never call the
+  smoother.
+
+  The new numbers are right because the alignment is not a convention to choose
+  but a property of the recursions, and it is now pinned two ways. An independent
+  port of the function was compared against the analytic posterior of a small
+  linear Gaussian model computed in closed form — 200,000 draws, mean and full
+  covariance matching to Monte Carlo error on `.cols(0, T - 1)`, and the mean off
+  by up to 2.3 posterior standard deviations on `.cols(1, T)`. In the repository, the
+  identity added to `unit_kalman.cpp` below asserts it directly.
+
+  How it went unnoticed: the smoother is correct, and every identity
+  `unit_kalman.cpp` had compared one call of it against another — a shift is
+  present in both sides of such a comparison and cancels. The docstring said
+  "the initial state in column 0", which reads as though column 0 precedes the
+  sample and the first observed state is therefore column 1. It does not: column
+  0 is `a_1`, already smoothed against every observation. That note has been
+  rewritten to say which column belongs to which period and what a caller that
+  keeps the last one has done. The golden harness could not have caught this
+  either — it fails only on a fixture that throws, and a shifted path is a
+  perfectly well formed one.
+
+* **Half the forecasts ignored the contemporaneous coefficients of a structural
+  model.** `VarNormalWishart`, `VarTvpWishart` and `VarTvpStochvol` never split
+  the trailing `k(k-1)/2` rows off `a`, and never applied `A_0^{-1}` to the
+  simulated path. The other three did. Because every VEC forecast converts to
+  its level parameterisation and hands the path to `VarNormalWishartSampler`,
+  all six VECs inherited it too — a structural VEC could not be forecast at all.
+
+  *Draws change*, in exactly one place across the whole recorded suite:
+  `VarTvpStochvol-structural` now has a `/posterior/forecast` where it had none.
+  That is the whole diff. Every other fingerprint is byte-identical, including
+  the three samplers whose implementation was refactored onto the new shared
+  helpers and whose `A_0^{-1}` was hoisted out of the horizon loop.
+
+  How it went unnoticed: the failure was loud but swallowed. With `z` supplied
+  correctly the coefficient count no longer matched and the sampler threw, the
+  `BaseModel` front-end caught it and printed to stderr, and the golden harness
+  only fails on a fixture that throws all the way out — so a test asking for
+  `h = 4` passed while writing no forecast. `VarTvpStochvol-structural` had been
+  doing exactly that. There is a silent version too, for a caller who supplies
+  `z` *with* those columns: the counts then match, the contemporaneous
+  coefficients multiply whatever is in them, and `A_0^{-1}` is never applied.
+
+  The split now lives once, in `core/models/model_support.h`, as
+  `split_structural_coefficients()` and `structural_inverse()`, and all six VAR
+  forecasts use it. `nparams` is still each caller's own — off the posterior
+  where the coefficients are constant, off the spec where they are a path and
+  the posterior holds one period — because that is the one part that legitimately
+  differs; splitting on `z.n_cols` is the mistake the helper's comment warns
+  against.
+
+* **`VarTvpWishart` sliced its coefficient path at the wrong stride to forecast
+  from.** Its HDF5 reader took the width of a period from `z.n_cols`, which for
+  a structural model is short by the contemporaneous block, so
+  `read_draws_at_period()` cut the stored path across period boundaries and
+  returned a matrix that was neither the last period nor any other. Its two
+  siblings already counted off the spec. Found by the fixture added above: with
+  the sampler fixed, this was what still stopped that model forecasting.
+
+  *Draws are unchanged* for every non-structural model — the two counts agree
+  when there is no contemporaneous block — which the fingerprint comparison
+  confirms. The identification rule above has since made a structural
+  `VarTvpWishart` unreachable, so this is now defensive rather than load-bearing;
+  it is kept because the spelling it replaces was wrong on its own terms and
+  neither sibling shares it.
 
 * **The VEC-to-VAR transformation put the identity where A_0 belongs.**
   `vec_to_var_coefficients()` built the first level lag as `I + Pi_y + Gamma_1`.

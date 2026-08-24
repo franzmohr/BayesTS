@@ -149,6 +149,20 @@ ConstantCointSpacePrior read_coint_space_prior_constant(const HighFive::File &fi
     return prior;
 }
 
+TvpCointSpacePrior read_coint_space_prior_tvp(const HighFive::File &file, const std::string &group)
+{
+    TvpCointSpacePrior prior;
+
+    prior.initial_state = read_normal_prior(file, group);
+
+    if (file.exist(group + "/rho"))
+    {
+        prior.rho = get_dataset_double(file, group + "/rho");
+    }
+
+    return prior;
+}
+
 GammaPrior read_gamma_prior(const HighFive::File &file, const std::string &group)
 {
     GammaPrior prior;

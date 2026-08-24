@@ -3,7 +3,7 @@
 #####################################################################
 # Library
 #
-# The BaseModel classes the command line drives. All six are now front-ends:
+# The BaseModel classes the command line drives. All of them are front-ends:
 # each decides what still needs computing for a given file, hands the work to
 # bayests_core and writes the results back. No numerics are left here.
 
@@ -16,7 +16,12 @@ add_library(bayests_models
             VarTvpGamma.cpp
             VarTvpWishart.cpp
             VarTvpStochvol.cpp
-            VecNormalWishart.cpp)
+            VecNormalGamma.cpp
+            VecNormalStochvol.cpp
+            VecNormalWishart.cpp
+            VecTvpGamma.cpp
+            VecTvpStochvol.cpp
+            VecTvpWishart.cpp)
 
 add_library(BayesTS::models ALIAS bayests_models)
 target_link_libraries(bayests_models PRIVATE bayests_warnings)

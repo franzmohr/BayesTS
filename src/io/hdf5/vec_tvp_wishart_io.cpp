@@ -1,20 +1,21 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright (c) 2026 Franz X. Mohr
 
-#include "io/hdf5/var_tvp_wishart_io.h"
+#include "io/hdf5/vec_tvp_wishart_io.h"
 
 #include "io/hdf5/hdf5_and_armadillo.h"
 
-namespace bayests::hdf5_io::var_tvp_wishart
+namespace bayests::hdf5_io::vec_tvp_wishart
 {
 
-VarTvpWishartInput read_input(const HighFive::File &file)
+VecTvpWishartInput read_input(const HighFive::File &file)
 {
-    VarTvpWishartInput input;
+    VecTvpWishartInput input;
 
     input.spec = read_spec(file, "wishart");
 
     read_mat_if_present(file, "/data/train/y", input.train.y);
+    read_mat_if_present(file, "/data/train/w", input.train.w);
     read_mat_if_present(file, "/data/train/z", input.train.z);
     read_mat_if_present(file, "/data/forecast/z", input.forecast.z);
 
@@ -24,12 +25,14 @@ VarTvpWishartInput read_input(const HighFive::File &file)
 
     if (input.use_a())
     {
-        const arma::uword nparams = input.train.nparams();
+        const arma::uword n_a = input.train.nparams();
 
-        input.initial.a = read_path(file, "/initial/a", nparams, tt);
+        input.initial.a = read_path(file, "/initial/a", n_a, tt);
         input.initial.a_sigma_inv = read_mat(file, "/initial/a_sigma_inv");
         input.initial.a_init = read_vec(file, "/initial/a_init");
 
+        // One group carries both halves of the state equation: how far the
+        // coefficients may drift, and where they start.
         input.a_prior.sigma = read_gamma_prior(file, "/priors/a");
         input.a_prior.initial_state = read_normal_prior(file, "/priors/a");
 
@@ -40,6 +43,15 @@ VarTvpWishartInput read_input(const HighFive::File &file)
             input.initial.a_lambda = read_vec(file, "/initial/a_lambda");
             input.a_varsel_prior = read_varsel_prior(file, "/priors/a", input.spec.varsel);
         }
+    }
+
+    if (input.use_beta())
+    {
+        const arma::uword n_beta = static_cast<arma::uword>(input.spec.n_beta());
+
+        input.initial.beta = read_path(file, "/initial/beta", n_beta, tt);
+        input.initial.beta_init = read_vec(file, "/initial/beta_init");
+        input.beta_prior = read_coint_space_prior_tvp(file, "/priors/beta");
     }
 
     // Only draw_coefficients needs these. A file that holds nothing but a
@@ -56,18 +68,22 @@ VarTvpWishartInput read_input(const HighFive::File &file)
 }
 
 // `input` is unused here and kept for the uniform signature the front-ends call
-// every model's readers through. Unlike VarTvpGamma, whose precision is stored
-// per period and has to be read against the spec, this model's u_sigma_inv is
-// one k x k matrix per draw, so the dataset is read as it stands.
-VarTvpWishartDraws read_loglik_coefficients(const HighFive::File &file,
-                                            [[maybe_unused]] const VarTvpWishartInput &input)
+// every model's readers through. Unlike VecTvpGamma, whose precision may be
+// stored per period, this model's u_sigma_inv is one k x k matrix per draw, so
+// the dataset is read as it stands.
+VecTvpWishartDraws read_loglik_coefficients(const HighFive::File &file,
+                                            [[maybe_unused]] const VecTvpWishartInput &input)
 {
-    VarTvpWishartDraws draws;
+    VecTvpWishartDraws draws;
 
     if (dataset_has_data(file, "/posterior/a/coeffs"))
     {
         draws.a = read_draws(file, "/posterior/a/coeffs");
     }
+    if (dataset_has_data(file, "/posterior/beta/coeffs"))
+    {
+        draws.beta = read_draws(file, "/posterior/beta/coeffs");
+    }
     if (dataset_has_data(file, "/posterior/u_sigma_inv/coeffs"))
     {
         draws.u_sigma_inv = read_draws(file, "/posterior/u_sigma_inv/coeffs");
@@ -76,23 +92,22 @@ VarTvpWishartDraws read_loglik_coefficients(const HighFive::File &file,
     return draws;
 }
 
-VarTvpWishartDraws read_forecast_coefficients(const HighFive::File &file,
-                                              const VarTvpWishartInput &input)
+VecTvpWishartDraws read_forecast_coefficients(const HighFive::File &file,
+                                              const VecTvpWishartInput &input)
 {
-    VarTvpWishartDraws draws;
+    VecTvpWishartDraws draws;
 
-    // The width the path was stored at, taken from the spec as VarTvpGamma and
-    // VarTvpStochvol take it -- not from `z.n_cols`, which is what this used to
-    // do. A structural model's contemporaneous coefficients sit at the end of
-    // every period of `a` and have no column in `z`, so counting off `z` slices
-    // the path at the wrong stride: it silently returns a matrix one block
-    // narrow, cut across period boundaries.
-    const arma::uword nparams = static_cast<arma::uword>(input.spec.nparams_per_period());
+    const arma::uword tt = input.train.periods(input.spec.k);
+    const arma::uword n_a = static_cast<arma::uword>(input.spec.nparams_per_period_vec());
+    const arma::uword n_beta = static_cast<arma::uword>(input.spec.n_beta());
 
-    if (nparams > 0 && dataset_has_data(file, "/posterior/a/coeffs"))
+    if (n_a > 0 && dataset_has_data(file, "/posterior/a/coeffs"))
     {
-        const arma::uword tt = input.train.periods(input.spec.k);
-        draws.a = read_draws_at_period(file, "/posterior/a/coeffs", tt - 1, nparams);
+        draws.a = read_draws_at_period(file, "/posterior/a/coeffs", tt - 1, n_a);
+    }
+    if (n_beta > 0 && dataset_has_data(file, "/posterior/beta/coeffs"))
+    {
+        draws.beta = read_draws_at_period(file, "/posterior/beta/coeffs", tt - 1, n_beta);
     }
     if (dataset_has_data(file, "/posterior/u_sigma_inv/coeffs"))
     {
@@ -102,7 +117,7 @@ VarTvpWishartDraws read_forecast_coefficients(const HighFive::File &file,
     return draws;
 }
 
-void write_coefficients(HighFive::File &file, const VarTvpWishartDraws &draws)
+void write_coefficients(HighFive::File &file, const VecTvpWishartDraws &draws)
 {
     ensure_group(file, "/posterior");
 
@@ -116,7 +131,16 @@ void write_coefficients(HighFive::File &file, const VarTvpWishartDraws &draws)
         }
     }
 
+    // The cointegration path. Without it `a` carries only the loadings, so
+    // nothing downstream could reconstruct Pi -- and neither the forecast nor
+    // the log likelihood, both of which rebuild the loadings' regressors from
+    // it, could be computed at all.
+    if (draws.has_beta())
+    {
+        write_draws(file, "/posterior/beta/coeffs", draws.beta);
+    }
+
     write_draws(file, "/posterior/u_sigma_inv/coeffs", draws.u_sigma_inv);
 }
 
-} // namespace bayests::hdf5_io::var_tvp_wishart
+} // namespace bayests::hdf5_io::vec_tvp_wishart

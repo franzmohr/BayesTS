@@ -35,16 +35,23 @@ Requires a C++20 compiler and Fortran (for LAPACK). Built on
 ## Models
 
 The `/model/algorithm` attribute in the model file selects the sampler; it is
-the only thing that decides which one runs. Six are registered:
+the only thing that decides which one runs. Twelve are registered — six VARs and
+the same six as VECs:
 
 | `algorithm` | Coefficients | Error precision | Variable selection |
 | --- | --- | --- | --- |
 | `VarNormalWishart` | Constant, normal prior | Wishart | SSVS, BVS |
 | `VarNormalGamma` | Constant, normal prior | Independent gamma, optional constant covariance block | SSVS, BVS |
 | `VarNormalStochvol` | Constant, normal prior | Stochastic volatility, optional covariance block | BVS |
-| `VarTvpGamma` | Random walk | Independent gamma, optional time-varying covariance block | BVS |
 | `VarTvpWishart` | Random walk | Wishart | BVS |
+| `VarTvpGamma` | Random walk | Independent gamma, optional time-varying covariance block | BVS |
 | `VarTvpStochvol` | Random walk | Stochastic volatility, optional time-varying covariance block | BVS |
+| `VecNormalWishart` | Constant, normal prior; cointegration space prior on beta | Wishart | SSVS, BVS |
+| `VecNormalGamma` | Constant, normal prior; cointegration space prior on beta | Independent gamma, optional constant covariance block | SSVS, BVS |
+| `VecNormalStochvol` | Constant, normal prior; cointegration space prior on beta | Stochastic volatility, optional covariance block | BVS |
+| `VecTvpWishart` | Random walk, beta included | Wishart | BVS |
+| `VecTvpGamma` | Random walk, beta included | Independent gamma, optional time-varying covariance block | BVS |
+| `VecTvpStochvol` | Random walk, beta included | Stochastic volatility, optional time-varying covariance block | BVS |
 
 Every model supports exogenous regressors, deterministic terms, a structural
 (contemporaneous-coefficient) form, forecasting and a pointwise log likelihood
@@ -55,11 +62,39 @@ paths are drawn as a single block with the simulation smoother of Durbin and
 Koopman (2002), so the whole path moves at once rather than period by period.
 Stochastic volatility uses the ten-component normal mixture of Omori et al.
 (2007), which turns the non-linear measurement equation into a conditionally
-linear one. `VarTvpStochvol` combines both.
+linear one. The `*TvpStochvol` pair combines both.
 
-SSVS is available only for the two constant-coefficient models with a gamma or
+Each VEC differs from the VAR beside it in one place, the same place every time:
+the first `k * rank` regressors are `beta' w_{t-1}`, so they are not data but a
+function of the current draw, and a Gibbs block is added to draw beta itself.
+The constant-coefficient three draw it as one vector, splitting each draw
+between `alpha` and `beta` by the normalisation of Koop, Leon-Gonzalez and
+Strachan (2010); the time-varying three draw it as a state path with the same
+smoother the coefficients use, and rebuild the regressors period by period. All
+six forecast in levels, by rewriting the draws as the level VAR they imply —
+which means their `/data/forecast/z` is in the level layout, not the differenced
+one `/data/train/z` uses.
+
+SSVS is available only for the constant-coefficient models with a gamma or
 Wishart error precision; the stochastic volatility and time-varying parameter
-samplers reject it rather than silently ignoring it.
+samplers reject it rather than silently ignoring it. In a VEC, selection may not
+be applied to the loadings at the front of `a` in either scheme — excluding one
+is a change in the rank of Pi, which nothing downstream models.
+
+The structural form needs a **diagonal** error covariance, and the samplers
+reject the combinations where it does not have one. `A_0` is unit lower
+triangular with `k(k-1)/2` free elements, and the data determine only the
+reduced form — in particular `Omega = A_0^-1 Sigma A_0^-T`, which has `k(k+1)/2`.
+Against a diagonal `Sigma` that is `k(k-1)/2 + k = k(k+1)/2` exactly, and `A_0`
+with `diag(Sigma)` is the LDL factor of `Omega`, which is unique: the recursive
+SVAR. Against an unrestricted `Sigma` it is `k^2`, leaving a `k(k-1)/2`
+dimensional set of `(A_0, Sigma)` pairs that fit identically. Two things here
+leave `Sigma` unrestricted — a Wishart prior, and a covariance block, since
+`Psi` is then a second contemporaneous matrix doing the same job — so
+`structural` is available with the `gamma` and `sv` error specifications and no
+covariance block, and refused otherwise. With `sv` it is more than exactly
+identified: the volatility moving over the sample identifies `A_0` through
+heteroskedasticity.
 
 ## Usage
 
@@ -327,16 +362,15 @@ for the change they precede — a baseline recorded before a *build flag* change
 still diffs cleanly enough to look meaningful, which makes a stale one worse
 than none.
 
-**Coverage.** Five of the six samplers are covered from a clean clone —
-`VarNormalGamma`, `VarNormalStochvol`, `VarTvpGamma`, `VarTvpWishart` and
-`VarTvpStochvol` — which are the five `test/make_model_fixture.cpp` can write
-from scratch.
+**Coverage.** Ten of the twelve samplers are covered from a clean clone —
+every one but `VarNormalWishart` and `VecNormalWishart` — which are the ten
+`test/make_model_fixture.cpp` can write from scratch.
 
-`VarNormalWishart` is the exception: it cannot be generated, only derived from a
-recorded model file with `make_varsel_fixture`, so its three tests appear only
-when `BAYESTS_WISHART_FIXTURE` points at one. Teaching
-`test/make_model_fixture.cpp` to emit it would remove the last dependency on
-data that is not in the repository.
+`VarNormalWishart` and `VecNormalWishart` are the exceptions: they cannot be
+generated, only read from or derived from a recorded model file, so their tests
+appear only when `BAYESTS_WISHART_FIXTURE` and `BAYESTS_VEC_FIXTURE` point at
+one. Teaching `test/make_model_fixture.cpp` to emit them would remove the last
+dependency on data that is not in the repository.
 
 ## Packaging
 

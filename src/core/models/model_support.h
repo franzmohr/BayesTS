@@ -110,6 +110,57 @@ inline void fill_psi_path(arma::mat &Psi, const arma::mat &psi, const int k)
     }
 }
 
+/// Splits the contemporaneous coefficients off the end of `a`, returning them
+/// and shortening `a` to the coefficients that do have a column in `z`.
+///
+/// A structural model carries its k(k-1)/2 contemporaneous coefficients as the
+/// last rows of the posterior, and they have no regressors: `z.n_cols` is short
+/// by exactly that many. So `nparams` has to be the *posterior's* own count,
+/// which the callers derive two different and equally correct ways -- off
+/// `coefficients.a` where the coefficients are constant, off the spec where they
+/// are a path and the posterior holds one period. Splitting on `z.n_cols`
+/// instead cuts `a` in the wrong place: it takes the contemporaneous block out
+/// of the lag coefficients and leaves a width that no longer matches `z`.
+///
+/// Returns an empty matrix for a model that is not structural, which is then the
+/// flag the caller tests -- there is nothing to split and nothing to apply.
+inline arma::mat split_structural_coefficients(const VarSpec &spec, arma::mat &a,
+                                               const int nparams)
+{
+    if (!spec.structural)
+    {
+        return {};
+    }
+
+    const int n_structural = spec.n_structural();
+    arma::mat a0 = a.rows(nparams - n_structural, nparams - 1);
+
+    // A model that is nothing but its contemporaneous coefficients leaves `a`
+    // alone: there is no row left to keep, and the caller's use_a is false.
+    if (nparams > n_structural)
+    {
+        a = a.rows(0, nparams - n_structural - 1);
+    }
+
+    return a0;
+}
+
+/// A_0^{-1} for one draw, unpacked from the block split off above.
+///
+/// By column, unlike Psi -- see core/algorithms/triangular_packing.h, which is
+/// where the two orders and the reason they differ are written down.
+///
+/// Called once per draw. The two samplers that had this written out inline did
+/// it inside the horizon loop instead, rebuilding and re-inverting the same
+/// matrix h times; nothing in it depends on the horizon.
+inline arma::mat structural_inverse(const arma::mat &a0, const arma::uword draw,
+                                    const arma::mat &diag_k)
+{
+    arma::mat a_0 = diag_k;
+    fill_strict_lower_triangle_by_column(a_0, a0.col(draw));
+    return arma::solve(a_0, diag_k);
+}
+
 /// Writes the simulated path into the lagged-endogenous columns of a forecast's
 /// regressor matrix, for horizon `i` of draw `draw`.
 ///

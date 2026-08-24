@@ -4,19 +4,35 @@
 // Builds a complete model file for the samplers that have no checked-in
 // fixtures.
 //
-// VarNormalWishart is the only model with recorded inputs in test/, so the
-// other three could not be put through the same before/after comparison as a
-// refactor. make_varsel_fixture cannot fill the gap: it decorates an existing
-// file, and there is nothing to decorate. This tool writes one from scratch.
+// VarNormalWishart and VecNormalWishart are the only models with recorded
+// inputs, so the rest could not be put through the same before/after comparison
+// as a refactor. make_varsel_fixture cannot fill the gap: it decorates an
+// existing file, and there is nothing to decorate. This tool writes one from
+// scratch.
 //
 //   make_model_fixture <dest.h5> <model> <varsel> <covar> <structural> <h>
 //
 //     model       VarNormalGamma | VarNormalStochvol | VarTvpGamma
 //                 | VarTvpWishart | VarTvpStochvol
-//     varsel      none | ssvs | bvs        (ssvs only reaches VarNormalGamma)
+//                 | VecNormalGamma | VecNormalStochvol
+//                 | VecTvpGamma | VecTvpWishart | VecTvpStochvol
+//     varsel      none | ssvs | bvs        (ssvs reaches VarNormalGamma and
+//                                           VecNormalGamma only)
 //     covar       0 | 1                    the "+covar" error specification
-//     structural  0 | 1
+//     structural  0 | 1                    (refused with a Wishart error
+//                                           precision or a covariance block --
+//                                           A_0 is not identified against an
+//                                           unrestricted Sigma)
 //     h           forecast horizon; 0 writes no forecast regressors
+//
+// The VECs are written from a different set of dimensions and a different
+// regressor layout than the VAR models -- differences with an error correction
+// term, and a forecast in levels -- so they have a block of their own below
+// rather than a branch inside the VAR one. Only the coefficient count differs
+// between a structural VEC and a plain one: the contemporaneous columns go on
+// the end of /data/train/z and the coefficients on the end of `a`, while the
+// forecast regressors are unchanged, because the samplers split that block off
+// the posterior rather than reading a column for it.
 //
 // The numbers it invents are not a realistic prior or a realistic sample. They
 // only have to be admissible and reproducible: the file is an input to a
@@ -49,6 +65,25 @@ constexpr int kTT = 24; // periods
 // the threshold to stay on the behaviour the fixtures are meant to record.
 constexpr int kIterations = 80;
 constexpr int kBurnin = 40;
+
+// The VEC, in the level orders VarSpec counts in. p = 2 leaves one lagged
+// difference, which is what makes the model more than its loadings and puts the
+// sampler through the branch that nets the rest of the regressors out before
+// beta is drawn; p = 1 would have skipped it. The constant is restricted to the
+// cointegration space, so `n` is zero and n_restricted is one.
+constexpr int kVecP = 2;
+constexpr int kVecRank = 1;
+constexpr int kVecNRestricted = 1;
+constexpr int kVecKBeta = kK + kM + kVecNRestricted; // 4
+constexpr int kVecNAlpha = kK * kVecRank;            // 3
+constexpr int kVecNBeta = kVecKBeta * kVecRank;      // 4
+constexpr int kVecNGamma = kK * kK * (kVecP - 1);    // 9
+constexpr int kVecNParams = kVecNAlpha + kVecNGamma; // 12
+
+// Written out rather than left to the default, and deliberately not equal to
+// it: a fixture that agreed with the default would pass just as well if the
+// dataset were never read.
+constexpr double kVecRho = 0.99;
 
 /// A 64-bit LCG, so the fixtures do not depend on the host's <random>
 /// implementation the way std::mt19937 plus a distribution would.
@@ -139,12 +174,18 @@ void write_attribute(HighFive::File &file, const std::string &group_name,
 }
 
 /// Positions are stored one-based, matching R and the rest of the format.
-void write_selection(HighFive::File &file, const std::string &prior_group, arma::uword n)
+///
+/// `skip` leaves the first that many coefficients out of the selection while
+/// still giving them an inclusion probability, which is what a VEC needs: the
+/// prior is indexed by the whole of `a`, but selection may not reach the
+/// loadings at the front of it.
+void write_selection(HighFive::File &file, const std::string &prior_group, arma::uword n,
+                     arma::uword skip = 0)
 {
-    std::vector<int> include(n);
-    for (arma::uword i = 0; i < n; ++i)
+    std::vector<int> include;
+    for (arma::uword i = skip; i < n; ++i)
     {
-        include[i] = static_cast<int>(i) + 1;
+        include.push_back(static_cast<int>(i) + 1);
     }
     write_int_row(file, prior_group + "/include", include);
     write_row(file, prior_group + "/inprior", arma::vec(n, arma::fill::value(0.5)));
@@ -501,6 +542,432 @@ void write_var_tvp_stochvol(HighFive::File &file, const std::string &varsel, boo
     }
 }
 
+//////////////////////////////////////////////////////////////////////////////
+// The VEC models.
+//
+// Different dimensions and a different regressor layout from the VAR block
+// above -- differences with an error correction term, and a forecast in levels
+// -- so they get their own data builders rather than a branch inside those. All
+// five share every one of them: what differs between a VecNormalGamma and a
+// VecTvpStochvol is the priors and the initial values, never the sample.
+
+/// A stable VAR(1) in levels, kVecP periods longer than the sample so that the
+/// first observation has both a lagged level for the error correction term and
+/// a lagged difference for Gamma_1.
+///
+/// Not a cointegrated process, deliberately: the fixture is an input to a
+/// fingerprint comparison, not a recovery experiment, and a series that has to
+/// be simulated from a rank-one system is one more thing to keep reproducible
+/// for no gain.
+arma::mat simulate_levels(Lcg &rng)
+{
+    arma::mat levels(kK, kTT + kVecP, arma::fill::zeros);
+    for (int t = 1; t < kTT + kVecP; ++t)
+    {
+        for (int i = 0; i < kK; ++i)
+        {
+            levels(i, t) = 0.5 * levels(i, t - 1) + rng.normal();
+        }
+    }
+    return levels;
+}
+
+/// The cointegration vectors the file starts from, normalised on the first
+/// variable. A point in the space rather than an identifying restriction --
+/// what pins the scale is the prior, whichever of the two the model carries.
+arma::vec vec_initial_beta()
+{
+    arma::vec beta(kVecNBeta, arma::fill::zeros);
+    beta(0) = 1.0;
+    return beta;
+}
+
+/// The response: first differences of the levels, k x tt.
+arma::mat build_vec_differences(const arma::mat &levels)
+{
+    arma::mat dy(kK, kTT);
+    for (int t = 0; t < kTT; ++t)
+    {
+        dy.col(t) = levels.col(kVecP + t) - levels.col(kVecP + t - 1);
+    }
+    return dy;
+}
+
+/// The error correction term, tt x k_beta: the levels of the endogenous
+/// variables one period back, then the constant restricted to the
+/// cointegration space.
+arma::mat build_vec_w(const arma::mat &levels)
+{
+    arma::mat w(kTT, kVecKBeta, arma::fill::ones);
+    for (int t = 0; t < kTT; ++t)
+    {
+        w.submat(t, 0, t, kK - 1) = arma::trans(levels.col(kVecP + t - 1));
+    }
+    return w;
+}
+
+/// (tt * k) x nparams. The loadings' columns come first and hold
+/// kron((beta' w_t)', I_k) for the beta the file starts from -- every sampler
+/// rebuilds them from its own draw before it reads them, so they are here for a
+/// file that can be read on its own rather than because anything depends on
+/// them. Then the lagged difference, then the structural columns.
+arma::mat build_vec_train_regressors(const arma::mat &levels, const arma::mat &w, int n_structural,
+                                     Lcg &rng)
+{
+    const arma::mat diag_k = arma::eye<arma::mat>(kK, kK);
+    const arma::mat beta = arma::reshape(vec_initial_beta(), kVecKBeta, kVecRank);
+    arma::mat z(kTT * kK, kVecNParams + n_structural, arma::fill::zeros);
+
+    for (int t = 0; t < kTT; ++t)
+    {
+        z.submat(t * kK, 0, (t + 1) * kK - 1, kVecNAlpha - 1) = arma::kron(
+            arma::trans(arma::trans(beta) * arma::trans(w.row(t))), diag_k);
+
+        const arma::vec lagged_difference =
+            levels.col(kVecP + t - 1) - levels.col(kVecP + t - 2);
+        z.submat(t * kK, kVecNAlpha, (t + 1) * kK - 1, kVecNParams - 1) =
+            arma::kron(arma::trans(lagged_difference), diag_k);
+
+        for (int j = 0; j < n_structural; ++j)
+        {
+            for (int i = 0; i < kK; ++i)
+            {
+                z(t * kK + i, kVecNParams + j) = 0.2 * rng.normal();
+            }
+        }
+    }
+    return z;
+}
+
+/// (h * k) x k(k p + n_restricted), in the *level* layout every VEC forecast
+/// expects: p blocks of endogenous lags, then the constant, which was restricted
+/// to the cointegration space and becomes an ordinary regressor of the level
+/// VAR. Nothing here is in differences, and none of it can be derived from
+/// /data/train/z -- which is the demand on the caller the samplers document.
+///
+/// update_forecast_lags() overwrites the block for lag j at horizon i only once
+/// i >= j, so with two lags both blocks have to be seeded at horizon 0 and the
+/// second one again at horizon 1.
+arma::mat build_vec_forecast_regressors(const arma::mat &levels, int h)
+{
+    const arma::mat diag_k = arma::eye<arma::mat>(kK, kK);
+    const int lag_cols = kK * kK * kVecP;
+    const int ncols = lag_cols + kK * kVecNRestricted;
+    arma::mat z(h * kK, ncols, arma::fill::zeros);
+
+    for (int i = 0; i < h; ++i)
+    {
+        z.submat(i * kK, lag_cols, (i + 1) * kK - 1, ncols - 1) = diag_k;
+    }
+
+    const arma::mat y_last = arma::kron(arma::trans(levels.col(kTT + kVecP - 1)), diag_k);
+    const arma::mat y_before = arma::kron(arma::trans(levels.col(kTT + kVecP - 2)), diag_k);
+
+    z.submat(0, 0, kK - 1, kK * kK - 1) = y_last;
+    z.submat(0, kK * kK, kK - 1, 2 * kK * kK - 1) = y_before;
+    if (h > 1)
+    {
+        z.submat(kK, kK * kK, 2 * kK - 1, 2 * kK * kK - 1) = y_last;
+    }
+
+    return z;
+}
+
+/// The error specification attribute, which is what every reader dispatches on.
+/// VecTvpWishart carries no psi block, so it has no "+covar" spelling to reach.
+std::string vec_error_spec(const std::string &model, bool covar)
+{
+    if (model == "VecTvpWishart")
+    {
+        return "wishart";
+    }
+    const std::string prefix =
+        (model == "VecNormalStochvol" || model == "VecTvpStochvol") ? "sv" : "gamma";
+    return covar ? prefix + "+covar" : prefix;
+}
+
+void write_vec_common(HighFive::File &file, const std::string &model, const std::string &varsel,
+                      bool covar, bool structural, int h, const arma::mat &levels,
+                      const arma::mat &dy, const arma::mat &w, const arma::mat &z_train)
+{
+    write_attribute<std::string>(file, "/model", "algorithm", model);
+    write_attribute<int>(file, "/model", "k", kK);
+    write_attribute<int>(file, "/model", "p", kVecP);
+    write_attribute<int>(file, "/model", "m", kM);
+    write_attribute<int>(file, "/model", "s", kS);
+
+    // Zero unrestricted deterministic terms: the intercept the VAR fixtures
+    // carry is inside the cointegration space here, and counted by
+    // n_restricted instead.
+    write_attribute<int>(file, "/model", "n", 0);
+    write_attribute<int>(file, "/model", "n_restricted", kVecNRestricted);
+    write_attribute<int>(file, "/model", "rank", kVecRank);
+    write_attribute<int>(file, "/model", "k_beta", kVecKBeta);
+
+    write_attribute<int>(file, "/model", "iterations", kIterations);
+    write_attribute<int>(file, "/model", "burnin", kBurnin);
+    write_attribute<std::string>(file, "/model", "varsel", varsel);
+    write_attribute<bool>(file, "/model", "structural", structural);
+    write_attribute<std::string>(file, "/model", "error", vec_error_spec(model, covar));
+
+    ensure_group(file, "/data");
+    ensure_group(file, "/data/train");
+    ensure_group(file, "/priors");
+    ensure_group(file, "/priors/a");
+    ensure_group(file, "/priors/beta");
+    ensure_group(file, "/priors/u_sigma");
+    ensure_group(file, "/initial");
+
+    write_row(file, "/data/train/y", arma::vectorise(dy));
+    write_mat(file, "/data/train/w", w);
+    write_mat(file, "/data/train/z", z_train);
+
+    if (h > 0)
+    {
+        ensure_group(file, "/data/forecast");
+        write_mat(file, "/data/forecast/z", build_vec_forecast_regressors(levels, h));
+        write_attribute<int>(file, "/model", "h", h);
+    }
+}
+
+/// Selection over a VEC's coefficients starts past the loadings: every VEC's
+/// validate() rejects a scheme that reaches them, and an indicator left at one
+/// for a position the sweep never visits is how they stay in.
+void write_vec_selection(HighFive::File &file, const std::string &varsel, arma::uword nparams,
+                         bool with_ssvs)
+{
+    write_row(file, "/initial/a_lambda", arma::vec(nparams, arma::fill::ones));
+    write_selection(file, "/priors/a", nparams, kVecNAlpha);
+    if (with_ssvs && varsel == "ssvs")
+    {
+        write_ssvs(file, "/priors/a", nparams);
+    }
+}
+
+/// The constant coefficient block: a normal prior and one starting value.
+void write_vec_constant_coefficients(HighFive::File &file, const std::string &varsel,
+                                     arma::uword nparams, bool with_ssvs)
+{
+    write_row(file, "/priors/a/mu", arma::vec(nparams, arma::fill::zeros));
+    write_mat(file, "/priors/a/v_inv", arma::eye<arma::mat>(nparams, nparams));
+    write_row(file, "/initial/a", arma::vec(nparams, arma::fill::zeros));
+
+    if (varsel != "none")
+    {
+        write_vec_selection(file, varsel, nparams, with_ssvs);
+    }
+}
+
+/// The constant cointegration space prior of Koop, Leon-Gonzalez and Strachan
+/// (2010): a scalar shrinkage and the central location of the space, k_beta
+/// square rather than n_beta square.
+void write_vec_constant_coint(HighFive::File &file)
+{
+    write_row(file, "/initial/beta", vec_initial_beta());
+    write_dataset_double(file, "/priors/beta/v_inv", 0.1);
+    write_mat(file, "/priors/beta/p_tau_inv", arma::eye<arma::mat>(kVecKBeta, kVecKBeta));
+}
+
+/// The time-varying cointegration space: a path, where it starts, and how fast
+/// it may turn. No state variance among them -- the innovation variance is the
+/// identity and is what pins beta's scale.
+void write_vec_tvp_coint(HighFive::File &file)
+{
+    const arma::vec beta = vec_initial_beta();
+    write_mat(file, "/initial/beta", arma::repmat(beta, 1, kTT));
+    write_row(file, "/initial/beta_init", beta);
+    write_row(file, "/priors/beta/mu", arma::vec(kVecNBeta, arma::fill::zeros));
+    write_mat(file, "/priors/beta/v_inv", arma::eye<arma::mat>(kVecNBeta, kVecNBeta));
+    write_dataset_double(file, "/priors/beta/rho", kVecRho);
+}
+
+/// The time-varying coefficient block, which is the VAR's: a path, the precision
+/// of its innovations and the state it starts from. Selection is the VEC's,
+/// though, so it is written here rather than by write_tvp_coefficients().
+void write_vec_tvp_coefficients(HighFive::File &file, const std::string &varsel,
+                                arma::uword nparams)
+{
+    write_tvp_coefficients(file, "none", nparams);
+
+    if (varsel != "none")
+    {
+        write_vec_selection(file, varsel, nparams, false);
+    }
+}
+
+/// The constant covariance block, as the constant-coefficient VARs write it.
+void write_vec_constant_psi(HighFive::File &file, const std::string &varsel, arma::uword n_psi,
+                            bool with_ssvs)
+{
+    ensure_group(file, "/priors/psi");
+    write_row(file, "/priors/psi/mu", arma::vec(n_psi, arma::fill::zeros));
+    write_mat(file, "/priors/psi/v_inv", arma::eye<arma::mat>(n_psi, n_psi));
+    write_row(file, "/initial/psi", arma::vec(n_psi, arma::fill::zeros));
+
+    if (varsel != "none")
+    {
+        write_row(file, "/initial/psi_lambda", arma::vec(n_psi, arma::fill::ones));
+        write_selection(file, "/priors/psi", n_psi);
+        if (with_ssvs && varsel == "ssvs")
+        {
+            write_ssvs(file, "/priors/psi", n_psi);
+        }
+    }
+}
+
+/// The time-varying covariance block, as the time-varying VARs write it --
+/// including the selection scheme in its own group, which is why it can differ
+/// from the model's.
+void write_vec_tvp_psi(HighFive::File &file, const std::string &varsel, arma::uword n_psi)
+{
+    ensure_group(file, "/priors/psi");
+    write_mat(file, "/initial/psi", arma::mat(n_psi, kTT, arma::fill::zeros));
+    write_mat(file, "/initial/psi_sigma_inv",
+              arma::mat(arma::diagmat(arma::vec(n_psi, arma::fill::value(100.0)))));
+    write_row(file, "/initial/psi_init", arma::vec(n_psi, arma::fill::zeros));
+
+    write_row(file, "/priors/psi/shape", arma::vec(n_psi, arma::fill::value(3.0)));
+    write_row(file, "/priors/psi/rate", arma::vec(n_psi, arma::fill::value(0.01)));
+    write_row(file, "/priors/psi/mu", arma::vec(n_psi, arma::fill::zeros));
+    write_mat(file, "/priors/psi/v_inv", arma::eye<arma::mat>(n_psi, n_psi));
+
+    ensure_group(file, "/model/priors");
+    write_attribute<std::string>(file, "/model/priors/psi", "varsel", varsel);
+
+    if (varsel != "none")
+    {
+        write_row(file, "/initial/psi_lambda", arma::vec(n_psi, arma::fill::ones));
+        write_selection(file, "/priors/psi", n_psi);
+    }
+}
+
+/// The stochastic volatility block, shared by the two VECs that carry one.
+void write_vec_stochvol(HighFive::File &file)
+{
+    // The offset keeps log(u^2 + offset) finite when a residual lands on zero,
+    // and bounds it well inside the range the ten-component mixture covers.
+    write_row(file, "/priors/u_sigma/offset", arma::vec(kK, arma::fill::value(1e-4)));
+    write_row(file, "/priors/u_sigma/sigma", arma::vec(kK, arma::fill::value(0.1)));
+    write_row(file, "/priors/u_sigma/shape", arma::vec(kK, arma::fill::value(3.0)));
+    write_row(file, "/priors/u_sigma/rate", arma::vec(kK, arma::fill::value(0.2)));
+    write_row(file, "/priors/u_sigma/mu", arma::vec(kK, arma::fill::zeros));
+    write_mat(file, "/priors/u_sigma/v_inv", arma::eye<arma::mat>(kK, kK));
+
+    write_mat(file, "/initial/h", arma::mat(kTT, kK, arma::fill::zeros));
+    write_row(file, "/initial/h_init", arma::vec(kK, arma::fill::zeros));
+}
+
+/// The independent gamma priors on the error precisions. `initial` is the
+/// dataset the model reads its starting precision from: the constant-coefficient
+/// VECs call it u_sigma_inv and the time-varying ones u_omega_inv.
+void write_vec_gamma_errors(HighFive::File &file, const std::string &initial)
+{
+    write_row(file, "/priors/u_sigma/shape", arma::vec(kK, arma::fill::value(3.0)));
+    write_row(file, "/priors/u_sigma/rate", arma::vec(kK, arma::fill::value(2.0)));
+    write_mat(file, initial, arma::eye<arma::mat>(kK, kK));
+}
+
+void write_vec_normal_gamma(HighFive::File &file, const std::string &varsel, bool covar,
+                            arma::uword nparams)
+{
+    write_vec_constant_coefficients(file, varsel, nparams, true);
+    write_vec_constant_coint(file);
+    write_vec_gamma_errors(file, "/initial/u_sigma_inv");
+
+    if (covar)
+    {
+        write_vec_constant_psi(file, varsel, kK * (kK - 1) / 2, true);
+    }
+}
+
+void write_vec_normal_stochvol(HighFive::File &file, const std::string &varsel, bool covar,
+                               arma::uword nparams)
+{
+    write_vec_constant_coefficients(file, varsel, nparams, false);
+    write_vec_constant_coint(file);
+    write_vec_stochvol(file);
+
+    if (covar)
+    {
+        write_vec_constant_psi(file, varsel, kK * (kK - 1) / 2, false);
+    }
+}
+
+void write_vec_tvp_wishart(HighFive::File &file, const std::string &varsel, arma::uword nparams)
+{
+    write_vec_tvp_coefficients(file, varsel, nparams);
+    write_vec_tvp_coint(file);
+
+    // The error covariance is the Wishart precision alone: no psi block, so
+    // nothing here depends on the covar flag.
+    write_int_scalar(file, "/priors/u_sigma/df", kK);
+    write_mat(file, "/priors/u_sigma/scale", arma::eye<arma::mat>(kK, kK));
+    write_mat(file, "/initial/u_sigma_inv", arma::eye<arma::mat>(kK, kK));
+}
+
+void write_vec_tvp_gamma(HighFive::File &file, const std::string &varsel, bool covar,
+                         arma::uword nparams)
+{
+    write_vec_tvp_coefficients(file, varsel, nparams);
+    write_vec_tvp_coint(file);
+    write_vec_gamma_errors(file, "/initial/u_omega_inv");
+
+    if (covar)
+    {
+        write_vec_tvp_psi(file, varsel, kK * (kK - 1) / 2);
+    }
+}
+
+void write_vec_tvp_stochvol(HighFive::File &file, const std::string &varsel, bool covar,
+                            arma::uword nparams)
+{
+    write_vec_tvp_coefficients(file, varsel, nparams);
+    write_vec_tvp_coint(file);
+    write_vec_stochvol(file);
+
+    if (covar)
+    {
+        write_vec_tvp_psi(file, varsel, kK * (kK - 1) / 2);
+    }
+}
+
+/// Dispatches to the five above. Returns false if the name is not a VEC.
+bool write_vec_model(HighFive::File &file, const std::string &model, const std::string &varsel,
+                     bool covar, arma::uword nparams)
+{
+    if (model == "VecNormalGamma")
+    {
+        write_vec_normal_gamma(file, varsel, covar, nparams);
+    }
+    else if (model == "VecNormalStochvol")
+    {
+        write_vec_normal_stochvol(file, varsel, covar, nparams);
+    }
+    else if (model == "VecTvpWishart")
+    {
+        write_vec_tvp_wishart(file, varsel, nparams);
+    }
+    else if (model == "VecTvpGamma")
+    {
+        write_vec_tvp_gamma(file, varsel, covar, nparams);
+    }
+    else if (model == "VecTvpStochvol")
+    {
+        write_vec_tvp_stochvol(file, varsel, covar, nparams);
+    }
+    else
+    {
+        return false;
+    }
+    return true;
+}
+
+bool is_vec_model(const std::string &model)
+{
+    return model == "VecNormalGamma" || model == "VecNormalStochvol" ||
+           model == "VecTvpWishart" || model == "VecTvpGamma" || model == "VecTvpStochvol";
+}
+
 } // namespace
 
 int main(int argc, char *argv[])
@@ -519,8 +986,10 @@ int main(int argc, char *argv[])
     const bool structural = std::string(argv[5]) != "0";
     const int h = std::stoi(argv[6]);
 
+    const bool is_vec = is_vec_model(model);
+
     if (model != "VarNormalGamma" && model != "VarNormalStochvol" && model != "VarTvpGamma" &&
-        model != "VarTvpWishart" && model != "VarTvpStochvol")
+        model != "VarTvpWishart" && model != "VarTvpStochvol" && !is_vec)
     {
         std::cerr << "Unknown model: " << model << '\n';
         return 2;
@@ -528,6 +997,21 @@ int main(int argc, char *argv[])
     if (varsel != "none" && varsel != "ssvs" && varsel != "bvs")
     {
         std::cerr << "Unknown variable selection scheme: " << varsel << '\n';
+        return 2;
+    }
+
+    // The combination every validate() now rejects: A_0 is identified only
+    // against a diagonal error covariance, and both a Wishart prior and a
+    // covariance block leave Sigma unrestricted. Refused here rather than
+    // written, because a fixture the sampler will not accept is a golden test
+    // that passes while producing nothing -- see the note in CONTRIBUTING.md.
+    const bool wishart_errors = model == "VarNormalWishart" || model == "VarTvpWishart" ||
+                                model == "VecNormalWishart" || model == "VecTvpWishart";
+    if (structural && kK > 1 && (wishart_errors || covar))
+    {
+        std::cerr << "structural is not identified with "
+                  << (wishart_errors ? "a Wishart error precision" : "a covariance block")
+                  << ": see require_identified_structural() in src/core/inputs.cpp\n";
         return 2;
     }
 
@@ -548,6 +1032,26 @@ int main(int argc, char *argv[])
         // One generator for the whole file, so every dataset that draws from it
         // is reproducible as a set rather than individually.
         Lcg rng(20260808ULL);
+
+        if (is_vec)
+        {
+            const arma::mat levels = simulate_levels(rng);
+            const arma::mat dy = build_vec_differences(levels);
+            const arma::mat w = build_vec_w(levels);
+            const int n_structural = layout.n_structural;
+            const arma::uword nparams = static_cast<arma::uword>(kVecNParams + n_structural);
+            const arma::mat z_train = build_vec_train_regressors(levels, w, n_structural, rng);
+
+            write_vec_common(file, model, varsel, covar, structural, h, levels, dy, w, z_train);
+            write_vec_model(file, model, varsel, covar, nparams);
+
+            std::cout << "wrote " << dest.string() << " (" << model << ", varsel=" << varsel
+                      << ", covar=" << covar << ", structural=" << structural << ", h=" << h
+                      << ", k=" << kK << ", tt=" << kTT << ", rank=" << kVecRank
+                      << ", nparams=" << nparams << ")\n";
+            return 0;
+        }
+
         const arma::mat series = simulate_series(rng);
         const arma::mat z_train = build_train_regressors(series, layout, rng);
 
