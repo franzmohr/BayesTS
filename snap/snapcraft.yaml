@@ -162,6 +162,13 @@ parts:
       - libhdf5-103-1t64
       - libgfortran5
       - libgomp1
+      # main() calls openblas_set_num_threads, which puts a direct DT_NEEDED on
+      # libopenblas.so.0 -- so it is named here rather than left to arrive as
+      # Armadillo's BLAS. apt's default provider for Armadillo's `libblas.so.3`
+      # dependency is reference BLAS, which does not carry that soname, and
+      # without this line the snap would build and then fail to start with
+      # "error while loading shared libraries: libopenblas.so.0".
+      - libopenblas0
 
     # Nothing needs the headers or the CMake package files of the staged
     # dependencies at runtime, and they are a large fraction of what apt

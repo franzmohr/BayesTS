@@ -14,10 +14,18 @@
 #endif
 
 // OpenBLAS threading control
+//
+// These are OpenBLAS's own entry points, not part of any BLAS interface, so the
+// build defines BAYESTS_HAVE_OPENBLAS only after checking that they actually
+// link -- see the OpenBLAS section of the top-level CMakeLists.txt. Without it
+// the BLAS thread count is whatever OPENBLAS_NUM_THREADS or the library's own
+// default makes it.
+#ifdef BAYESTS_HAVE_OPENBLAS
 extern "C" {
     void openblas_set_num_threads(int num_threads);
     int openblas_get_num_threads(void);
 }
+#endif
 
 int main(int argc, char* argv[]) {
 
@@ -28,11 +36,14 @@ int main(int argc, char* argv[]) {
     // Set OpenMP threads (for Armadillo parallel operations)
     omp_set_num_threads(num_threads);
 
+    std::cout << "OpenMP threads: " << num_threads << std::endl;
+
+#ifdef BAYESTS_HAVE_OPENBLAS
     // Set OpenBLAS threads (for BLAS/LAPACK operations)
     openblas_set_num_threads(num_threads);
 
-    std::cout << "OpenMP threads: " << num_threads << std::endl;
     std::cout << "OpenBLAS threads: " << openblas_get_num_threads() << std::endl;
+#endif
 #else
     std::cout << "OpenMP not available: Running single-threaded" << std::endl;
 #endif

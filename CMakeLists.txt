@@ -148,6 +148,76 @@ else()
                    "libraries ${ARMADILLO_LIBRARIES}")
 endif()
 
+#####################################################################
+# OpenBLAS thread control (optional)
+#
+# main() sets the BLAS thread count at startup through openblas_set_num_threads
+# and reports it back through openblas_get_num_threads. Those two are OpenBLAS's
+# own entry points -- no part of any BLAS or LAPACK interface -- so they exist
+# only when the BLAS under Armadillo actually is OpenBLAS *and* that library is
+# on the executable's link line.
+#
+# Neither half can be assumed. The BLAS may be reference BLAS, ATLAS or MKL; and
+# even where it is OpenBLAS, the executable reaches it only through
+# libarmadillo.so, which on GNU ld is not enough:
+#
+#   undefined reference to symbol 'openblas_get_num_threads'
+#   libopenblas.so.0: error adding symbols: DSO missing from command line
+#
+# because --no-copy-dt-needed-entries refuses to resolve a symbol out of an
+# indirect dependency. That is the snap and .deb build; it does not happen on
+# Windows only because a static library's PRIVATE dependencies are re-emitted on
+# the final link there as well as here, and the import library happens to name
+# the symbols.
+#
+# So probe for them, and hand the result to the compile as BAYESTS_HAVE_OPENBLAS
+# and to the link as an explicit library. Where the probe fails, the calls are
+# compiled out and thread counts are left to OPENBLAS_NUM_THREADS and the BLAS's
+# own default -- which is what an OpenBLAS does anyway when nobody calls it.
+
+find_library(BAYESTS_OPENBLAS_LIBRARY
+    NAMES openblas openblas64 openblas_pthreads openblasp
+    DOC "OpenBLAS library providing openblas_set_num_threads (optional)")
+
+include(CMakePushCheckState)
+include(CheckCXXSourceCompiles)
+
+cmake_push_check_state(RESET)
+if(BAYESTS_OPENBLAS_LIBRARY)
+    set(CMAKE_REQUIRED_LIBRARIES "${BAYESTS_OPENBLAS_LIBRARY}")
+endif()
+# Declared exactly as src/bayests.cpp declares them, so this tests the link the
+# executable will make and not a near-miss of it.
+check_cxx_source_compiles("
+extern \"C\" {
+    void openblas_set_num_threads(int num_threads);
+    int openblas_get_num_threads(void);
+}
+int main() { openblas_set_num_threads(1); return openblas_get_num_threads(); }
+" BAYESTS_HAVE_OPENBLAS)
+cmake_pop_check_state()
+
+add_library(bayests_openblas INTERFACE)
+add_library(BayesTS::openblas ALIAS bayests_openblas)
+
+if(BAYESTS_HAVE_OPENBLAS)
+    target_compile_definitions(bayests_openblas INTERFACE BAYESTS_HAVE_OPENBLAS)
+    if(BAYESTS_OPENBLAS_LIBRARY)
+        # By full path, so the executable gets a direct dependency on this
+        # library rather than on whatever -lopenblas resolves to at load time.
+        target_link_libraries(bayests_openblas INTERFACE "${BAYESTS_OPENBLAS_LIBRARY}")
+        message(STATUS "OpenBLAS thread control: ${BAYESTS_OPENBLAS_LIBRARY}")
+    else()
+        # The symbols linked without help: something already on the line, most
+        # likely Armadillo's own import library, exports them.
+        message(STATUS "OpenBLAS thread control: available without an explicit library")
+    endif()
+else()
+    message(STATUS "OpenBLAS thread control: not available - BLAS threading is "
+                   "left to the environment (OPENBLAS_NUM_THREADS) and the "
+                   "library's default")
+endif()
+
 # HDF5 (needed by HighFive)
 #
 # QUIET rather than REQUIRED: a distribution's libhdf5-dev installs pkg-config

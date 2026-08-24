@@ -42,6 +42,11 @@ if(OpenMP_CXX_FOUND)
     target_link_libraries(bayests PRIVATE OpenMP::OpenMP_CXX)
 endif()
 
+# main() is the only place that calls openblas_set_num_threads, so the
+# definition and the library it needs go on the executable alone. Whether either
+# is there at all is decided in the top-level CMakeLists.txt.
+target_link_libraries(bayests PRIVATE bayests_openblas)
+
 #####################################################################
 # Installation
 #
