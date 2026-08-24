@@ -52,8 +52,9 @@ endif()
 
 add_executable(bayests_unit_vec_to_var unit_vec_to_var.cpp)
 add_executable(bayests_unit_forecast_lags unit_forecast_lags.cpp)
+add_executable(bayests_unit_stochvol unit_stochvol.cpp)
 
-foreach(_unit bayests_unit_vec_to_var bayests_unit_forecast_lags)
+foreach(_unit bayests_unit_vec_to_var bayests_unit_forecast_lags bayests_unit_stochvol)
     target_link_libraries(${_unit} PRIVATE bayests_algorithms)
     target_link_libraries(${_unit} PRIVATE bayests_warnings)
 
@@ -145,7 +146,7 @@ endif()
 # The unit tests, which need only the shared libraries on the path: no fixture
 # to set up, and no thread pinning, since an exact identity does not care how
 # many threads computed it.
-foreach(_unit vec_to_var forecast_lags)
+foreach(_unit vec_to_var forecast_lags stochvol)
     add_test(NAME "unit.${_unit}" COMMAND "bayests_unit_${_unit}")
     set_tests_properties("unit.${_unit}" PROPERTIES
         ENVIRONMENT_MODIFICATION "${_bayests_test_env_mod}")
