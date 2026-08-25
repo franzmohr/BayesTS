@@ -168,7 +168,11 @@ parts:
       # dependency is reference BLAS, which does not carry that soname, and
       # without this line the snap would build and then fail to start with
       # "error while loading shared libraries: libopenblas.so.0".
-      - libopenblas0
+      #
+      # The -pthread implementation specifically, not the libopenblas0
+      # metapackage: override-prime below has to name the directory apt unpacks
+      # it into, and the two must agree.
+      - libopenblas0-pthread
 
     # Nothing needs the headers or the CMake package files of the staged
     # dependencies at runtime, and they are a large fraction of what apt
@@ -178,3 +182,73 @@ parts:
       - -usr/lib/*/cmake
       - -usr/lib/*/pkgconfig
       - -usr/share/man
+
+    # Ubuntu's BLAS packages do not install their libraries where the loader
+    # looks for them. libopenblas0-pthread ships
+    #
+    #     usr/lib/<triplet>/openblas-pthread/libopenblas.so.0
+    #     usr/lib/<triplet>/openblas-pthread/libblas.so.3
+    #     usr/lib/<triplet>/openblas-pthread/liblapack.so.3
+    #
+    # and nothing else: the bare-soname links one directory up, in
+    # usr/lib/<triplet>, are created by update-alternatives from the package's
+    # postinst. A snap unpacks its stage-packages and runs no maintainer script,
+    # so those links are simply absent, and both this executable (which records
+    # libopenblas.so.0 for its openblas_set_num_threads call) and
+    # libarmadillo.so.12 (which records libblas.so.3 and liblapack.so.3) then
+    # fail to load:
+    #
+    #     error while loading shared libraries: libopenblas.so.0:
+    #     cannot open shared object file: No such file or directory
+    #
+    # The snap installs cleanly and dies on first run, so this is only ever seen
+    # by whoever runs it -- which is what the smoke test in release.yml is for.
+    #
+    # Recreating the links is the whole fix. One implementation serves all three
+    # sonames, which is exactly what update-alternatives would have done, and
+    # openblas-pthread is both the alternative apt selects when it is installed
+    # and the BLAS this build linked against. The loop is over usr/lib/*/ rather
+    # than a spelled-out triplet so that amd64 and arm64 need no separate case.
+    override-prime: |
+      craftctl default
+
+      # Counts sonames reachable at the top level afterwards, not links made:
+      # a prime step re-run over an existing tree, or an openblas that ships
+      # its own links, leaves nothing to do and is a success, not a failure.
+      present=0
+      for impl in "$CRAFT_PRIME"/usr/lib/*/openblas-pthread; do
+        [ -d "$impl" ] || continue
+        libdir=$(dirname "$impl")
+        # lib*.so.* matches the three sonames and not the implementation file
+        # they point at (libopenblasp-r0.3.26.so), which needs no link: it is
+        # reached through libopenblas.so.0 beside it.
+        for so in "$impl"/lib*.so.*; do
+          [ -e "$so" ] || continue
+          soname=$(basename "$so")
+          # An existing entry wins: a future openblas that does install its own
+          # links, or a second implementation staged alongside this one, must
+          # not be quietly overwritten.
+          if [ -e "$libdir/$soname" ] || [ -L "$libdir/$soname" ]; then
+            echo "keeping existing $libdir/$soname"
+            present=$((present + 1))
+            continue
+          fi
+          ln -s "openblas-pthread/$soname" "$libdir/$soname"
+          echo "linked $soname -> openblas-pthread/$soname"
+          present=$((present + 1))
+        done
+      done
+
+      # None found means the layout assumed above no longer holds -- a base
+      # bump, or a different openblas implementation package. Failing here names
+      # the cause; staying quiet would hand it over as a snap that installs and
+      # then will not start. The listing is what says which layout replaced it,
+      # so it reaches into the per-implementation subdirectories.
+      if [ "$present" -eq 0 ]; then
+        echo "no BLAS sonames found under" \
+             "\$CRAFT_PRIME/usr/lib/<triplet>/openblas-pthread/ -" \
+             "check the stage-packages above against this layout:" >&2
+        find "$CRAFT_PRIME/usr/lib" -maxdepth 3 \
+             \( -name 'lib*blas*' -o -name 'lib*lapack*' \) >&2
+        exit 1
+      fi

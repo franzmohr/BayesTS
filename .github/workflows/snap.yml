@@ -89,10 +89,33 @@ jobs:
           echo "exit=$status"
           if [ "$status" -ne 2 ]; then
             echo "::error::expected the usage message and exit 2, got exit $status."
-            # /snap/bin/bayests is a wrapper script, so ldd wants the real ELF
-            # inside the mounted snap.
-            echo "If it did not start at all, the libraries are the place to look:"
-            ldd /snap/bayests/current/usr/bin/bayests 2>&1 | grep -i "not found" || true
+
+            # The libraries have to be resolved the way the snap resolves them,
+            # which is not the way the host does. /snap/bin/bayests is a wrapper
+            # script, so ldd needs the real ELF inside the mount -- but running
+            # ldd on it from the host reports libarmadillo, libhdf5 and the rest
+            # as "not found" even when the snap runs perfectly, because the host
+            # has none of the $SNAP library paths the snap's own environment
+            # sets up. That listing named every dependency and identified none,
+            # which is worse than no listing at all.
+            #
+            # `snap run --shell` gives a shell inside that environment, so a
+            # "not found" there is a real missing library -- and a real one is
+            # almost always a soname that apt unpacked into a subdirectory
+            # (Ubuntu's BLAS packages do, see snap/snapcraft.yaml) or a
+            # stage-package that was never named.
+            #
+            # The redirect from /dev/null is what keeps this from becoming its
+            # own problem: if a future snapd stops forwarding `-c` to that
+            # shell, bash starts interactively instead, and reading EOF makes it
+            # exit quietly rather than wait for input on a runner that has no
+            # terminal. The step then reports nothing found, which is the same
+            # as it managing to report nothing found -- so a broken probe costs
+            # a diagnostic, never the job.
+            echo "Libraries the snap cannot resolve in its own environment:"
+            snap run --shell bayests -c 'ldd "$SNAP/usr/bin/bayests"' </dev/null 2>&1 \
+              | grep -i "not found" \
+              || echo "(nothing reported missing -- look elsewhere for the cause)"
             exit 1
           fi
 
