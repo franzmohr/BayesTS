@@ -48,10 +48,16 @@ int main(int argc, char* argv[]) {
     std::cout << "OpenMP not available: Running single-threaded" << std::endl;
 #endif
 
+    // Exit codes: 2 for a command line that cannot be acted on, 1 for a run
+    // that started and failed. That is what the subcommands do -- see the argc
+    // guard at the top of each of coefficients, forecasts and loglik -- and
+    // what the smoke tests in .github/workflows/ci.yml and snap.yml assert,
+    // since an exit 2 from a bare invocation is the evidence the binary loaded
+    // its libraries and reached main() rather than dying in the loader.
     if (argc < 3) {
         std::cerr << "Usage: " << argv[0] << " <command> <path_to_file.h5> [args...]\n";
         std::cerr << "Available commands: posterior, coefficients, forecasts, loglik\n";
-        return 1;
+        return 2;
     }
 
     std::map<std::string, std::function<int(int, char**)>> commands = {
@@ -67,7 +73,10 @@ int main(int argc, char* argv[]) {
     if (it != commands.end()) {
         return it->second(argc, argv);
     } else {
+        // A name that is not a command is the same class of mistake as no name
+        // at all, so it exits the same way.
         std::cerr << "Unknown command: " << command << "\n";
-        return 1;
+        std::cerr << "Available commands: posterior, coefficients, forecasts, loglik\n";
+        return 2;
     }
 }

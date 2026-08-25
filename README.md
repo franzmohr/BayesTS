@@ -137,6 +137,11 @@ reported on `stderr` and the walk continues to the next one, but the exit status
 is 1 if any file failed — so a script driving a directory of models can tell
 whether everything in it was processed.
 
+A command line that cannot be acted on at all — no arguments, or a first
+argument that is not one of the four commands — prints the usage message and
+exits 2. The two codes are worth keeping apart in a script: 1 means the run
+started and something in it failed, 2 means it never started.
+
 ### The model file
 
 Groups and datasets the readers look for. Only `/model`'s `algorithm`, `k`,
