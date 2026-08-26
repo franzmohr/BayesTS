@@ -13,6 +13,7 @@ std::unique_ptr<BaseModel> create_model(const std::string& model_type) {
 		{"VarTvpGamma", []() { return std::make_unique<VarTvpGamma>(); }},
 		{"VarTvpWishart", []() { return std::make_unique<VarTvpWishart>(); }},
 		{"VarTvpStochvol", []() { return std::make_unique<VarTvpStochvol>(); }},
+		{"VecKlgs2010", []() { return std::make_unique<VecKlgs2010>(); }},
 		{"VecNormalGamma", []() { return std::make_unique<VecNormalGamma>(); }},
 		{"VecNormalStochvol", []() { return std::make_unique<VecNormalStochvol>(); }},
 		{"VecNormalWishart", []() { return std::make_unique<VecNormalWishart>(); }},

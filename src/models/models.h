@@ -115,6 +115,19 @@ public:
     void log_likelihood(const std::filesystem::path& filepath) override;
 };
 
+class VecKlgs2010 : public BaseModel
+{
+private:
+    // File path
+    std::filesystem::path filepath;
+public:
+    VecKlgs2010();
+    ~VecKlgs2010() override;
+    void draw_coefficients(const std::filesystem::path &filepath_arg) override;
+    void forecast(const std::filesystem::path& filepath) override;
+    void log_likelihood(const std::filesystem::path& filepath) override;
+};
+
 class VecNormalGamma : public BaseModel
 {
 private:

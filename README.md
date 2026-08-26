@@ -35,8 +35,8 @@ Requires a C++20 compiler and Fortran (for LAPACK). Built on
 ## Models
 
 The `/model/algorithm` attribute in the model file selects the sampler; it is
-the only thing that decides which one runs. Twelve are registered — six VARs and
-the same six as VECs:
+the only thing that decides which one runs. Thirteen are registered — six VARs,
+the same six as VECs, and one alternative implementation of a VEC:
 
 | `algorithm` | Coefficients | Error precision | Variable selection |
 | --- | --- | --- | --- |
@@ -52,10 +52,30 @@ the same six as VECs:
 | `VecTvpWishart` | Random walk, beta included | Wishart | BVS |
 | `VecTvpGamma` | Random walk, beta included | Independent gamma, optional time-varying covariance block | BVS |
 | `VecTvpStochvol` | Random walk, beta included | Stochastic volatility, optional time-varying covariance block | BVS |
+| `VecKlgs2010` | `VecNormalWishart` drawn without the SUR system | Wishart | none |
 
 Every model supports exogenous regressors, deterministic terms, a structural
 (contemporaneous-coefficient) form, forecasting and a pointwise log likelihood
 laid out for WAIC and PSIS-LOO.
+
+`VecKlgs2010` is the one entry that is not a model of its own. It is
+`VecNormalWishart` — the cointegration sampler of Koop, León-González and
+Strachan (2010) — written against the compact regressors `/data/train/x` rather
+than the SUR matrix `/data/train/z` they kronecker up into. The k equations of a
+VEC share their regressors, so the posterior precision of the coefficient block
+factors,
+
+```
+z' kron(I_tt, Sigma^-1) z = kron(W_x' W_x, Sigma^-1)   for z = kron(W_x, I_k),
+```
+
+and the Gram product left to form is `n_x` square rather than `k n_x` square:
+O(tt n_x²) against O(tt k³ n_x²), with no `(tt k) x (k n_x)` matrix built at all.
+The posterior is the same one — `test/unit_vec_klgs_2010.cpp` draws both from a
+single seed and compares them — so the choice between the two is a choice about
+cost. What the compact form gives up is variable selection, which acts on the
+columns of the matrix it declines to build; `validate()` rejects either scheme
+rather than ignoring it.
 
 Two algorithms carry the implementation weight. The time-varying coefficient
 paths are drawn as a single block with the simulation smoother of Durbin and
@@ -151,7 +171,9 @@ default, so a file written for a simpler model still describes a valid one.
 | Location | Contents |
 | --- | --- |
 | `/model` (attributes) | `algorithm`, `k` endogenous variables, `iterations` kept, `burnin` discarded; optional `p`, `m`, `s`, `n` (lags, exogenous variables, their lags, deterministic terms), `h` forecast horizon, `varsel` (`none`, `ssvs`, `bvs`), `structural`, `error` |
-| `/data/train/y`, `/data/train/z` | Endogenous variables and the regressor matrix |
+| `/data/train/y`, `/data/train/z` | Endogenous variables and the regressor matrix, `(tt k)` rows by `nparams` columns |
+| `/data/train/w` | A VEC's error correction term, `tt` rows by `k_beta` columns |
+| `/data/train/x` | The regressors in the compact layout, `tt` rows by one column each; read by `VecKlgs2010` in place of `z` |
 | `/data/forecast/z` | Out-of-sample regressors; required when `h` > 0 |
 | `/priors/a`, `/priors/psi` | Normal prior `mu` and `v_inv` for the coefficients and the covariance block, plus `inprior`, `include`, and `tau0`/`tau1` for SSVS |
 | `/priors/u_sigma` | `shape`/`rate` for gamma precisions, `df`/`scale` for Wishart, `mu`/`v_inv`/`sigma`/`offset` for stochastic volatility |
@@ -367,8 +389,8 @@ for the change they precede — a baseline recorded before a *build flag* change
 still diffs cleanly enough to look meaningful, which makes a stale one worse
 than none.
 
-**Coverage.** Ten of the twelve samplers are covered from a clean clone —
-every one but `VarNormalWishart` and `VecNormalWishart` — which are the ten
+**Coverage.** Eleven of the thirteen samplers are covered from a clean clone —
+every one but `VarNormalWishart` and `VecNormalWishart` — which are the eleven
 `test/make_model_fixture.cpp` can write from scratch.
 
 `VarNormalWishart` and `VecNormalWishart` are the exceptions: they cannot be

@@ -106,7 +106,7 @@ intended or a regression, and it is worth being able to say which before opening
 a pull request.
 
 Two models have no generator, because `test/make_model_fixture.cpp` cannot write
-them — `VarNormalWishart` and `VecNormalWishart`, not every VEC: the other five
+them — `VarNormalWishart` and `VecNormalWishart`, not every VEC: the other six
 are generated like the VAR models, from the VEC block at the bottom of that
 file. Their tests are registered only when pointed at a recorded model file, and
 are skipped with a note at configure time otherwise:
@@ -126,7 +126,7 @@ model file is only ever read.
 There is also a coverage gap worth knowing rather than a configuration one: no
 fixture yet has a forecast horizon for `VecNormalWishart`. The path it would
 exercise -- rewriting the draws as a level VAR and forecasting from those -- is
-covered by the other five VECs, which all reach the same code, so what is
+covered by the other six VECs, which all reach the same code, so what is
 missing is that model's own conversion rather than the shared recursion. Note
 that supplying `h` is not enough on its own: `/data/forecast/z` has to be in the
 level layout, with `p + 1` blocks of endogenous lags, not the differenced layout

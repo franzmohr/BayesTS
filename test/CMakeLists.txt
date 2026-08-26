@@ -65,16 +65,26 @@ foreach(_unit bayests_unit_vec_to_var bayests_unit_forecast_lags bayests_unit_st
     endif()
 endforeach()
 
-# The exception: this one covers validate(), which lives in bayests_core rather
-# than in the algorithms library. Still no sampler and still no fixture -- it
-# builds inputs in memory and asserts on what validate() does with them.
+# The exceptions: these two reach into bayests_core rather than the algorithms
+# library -- one covers validate(), the other runs two samplers against each
+# other. Still no fixture: both build their inputs in memory.
+#
+# unit_vec_klgs_2010 is the odd one out in that it does draw, and so does depend
+# on the RNG. It stays a unit test all the same, because what it asserts is a
+# difference between two chains drawn from the same seed rather than the value of
+# either -- an identity that holds on every machine, which is the line these are
+# on the right side of.
 add_executable(bayests_unit_identification unit_identification.cpp)
-target_link_libraries(bayests_unit_identification PRIVATE bayests_core)
-target_link_libraries(bayests_unit_identification PRIVATE bayests_warnings)
+add_executable(bayests_unit_vec_klgs_2010 unit_vec_klgs_2010.cpp)
 
-if(OpenMP_CXX_FOUND)
-    target_link_libraries(bayests_unit_identification PRIVATE OpenMP::OpenMP_CXX)
-endif()
+foreach(_core_unit bayests_unit_identification bayests_unit_vec_klgs_2010)
+    target_link_libraries(${_core_unit} PRIVATE bayests_core)
+    target_link_libraries(${_core_unit} PRIVATE bayests_warnings)
+
+    if(OpenMP_CXX_FOUND)
+        target_link_libraries(${_core_unit} PRIVATE OpenMP::OpenMP_CXX)
+    endif()
+endforeach()
 
 #####################################################################
 # Tests
@@ -159,7 +169,7 @@ endif()
 # The unit tests, which need only the shared libraries on the path: no fixture
 # to set up, and no thread pinning, since an exact identity does not care how
 # many threads computed it.
-foreach(_unit vec_to_var forecast_lags stochvol kalman chan_jeliazkov identification)
+foreach(_unit vec_to_var forecast_lags stochvol kalman chan_jeliazkov identification vec_klgs_2010)
     add_test(NAME "unit.${_unit}" COMMAND "bayests_unit_${_unit}")
     set_tests_properties("unit.${_unit}" PROPERTIES
         ENVIRONMENT_MODIFICATION "${_bayests_test_env_mod}")
@@ -244,6 +254,12 @@ bayests_add_model_fixture(VarTvpStochvol-bvs-covar  VarTvpStochvol bvs  1 0 4)
 # split from the VEC side: every VEC forecast converts to a level VAR and hands
 # the path to VarNormalWishartSampler, so these five and the VAR rows above
 # exercise the same code from both ends.
+# No selection rows: VecKlgs2010 draws the coefficients without forming the SUR
+# design matrix a scheme would act on, and validate() refuses either one. No
+# structural row either, for the reason the Wishart models below have none.
+bayests_add_model_fixture(VecKlgs2010-plain  VecKlgs2010 none 0 0 4)
+bayests_add_model_fixture(VecKlgs2010-nofcst VecKlgs2010 none 0 0 0)
+
 bayests_add_model_fixture(VecNormalGamma-plain      VecNormalGamma none 0 0 4)
 bayests_add_model_fixture(VecNormalGamma-ssvs       VecNormalGamma ssvs 0 0 4)
 bayests_add_model_fixture(VecNormalGamma-bvs        VecNormalGamma bvs  0 0 4)

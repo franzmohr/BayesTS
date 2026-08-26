@@ -26,6 +26,50 @@ Dates are ISO. Versions follow the `project(VERSION)` in `CMakeLists.txt`.
 
 ### Added
 
+* **`VecKlgs2010`**, the cointegration sampler of Koop, León-González and
+  Strachan (2010) written against the compact regressors instead of the SUR
+  system. The thirteenth registered algorithm, and the first that is not a model
+  of its own: it draws exactly the posterior `VecNormalWishart` draws.
+
+  What changes is the coefficient block. A VEC's k equations share their
+  regressors, so its SUR design matrix is `z = kron(W_x, I_k)` and the posterior
+  precision factors — `z' kron(I_tt, Sigma^-1) z = kron(W_x' W_x, Sigma^-1)`,
+  with the right-hand side collapsing to `vec(Sigma^-1 Y' W_x)` the same way.
+  Forming those directly leaves a Gram product that is `n_x` square over tt
+  periods instead of `k n_x` square over `tt k` rows — O(tt n_x²) against
+  O(tt k³ n_x²) — and builds no `(tt k) x (k n_x)` matrix at all. The beta block
+  and Sigma's are unchanged; beta's regressors are `kron(alpha, w_t')`, which
+  varies with t and has no such structure to exploit. Measured through the
+  bvartools binding on a three-variable VEC of level order four, rank one, 160
+  periods and 1000 draws: 0.05 s against 0.41 s. The gap widens with k.
+
+  *Draws are unchanged.* Not by fingerprint comparison but by construction, and
+  checked as such: `test/unit_vec_klgs_2010.cpp` seeds Armadillo's generator
+  once, draws one iteration from each sampler on the same sample and compares
+  them element by element, then repeats it for a chain of 80 after 40 burn-in
+  and compares the posterior means and the pointwise log likelihoods. Both
+  chains consume the RNG in the same order and the same amounts, so the only
+  difference available to them is the last bits of a differently associated
+  matrix product; the observed one is below 1e-9 on every element.
+
+  Reading the input is where a caller sees the difference. The regressors arrive
+  at `/data/train/x`, `tt` rows by one column per regressor, rather than at
+  `/data/train/z`; `/data/train/w` and `/data/forecast/z` are unchanged, the
+  latter still in the level VAR layout every VEC forecast expects. Variable
+  selection is not implemented and is refused rather than ignored — SSVS and BVS
+  both act on the columns of the matrix this sampler declines to build, and
+  `validate()` says so and points at `VecNormalWishart`.
+
+  Two details are taken from `VecNormalWishart` rather than from bvartools'
+  `.simulation_klgs2010`, which is the R implementation this follows otherwise.
+  The Wishart prior scale is added to Sigma's posterior scale instead of being
+  overwritten by the cointegration term, and the rank is counted in the degrees
+  of freedom that go with it; the alternative leaves `/priors/u_sigma/scale`
+  dead data that a caller has every reason to think is being used. The prior mean
+  of `a` enters as `V^-1 mu` rather than as `mu`. Both matter only for a prior
+  that is not the default flat one, and both are what makes the two samplers here
+  the same sampler.
+
 * **`chan_jeliazkov_2009`**, the precision based alternative to
   `kalman_durbin_koopman_2002` for the same conditional posterior, after Chan and
   Jeliazkov (2009). Rather than filtering forward and sampling backward, the

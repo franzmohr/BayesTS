@@ -14,10 +14,11 @@
 //
 //     model       VarNormalGamma | VarNormalStochvol | VarTvpGamma
 //                 | VarTvpWishart | VarTvpStochvol
-//                 | VecNormalGamma | VecNormalStochvol
+//                 | VecKlgs2010 | VecNormalGamma | VecNormalStochvol
 //                 | VecTvpGamma | VecTvpWishart | VecTvpStochvol
 //     varsel      none | ssvs | bvs        (ssvs reaches VarNormalGamma and
-//                                           VecNormalGamma only)
+//                                           VecNormalGamma only; VecKlgs2010
+//                                           takes none at all)
 //     covar       0 | 1                    the "+covar" error specification
 //     structural  0 | 1                    (refused with a Wishart error
 //                                           precision or a covariance block --
@@ -606,6 +607,24 @@ arma::mat build_vec_w(const arma::mat &levels)
     return w;
 }
 
+/// tt x k(p-1), the compact reading of the same lagged differences the SUR
+/// regressors below kronecker up with I_k.
+///
+/// Written into every VEC fixture, next to `z` rather than instead of it: the
+/// two layouts describe one sample, and a file that carries both can be read by
+/// either sampler -- which is what makes VecKlgs2010 and VecNormalWishart
+/// comparable on the same input. Only the /model/algorithm attribute decides
+/// which one runs, and each reads only its own dataset.
+arma::mat build_vec_compact_regressors(const arma::mat &levels)
+{
+    arma::mat x(kTT, kK * (kVecP - 1));
+    for (int t = 0; t < kTT; ++t)
+    {
+        x.row(t) = arma::trans(levels.col(kVecP + t - 1) - levels.col(kVecP + t - 2));
+    }
+    return x;
+}
+
 /// (tt * k) x nparams. The loadings' columns come first and hold
 /// kron((beta' w_t)', I_k) for the beta the file starts from -- every sampler
 /// rebuilds them from its own draw before it reads them, so they are here for a
@@ -677,7 +696,7 @@ arma::mat build_vec_forecast_regressors(const arma::mat &levels, int h)
 /// VecTvpWishart carries no psi block, so it has no "+covar" spelling to reach.
 std::string vec_error_spec(const std::string &model, bool covar)
 {
-    if (model == "VecTvpWishart")
+    if (model == "VecTvpWishart" || model == "VecKlgs2010")
     {
         return "wishart";
     }
@@ -688,7 +707,8 @@ std::string vec_error_spec(const std::string &model, bool covar)
 
 void write_vec_common(HighFive::File &file, const std::string &model, const std::string &varsel,
                       bool covar, bool structural, int h, const arma::mat &levels,
-                      const arma::mat &dy, const arma::mat &w, const arma::mat &z_train)
+                      const arma::mat &dy, const arma::mat &w, const arma::mat &z_train,
+                      const arma::mat &x_train)
 {
     write_attribute<std::string>(file, "/model", "algorithm", model);
     write_attribute<int>(file, "/model", "k", kK);
@@ -721,6 +741,7 @@ void write_vec_common(HighFive::File &file, const std::string &model, const std:
     write_row(file, "/data/train/y", arma::vectorise(dy));
     write_mat(file, "/data/train/w", w);
     write_mat(file, "/data/train/z", z_train);
+    write_mat(file, "/data/train/x", x_train);
 
     if (h > 0)
     {
@@ -867,6 +888,18 @@ void write_vec_gamma_errors(HighFive::File &file, const std::string &initial)
     write_mat(file, initial, arma::eye<arma::mat>(kK, kK));
 }
 
+/// The non-SUR Koop, Leon-Gonzalez and Strachan (2010) sampler: the same priors
+/// VecNormalWishart carries, and no selection block -- validate() rejects one.
+void write_vec_klgs_2010(HighFive::File &file, arma::uword nparams)
+{
+    write_vec_constant_coefficients(file, "none", nparams, false);
+    write_vec_constant_coint(file);
+
+    write_int_scalar(file, "/priors/u_sigma/df", kK);
+    write_mat(file, "/priors/u_sigma/scale", arma::eye<arma::mat>(kK, kK));
+    write_mat(file, "/initial/u_sigma_inv", arma::eye<arma::mat>(kK, kK));
+}
+
 void write_vec_normal_gamma(HighFive::File &file, const std::string &varsel, bool covar,
                             arma::uword nparams)
 {
@@ -931,11 +964,15 @@ void write_vec_tvp_stochvol(HighFive::File &file, const std::string &varsel, boo
     }
 }
 
-/// Dispatches to the five above. Returns false if the name is not a VEC.
+/// Dispatches to the six above. Returns false if the name is not a VEC.
 bool write_vec_model(HighFive::File &file, const std::string &model, const std::string &varsel,
                      bool covar, arma::uword nparams)
 {
-    if (model == "VecNormalGamma")
+    if (model == "VecKlgs2010")
+    {
+        write_vec_klgs_2010(file, nparams);
+    }
+    else if (model == "VecNormalGamma")
     {
         write_vec_normal_gamma(file, varsel, covar, nparams);
     }
@@ -964,7 +1001,7 @@ bool write_vec_model(HighFive::File &file, const std::string &model, const std::
 
 bool is_vec_model(const std::string &model)
 {
-    return model == "VecNormalGamma" || model == "VecNormalStochvol" ||
+    return model == "VecKlgs2010" || model == "VecNormalGamma" || model == "VecNormalStochvol" ||
            model == "VecTvpWishart" || model == "VecTvpGamma" || model == "VecTvpStochvol";
 }
 
@@ -1006,7 +1043,8 @@ int main(int argc, char *argv[])
     // written, because a fixture the sampler will not accept is a golden test
     // that passes while producing nothing -- see the note in CONTRIBUTING.md.
     const bool wishart_errors = model == "VarNormalWishart" || model == "VarTvpWishart" ||
-                                model == "VecNormalWishart" || model == "VecTvpWishart";
+                                model == "VecNormalWishart" || model == "VecTvpWishart" ||
+                                model == "VecKlgs2010";
     if (structural && kK > 1 && (wishart_errors || covar))
     {
         std::cerr << "structural is not identified with "
@@ -1041,8 +1079,10 @@ int main(int argc, char *argv[])
             const int n_structural = layout.n_structural;
             const arma::uword nparams = static_cast<arma::uword>(kVecNParams + n_structural);
             const arma::mat z_train = build_vec_train_regressors(levels, w, n_structural, rng);
+            const arma::mat x_train = build_vec_compact_regressors(levels);
 
-            write_vec_common(file, model, varsel, covar, structural, h, levels, dy, w, z_train);
+            write_vec_common(file, model, varsel, covar, structural, h, levels, dy, w, z_train,
+                             x_train);
             write_vec_model(file, model, varsel, covar, nparams);
 
             std::cout << "wrote " << dest.string() << " (" << model << ", varsel=" << varsel

@@ -16,6 +16,7 @@ add_library(bayests_models
             VarTvpGamma.cpp
             VarTvpWishart.cpp
             VarTvpStochvol.cpp
+            VecKlgs2010.cpp
             VecNormalGamma.cpp
             VecNormalStochvol.cpp
             VecNormalWishart.cpp

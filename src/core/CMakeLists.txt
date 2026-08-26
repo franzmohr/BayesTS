@@ -21,6 +21,7 @@ add_library(bayests_core
             models/var_tvp_wishart.cpp
             models/var_tvp_stochvol.cpp
             models/vec_support.h
+            models/vec_klgs_2010.cpp
             models/vec_normal_gamma.cpp
             models/vec_normal_stochvol.cpp
             models/vec_normal_wishart.cpp

@@ -16,6 +16,7 @@ add_library(bayests_hdf5_helper
             var_tvp_gamma_io.cpp var_tvp_gamma_io.h
             var_tvp_wishart_io.cpp var_tvp_wishart_io.h
             var_tvp_stochvol_io.cpp var_tvp_stochvol_io.h
+            vec_klgs_2010_io.cpp vec_klgs_2010_io.h
             vec_normal_gamma_io.cpp vec_normal_gamma_io.h
             vec_normal_stochvol_io.cpp vec_normal_stochvol_io.h
             vec_normal_wishart_io.cpp vec_normal_wishart_io.h
