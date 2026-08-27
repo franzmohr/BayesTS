@@ -51,6 +51,13 @@ constexpr const char *kOutputs[] = {
     "/posterior/a/lambda",
     "/posterior/a/sigma",
     "/posterior/beta/coeffs",
+    // The dynamic factor model's own three. `lambda/coeffs` is the loading
+    // matrix and shares no path with the `a/lambda` above it, which is a vector
+    // of inclusion indicators; `factors/coeffs` is the drawn state path, which
+    // is part of that posterior rather than derivable from it.
+    "/posterior/lambda/coeffs",
+    "/posterior/factors/coeffs",
+    "/posterior/v_sigma_inv/coeffs",
     "/posterior/psi/coeffs",
     "/posterior/psi/lambda",
     "/posterior/psi/sigma",

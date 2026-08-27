@@ -35,8 +35,9 @@ Requires a C++20 compiler and Fortran (for LAPACK). Built on
 ## Models
 
 The `/model/algorithm` attribute in the model file selects the sampler; it is
-the only thing that decides which one runs. Thirteen are registered — six VARs,
-the same six as VECs, and one alternative implementation of a VEC:
+the only thing that decides which one runs. Fourteen are registered — six VARs,
+the same six as VECs, one alternative implementation of a VEC, and a dynamic
+factor model:
 
 | `algorithm` | Coefficients | Error precision | Variable selection |
 | --- | --- | --- | --- |
@@ -53,10 +54,12 @@ the same six as VECs, and one alternative implementation of a VEC:
 | `VecTvpGamma` | Random walk, beta included | Independent gamma, optional time-varying covariance block | BVS |
 | `VecTvpStochvol` | Random walk, beta included | Stochastic volatility, optional time-varying covariance block | BVS |
 | `VecKlgs2010` | `VecNormalWishart` drawn without the SUR system | Wishart | none |
+| `DfmNormalGamma` | Constant, normal prior on the loadings and on the factor transition | Independent gamma, on the idiosyncratic errors and the factor innovations | none |
 
-Every model supports exogenous regressors, deterministic terms, a structural
-(contemporaneous-coefficient) form, forecasting and a pointwise log likelihood
-laid out for WAIC and PSIS-LOO.
+The twelve VARs and VECs support exogenous regressors, deterministic terms, a
+structural (contemporaneous-coefficient) form, forecasting and a pointwise log
+likelihood laid out for WAIC and PSIS-LOO. `VecKlgs2010` and `DfmNormalGamma`
+are the two exceptions, each in its own way — see below.
 
 `VecKlgs2010` is the one entry that is not a model of its own. It is
 `VecNormalWishart` — the cointegration sampler of Koop, León-González and
@@ -76,6 +79,31 @@ single seed and compares them — so the choice between the two is a choice abou
 cost. What the compact form gives up is variable selection, which acts on the
 columns of the matrix it declines to build; `validate()` rejects either scheme
 rather than ignoring it.
+
+`DfmNormalGamma` is the one model here that is not a regression:
+
+```
+x_t = Lambda f_t + u_t,                u_t ~ N(0, U),  U diagonal,
+f_t = sum_{j=1..p} A_j f_{t-j} + v_t,  v_t ~ N(0, V),  V diagonal,
+```
+
+for `k` observed series and `n_factors` unobserved ones, after Chan, Koop,
+Poirier and Tobias (2019). Three things follow from the factors being
+unobserved, and each shows up in the file format. The regressors are drawn
+rather than given, so there is no `/data/train/z` — `/data/train/y` is all the
+data there is, and the horizon alone drives the forecast. A whole `tt`-period
+factor path is part of every draw and is written to `/posterior/factors/coeffs`;
+the forecast and the log likelihood read it back rather than re-filtering, which
+makes the reported likelihood the *conditional* one, `p(x_t | f_t, Lambda, U)`.
+And `Lambda` is identified only up to a rotation and a scale, so its leading
+`n_factors` square block is fixed unit lower triangular and only the remaining
+`n_factors(2k - n_factors - 1)/2` elements are drawn — equation by equation,
+since the rows have different widths.
+
+The factor path is drawn whole by the same `chan_jeliazkov_2009` band sampler
+listed above: its posterior precision is block banded of bandwidth `p`, so the
+sweep is O(`tt` `n_factors`³) against the O(`tt`³ `n_factors`³) of forming the
+`tt·n_factors` square precision and factorising it.
 
 Two algorithms carry the implementation weight. The time-varying coefficient
 paths are drawn as a single block with the simulation smoother of Durbin and
@@ -170,13 +198,14 @@ default, so a file written for a simpler model still describes a valid one.
 
 | Location | Contents |
 | --- | --- |
-| `/model` (attributes) | `algorithm`, `k` endogenous variables, `iterations` kept, `burnin` discarded; optional `p`, `m`, `s`, `n` (lags, exogenous variables, their lags, deterministic terms), `h` forecast horizon, `varsel` (`none`, `ssvs`, `bvs`), `structural`, `error` |
+| `/model` (attributes) | `algorithm`, `k` endogenous variables, `iterations` kept, `burnin` discarded; optional `p`, `m`, `s`, `n` (lags, exogenous variables, their lags, deterministic terms), `h` forecast horizon, `varsel` (`none`, `ssvs`, `bvs`), `structural`, `error`; `rank`, `k_beta`, `n_restricted` for a VEC and `n_factors` for a DFM |
 | `/data/train/y`, `/data/train/z` | Endogenous variables and the regressor matrix, `(tt k)` rows by `nparams` columns |
 | `/data/train/w` | A VEC's error correction term, `tt` rows by `k_beta` columns |
 | `/data/train/x` | The regressors in the compact layout, `tt` rows by one column each; read by `VecKlgs2010` in place of `z` |
 | `/data/forecast/z` | Out-of-sample regressors; required when `h` > 0 |
 | `/priors/a`, `/priors/psi` | Normal prior `mu` and `v_inv` for the coefficients and the covariance block, plus `inprior`, `include`, and `tau0`/`tau1` for SSVS |
 | `/priors/u_sigma` | `shape`/`rate` for gamma precisions, `df`/`scale` for Wishart, `mu`/`v_inv`/`sigma`/`offset` for stochastic volatility |
+| `/priors/lambda`, `/priors/v_sigma` | A DFM only: normal `mu`/`v_inv` over the free loadings, and `shape`/`rate` for the factor innovation precisions |
 | `/initial/…` | Starting values: `a`, `psi`, `u_sigma_inv`, `u_omega_inv`, `h`, the `*_init` states and the `*_lambda`, `*_sigma_inv` blocks the samplers that need them read |
 | `/posterior/…` | Written by the run: `a/coeffs`, `a/lambda`, `a/sigma`, the matching `psi/…`, `u_sigma_inv/coeffs`, `u_omega_inv/coeffs`, `forecast` and `loglik` |
 
@@ -389,8 +418,8 @@ for the change they precede — a baseline recorded before a *build flag* change
 still diffs cleanly enough to look meaningful, which makes a stale one worse
 than none.
 
-**Coverage.** Eleven of the thirteen samplers are covered from a clean clone —
-every one but `VarNormalWishart` and `VecNormalWishart` — which are the eleven
+**Coverage.** Twelve of the fourteen samplers are covered from a clean clone —
+every one but `VarNormalWishart` and `VecNormalWishart` — which are the twelve
 `test/make_model_fixture.cpp` can write from scratch.
 
 `VarNormalWishart` and `VecNormalWishart` are the exceptions: they cannot be

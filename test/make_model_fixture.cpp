@@ -16,6 +16,7 @@
 //                 | VarTvpWishart | VarTvpStochvol
 //                 | VecKlgs2010 | VecNormalGamma | VecNormalStochvol
 //                 | VecTvpGamma | VecTvpWishart | VecTvpStochvol
+//                 | DfmNormalGamma
 //     varsel      none | ssvs | bvs        (ssvs reaches VarNormalGamma and
 //                                           VecNormalGamma only; VecKlgs2010
 //                                           takes none at all)
@@ -964,6 +965,111 @@ void write_vec_tvp_stochvol(HighFive::File &file, const std::string &varsel, boo
     }
 }
 
+//////////////////////////////////////////////////////////////////////////////
+// The dynamic factor model.
+//
+// Neither the VAR block nor the VEC one: a DFM has no regressors at all, so it
+// shares none of their data builders and writes no /data/train/z. It also needs
+// more series than they carry -- a factor model with three of them is not one --
+// so its dimensions are its own.
+//
+// Two factors and a transition of order two, deliberately. One factor makes the
+// loading draw a sequence of scalars and the initial-state covariance the
+// identity times V, so most of what is written for the general case would go
+// unexercised; order two is what puts a second subdiagonal into the band and a
+// second block into the prior over the first states.
+
+constexpr int kDfmK = 6;  // observed series
+constexpr int kDfmN = 2;  // factors
+constexpr int kDfmP = 2;  // order of the factor transition
+constexpr int kDfmNLambda = kDfmN * (2 * kDfmK - kDfmN - 1) / 2; // 9
+constexpr int kDfmNA = kDfmN * kDfmN * kDfmP;                    // 8
+
+/// A sample with a factor structure in it: two AR(1) factors, loadings that
+/// satisfy the identifying restriction, and idiosyncratic noise. The sampler
+/// has something to find, which makes the fingerprints worth reading.
+arma::mat simulate_dfm(Lcg &rng)
+{
+    arma::mat factors(kDfmN, kTT, arma::fill::zeros);
+    for (int t = 1; t < kTT; ++t)
+    {
+        for (int j = 0; j < kDfmN; ++j)
+        {
+            factors(j, t) = 0.6 * factors(j, t - 1) + rng.normal();
+        }
+    }
+
+    arma::mat lambda(kDfmK, kDfmN, arma::fill::zeros);
+    lambda.diag().ones();
+    for (int i = 1; i < kDfmK; ++i)
+    {
+        for (int j = 0; j < std::min(i, kDfmN); ++j)
+        {
+            lambda(i, j) = 0.5 + 0.1 * static_cast<double>(i + j);
+        }
+    }
+
+    arma::mat x = lambda * factors;
+    for (int t = 0; t < kTT; ++t)
+    {
+        for (int i = 0; i < kDfmK; ++i)
+        {
+            x(i, t) += 0.3 * rng.normal();
+        }
+    }
+    return x;
+}
+
+void write_dfm_normal_gamma(HighFive::File &file, int h, const arma::mat &x)
+{
+    write_attribute<std::string>(file, "/model", "algorithm", "DfmNormalGamma");
+    write_attribute<int>(file, "/model", "k", kDfmK);
+    write_attribute<int>(file, "/model", "p", kDfmP);
+    write_attribute<int>(file, "/model", "n_factors", kDfmN);
+    write_attribute<int>(file, "/model", "iterations", kIterations);
+    write_attribute<int>(file, "/model", "burnin", kBurnin);
+    write_attribute<std::string>(file, "/model", "varsel", "none");
+    write_attribute<bool>(file, "/model", "structural", false);
+    write_attribute<std::string>(file, "/model", "error", "gamma");
+
+    ensure_group(file, "/data");
+    ensure_group(file, "/data/train");
+    ensure_group(file, "/priors");
+    ensure_group(file, "/priors/lambda");
+    ensure_group(file, "/priors/a");
+    ensure_group(file, "/priors/u_sigma");
+    ensure_group(file, "/priors/v_sigma");
+    ensure_group(file, "/initial");
+
+    // Stored already stacked, one row, the way the other models' response is.
+    write_row(file, "/data/train/y", arma::vectorise(x));
+
+    // The free loadings, in the row-major order the sampler draws them.
+    write_row(file, "/priors/lambda/mu", arma::vec(kDfmNLambda, arma::fill::zeros));
+    write_mat(file, "/priors/lambda/v_inv", arma::eye<arma::mat>(kDfmNLambda, kDfmNLambda) * 0.01);
+    write_row(file, "/initial/lambda", arma::vec(kDfmNLambda, arma::fill::value(0.5)));
+
+    write_row(file, "/priors/a/mu", arma::vec(kDfmNA, arma::fill::zeros));
+    write_mat(file, "/priors/a/v_inv", arma::eye<arma::mat>(kDfmNA, kDfmNA) * 0.01);
+    write_row(file, "/initial/a", arma::vec(kDfmNA, arma::fill::zeros));
+
+    // Both precisions are diagonal and are written as the diagonal.
+    write_row(file, "/priors/u_sigma/shape", arma::vec(kDfmK, arma::fill::value(5.0)));
+    write_row(file, "/priors/u_sigma/rate", arma::vec(kDfmK, arma::fill::value(4.0)));
+    write_row(file, "/initial/u_sigma_inv", arma::vec(kDfmK, arma::fill::ones));
+
+    write_row(file, "/priors/v_sigma/shape", arma::vec(kDfmN, arma::fill::value(5.0)));
+    write_row(file, "/priors/v_sigma/rate", arma::vec(kDfmN, arma::fill::value(4.0)));
+    write_row(file, "/initial/v_sigma_inv", arma::vec(kDfmN, arma::fill::ones));
+
+    // No /data/forecast: a DFM forecasts by running its transition on from the
+    // last drawn factors, so the horizon is the whole of what it needs.
+    if (h > 0)
+    {
+        write_attribute<int>(file, "/model", "h", h);
+    }
+}
+
 /// Dispatches to the six above. Returns false if the name is not a VEC.
 bool write_vec_model(HighFive::File &file, const std::string &model, const std::string &varsel,
                      bool covar, arma::uword nparams)
@@ -1024,11 +1130,18 @@ int main(int argc, char *argv[])
     const int h = std::stoi(argv[6]);
 
     const bool is_vec = is_vec_model(model);
+    const bool is_dfm = model == "DfmNormalGamma";
 
     if (model != "VarNormalGamma" && model != "VarNormalStochvol" && model != "VarTvpGamma" &&
-        model != "VarTvpWishart" && model != "VarTvpStochvol" && !is_vec)
+        model != "VarTvpWishart" && model != "VarTvpStochvol" && !is_vec && !is_dfm)
     {
         std::cerr << "Unknown model: " << model << '\n';
+        return 2;
+    }
+    if (is_dfm && (varsel != "none" || covar || structural))
+    {
+        std::cerr << "DfmNormalGamma takes no variable selection, no covariance block and no "
+                     "contemporaneous coefficients: see DfmNormalGammaInput::validate()\n";
         return 2;
     }
     if (varsel != "none" && varsel != "ssvs" && varsel != "bvs")
@@ -1070,6 +1183,17 @@ int main(int argc, char *argv[])
         // One generator for the whole file, so every dataset that draws from it
         // is reproducible as a set rather than individually.
         Lcg rng(20260808ULL);
+
+        if (is_dfm)
+        {
+            write_dfm_normal_gamma(file, h, simulate_dfm(rng));
+
+            std::cout << "wrote " << dest.string() << " (" << model << ", h=" << h
+                      << ", k=" << kDfmK << ", tt=" << kTT << ", n_factors=" << kDfmN
+                      << ", p=" << kDfmP << ", n_lambda=" << kDfmNLambda << ", n_a=" << kDfmNA
+                      << ")\n";
+            return 0;
+        }
 
         if (is_vec)
         {

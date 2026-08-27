@@ -115,6 +115,11 @@ VarSpec read_spec(const HighFive::File &file, const char *covar_error)
     spec.rank = optional_attribute_int(file, "/model", "rank", 0);
     spec.k_beta = optional_attribute_int(file, "/model", "k_beta", 0);
     spec.n_restricted = optional_attribute_int(file, "/model", "n_restricted", 0);
+
+    // Absent from every file that is not a dynamic factor model's, and left at
+    // zero there, which is what says "the variables in this model are all
+    // observed" rather than "a factor model with no factors".
+    spec.n_factors = optional_attribute_int(file, "/model", "n_factors", 0);
     spec.varsel = var_selection_from_string(
         optional_attribute_string(file, "/model", "varsel", "none"));
     spec.structural = optional_attribute_bool(file, "/model", "structural", false);

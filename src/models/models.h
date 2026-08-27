@@ -102,6 +102,19 @@ public:
     void log_likelihood(const std::filesystem::path& filepath) override;
 };
 
+class DfmNormalGamma : public BaseModel
+{
+private:
+    // File path
+    std::filesystem::path filepath;
+public:
+    DfmNormalGamma();
+    ~DfmNormalGamma() override;
+    void draw_coefficients(const std::filesystem::path &filepath_arg) override;
+    void forecast(const std::filesystem::path& filepath) override;
+    void log_likelihood(const std::filesystem::path& filepath) override;
+};
+
 class VecNormalWishart : public BaseModel
 {
 private:

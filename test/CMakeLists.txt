@@ -76,8 +76,10 @@ endforeach()
 # on the right side of.
 add_executable(bayests_unit_identification unit_identification.cpp)
 add_executable(bayests_unit_vec_klgs_2010 unit_vec_klgs_2010.cpp)
+add_executable(bayests_unit_dfm_normal_gamma unit_dfm_normal_gamma.cpp)
 
-foreach(_core_unit bayests_unit_identification bayests_unit_vec_klgs_2010)
+foreach(_core_unit bayests_unit_identification bayests_unit_vec_klgs_2010
+                   bayests_unit_dfm_normal_gamma)
     target_link_libraries(${_core_unit} PRIVATE bayests_core)
     target_link_libraries(${_core_unit} PRIVATE bayests_warnings)
 
@@ -169,7 +171,8 @@ endif()
 # The unit tests, which need only the shared libraries on the path: no fixture
 # to set up, and no thread pinning, since an exact identity does not care how
 # many threads computed it.
-foreach(_unit vec_to_var forecast_lags stochvol kalman chan_jeliazkov identification vec_klgs_2010)
+foreach(_unit vec_to_var forecast_lags stochvol kalman chan_jeliazkov identification
+              vec_klgs_2010 dfm_normal_gamma)
     add_test(NAME "unit.${_unit}" COMMAND "bayests_unit_${_unit}")
     set_tests_properties("unit.${_unit}" PROPERTIES
         ENVIRONMENT_MODIFICATION "${_bayests_test_env_mod}")
@@ -254,6 +257,13 @@ bayests_add_model_fixture(VarTvpStochvol-bvs-covar  VarTvpStochvol bvs  1 0 4)
 # split from the VEC side: every VEC forecast converts to a level VAR and hands
 # the path to VarNormalWishartSampler, so these five and the VAR rows above
 # exercise the same code from both ends.
+# The dynamic factor model. Its own dimensions -- six series, two factors, a
+# transition of order two -- written by the DFM block at the bottom of
+# make_model_fixture.cpp. No selection, covar or structural rows: validate()
+# refuses all three, so a fixture asking for one would be testing the error path.
+bayests_add_model_fixture(DfmNormalGamma-plain  DfmNormalGamma none 0 0 4)
+bayests_add_model_fixture(DfmNormalGamma-nofcst DfmNormalGamma none 0 0 0)
+
 # No selection rows: VecKlgs2010 draws the coefficients without forming the SUR
 # design matrix a scheme would act on, and validate() refuses either one. No
 # structural row either, for the reason the Wishart models below have none.

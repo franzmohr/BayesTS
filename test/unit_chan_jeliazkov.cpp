@@ -123,6 +123,36 @@ void the_two_argument_forms_agree()
         std::snprintf(label, sizeof(label), "T = %llu, 'B' alone",
                       static_cast<unsigned long long>(t));
         check(label, arma::approx_equal(constant, only_b, "absdiff", 0.0));
+
+        // And 'z', which is the fourth of them: one measurement matrix that
+        // holds for every period is what a dynamic factor model has -- its
+        // loading matrix -- and is the case where Z'U^-1 Z is assembled once
+        // instead of T times. Bit-identical, not merely close: the constant path
+        // computes the same product the loop would have, once.
+        const arma::mat z_block = d.z.head_rows(3);
+        arma::arma_rng::set_seed(7);
+        const arma::mat z_const = chan_jeliazkov_2009(d.y, z_block, d.sigma_u, d.sigma_v, d.B,
+                                                      d.a_init, d.P_init);
+        arma::arma_rng::set_seed(7);
+        const arma::mat z_stack = chan_jeliazkov_2009(d.y, stacked(z_block, t), d.sigma_u,
+                                                      d.sigma_v, d.B, d.a_init, d.P_init);
+        std::snprintf(label, sizeof(label), "T = %llu, 'z' alone",
+                      static_cast<unsigned long long>(t));
+        check(label, arma::approx_equal(z_const, z_stack, "absdiff", 0.0));
+
+        // The same with a time varying error covariance, which takes the
+        // constant 'z' down the per-period branch and so exercises the other
+        // half of the split.
+        arma::arma_rng::set_seed(7);
+        const arma::mat z_const_uv = chan_jeliazkov_2009(d.y, z_block, stacked(d.sigma_u, t),
+                                                         d.sigma_v, d.B, d.a_init, d.P_init);
+        arma::arma_rng::set_seed(7);
+        const arma::mat z_stack_uv = chan_jeliazkov_2009(d.y, stacked(z_block, t),
+                                                         stacked(d.sigma_u, t), d.sigma_v, d.B,
+                                                         d.a_init, d.P_init);
+        std::snprintf(label, sizeof(label), "T = %llu, constant 'z' with a stacked 'sigma_u'",
+                      static_cast<unsigned long long>(t));
+        check(label, arma::approx_equal(z_const_uv, z_stack_uv, "absdiff", 0.0));
     }
 }
 
@@ -358,10 +388,14 @@ void the_draw_is_well_formed()
     }
     check("a singular 'P_init' is rejected by name", rejected);
 
+    // K rows and KT rows are both accepted -- one measurement matrix for every
+    // period, or one per period -- so a height that is neither has to be K + 1
+    // rather than K to test anything.
     bool bad_dims = false;
     try
     {
-        chan_jeliazkov_2009(d.y, d.z.head_rows(k), d.sigma_u, d.sigma_v, d.B, d.a_init, d.P_init);
+        chan_jeliazkov_2009(d.y, d.z.head_rows(k + 1), d.sigma_u, d.sigma_v, d.B, d.a_init,
+                            d.P_init);
     }
     catch (const std::invalid_argument &)
     {

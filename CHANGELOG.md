@@ -26,6 +26,80 @@ Dates are ISO. Versions follow the `project(VERSION)` in `CMakeLists.txt`.
 
 ### Added
 
+* **`DfmNormalGamma`**, a dynamic factor model — the first model here that is not
+  a regression, and the fourteenth registered algorithm.
+
+  ```
+  x_t = Lambda f_t + u_t,                u_t ~ N(0, U),  U diagonal,
+  f_t = sum_{j=1..p} A_j f_{t-j} + v_t,  v_t ~ N(0, V),  V diagonal,
+  ```
+
+  for `k` observed series and `n_factors` unobserved ones, with a normal prior on
+  the free loadings and on the transition and independent gamma priors on both
+  precisions. Five Gibbs blocks: the factor path, the loadings, the two
+  precisions, the transition. After Chan, Koop, Poirier and Tobias (2019); the
+  reference implementation is bvartools' `dfmpost()`.
+
+  *There is nothing to compare the draws against* — no second implementation
+  here, and no closed form. What `test/unit_dfm_normal_gamma.cpp` does instead is
+  check the model from three sides. The conventions are pinned exactly: which
+  elements of `Lambda` are free, where the transition's lag blocks go, what the
+  residual is, and what the prior over the first `p` factors comes to, each
+  against a hand-derived expectation. The factor block is checked against its own
+  definition: the test builds the `tt·n_factors` square precision the reference
+  implementation builds, inverts it, and compares the mean and covariance with
+  30 000 draws from the banded sampler, at transition orders zero, one and two —
+  agreement to 0.003 on both, against posterior standard deviations of order 0.5.
+  And the whole chain is run on a simulated sample of 800 periods, where it
+  recovers the loadings to 0.08, the transition to 0.03 and both precisions to
+  16%.
+
+  Three things follow from the factors being unobserved. There is no
+  `/data/train/z`: `/data/train/y` is all the data, and the forecast — which runs
+  the transition on from the last drawn factors — needs no out-of-sample matrix
+  at all, only `/model/h`. A whole factor path is part of every draw and is
+  written to `/posterior/factors/coeffs`. And the reported pointwise log
+  likelihood is the *conditional* one, `p(x_t | f_t, Lambda, U)`, evaluated at the
+  stored path; the marginal would need a Kalman filter per draw and is a
+  different quantity, which matters for what an information criterion computed
+  from it means.
+
+  The path is drawn whole by `chan_jeliazkov_2009`, whose band this posterior
+  fits: O(`tt` `n_factors`³) against the O(`tt`³ `n_factors`³) of forming that
+  precision and factorising it, which is what `dfmpost()` does. Factors before
+  the sample are zero rather than drawn — bvartools' convention — and the
+  covariance that implies over the first `p` of them is what is handed over as the
+  band sampler's prior, so its prior-plus-transitions decomposition reproduces
+  the model exactly rather than approximately.
+
+  **Three defects in the reference implementation are not reproduced.** Between
+  them they mean `dfmpost()` is correct only at one factor and a transition of
+  order at most two, so there is no configuration where this sampler could have
+  been made to agree with it and be right:
+
+  - `.post_lambda` draws with `solve(chol(K, "lower"), z)`, whose covariance is
+    `(L'L)^-1` rather than the `K^-1` intended. The two coincide only when the
+    block is 1x1, so the loadings are drawn from the wrong distribution as soon
+    as there is more than one factor. This uses `draw_normal_precision()`, which
+    factorises once and solves against the upper factor.
+  - `dfmpost()` builds the transition's regressor matrix with
+    `x_a[(i - 1) + 1:n, ]` where the block for lag `i` occupies rows
+    `(i - 1) * n + 1:n`. For `n > 1` the lag blocks are laid on top of one
+    another.
+  - `generate_lower_block_diagonal()` writes past the end of the matrix for
+    `p >= 3`, and drops a coefficient block from the last columns for `p >= 3`.
+    This builds the equivalent structure itself and is exercised at `p = 2` by
+    the fixtures and at `p = 0, 1, 2` by the unit test.
+
+  Two smaller divergences are deliberate rather than corrective. The free
+  loadings are ordered row by row wherever they appear as a vector — the starting
+  value and both halves of the prior — which is the order the equation-by-equation
+  draw consumes them in; `dfmpost()` stores them column-major (`lower.tri`) but
+  slices the prior precision row-major, a mismatch invisible only because that
+  prior is a scalar diagonal. And the posterior stores `Lambda` whole, as vec of
+  the `k` x `n_factors` matrix with the identifying ones and zeros in place,
+  rather than the free elements alone.
+
 * **`VecKlgs2010`**, the cointegration sampler of Koop, León-González and
   Strachan (2010) written against the compact regressors instead of the SUR
   system. The thirteenth registered algorithm, and the first that is not a model
@@ -374,6 +448,25 @@ Dates are ISO. Versions follow the `project(VERSION)` in `CMakeLists.txt`.
   structural and no forecast.
 
 ### Changed
+
+* **`chan_jeliazkov_2009` accepts a constant `z`.** It was the one argument of
+  the four that had to arrive as a stack of one block per period; `sigma_u`,
+  `sigma_v` and `B` all already took either form. A `z` of `K` rows now means one
+  measurement matrix that holds for every period, and in that case — with a
+  constant `sigma_u` alongside it — `Z' Sigma_u^-1 Z` is the same block
+  throughout and is formed once instead of `T` times, which turns the assembly
+  from O(T K M²) into O(K M²).
+
+  Added for `DfmNormalGamma`, whose measurement matrix is its loading matrix and
+  whose `K` is large by construction: replicating it `T` times and re-deriving the
+  same `M x M` block from it every period was the dominant cost of a draw.
+
+  *Draws are unchanged, bit for bit.* The constant path computes the same product
+  the loop computed, once, and `test/unit_chan_jeliazkov.cpp` asserts exact
+  equality between a constant `z` and its replication at three sample lengths and
+  with `sigma_u` in both forms. One test changed with it: the rejected-input case
+  passed a `z` of `K` rows to show that a wrong height is refused, and `K` rows
+  are now valid, so it passes `K + 1`.
 
 * **`kalman_durbin_koopman_2002` stops decomposing the same matrix once per
   period.** Each of `sigma_u`, `sigma_v` and `B` may be given as one matrix that
