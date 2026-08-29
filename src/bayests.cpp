@@ -55,8 +55,10 @@ int main(int argc, char* argv[]) {
     // since an exit 2 from a bare invocation is the evidence the binary loaded
     // its libraries and reached main() rather than dying in the loader.
     if (argc < 3) {
-        std::cerr << "Usage: " << argv[0] << " <command> <path_to_file.h5> [args...]\n";
+        std::cerr << "Usage: " << argv[0] << " <command> <path_to_file.h5 | directory> [args...]\n";
         std::cerr << "Available commands: posterior, coefficients, forecasts, loglik\n";
+        std::cerr << "Common flags: --group <path>  the group a model's tree hangs under inside\n";
+        std::cerr << "                             its file, e.g. /models/3 (default: the root)\n";
         return 2;
     }
 

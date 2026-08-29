@@ -109,7 +109,9 @@ jobs:
           echo "::endgroup::"
 
           echo "::group::one fixture, threads pinned"
-          fixture=$(find build/bin/ci/test/fixtures -name '*.h5' | head -1)
+          # Any fixture but the grouped one, which is not at the root of its file
+          # and so needs --group to say anything about the state of the build.
+          fixture=$(find build/bin/ci/test/fixtures -name '*.h5' ! -name '*-grouped.h5' | head -1)
           echo "using $fixture"
           OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 "$exe" "$fixture" || echo "exit=$?"
           echo "::endgroup::"

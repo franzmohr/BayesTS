@@ -16,13 +16,13 @@ namespace bayests::hdf5_io::var_normal_wishart
 /// input with those parts left empty, which is exactly how the sampler decides
 /// what to run. Anything missing that the model does need is reported by
 /// VarNormalWishartInput::validate(), where the message can name the field.
-VarNormalWishartInput read_input(const HighFive::File &file);
+VarNormalWishartInput read_input(const ModelFile &file);
 
 /// Reads posterior draws written by a previous run, transposed back into the
 /// sampler's draw-per-column layout.
-VarNormalWishartDraws read_coefficients(const HighFive::File &file);
+VarNormalWishartDraws read_coefficients(const ModelFile &file);
 
-void write_coefficients(HighFive::File &file, const VarNormalWishartDraws &draws);
+void write_coefficients(const ModelFile &file, const VarNormalWishartDraws &draws);
 
 } // namespace bayests::hdf5_io::var_normal_wishart
 

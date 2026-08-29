@@ -88,6 +88,19 @@ foreach(_core_unit bayests_unit_identification bayests_unit_vec_klgs_2010
     endif()
 endforeach()
 
+# The other exception, in the other direction: this one needs the io layer and
+# nothing else, because what it covers is where a path lands in a file rather
+# than anything a sampler computes. It writes its own file into the temporary
+# directory, so it needs no fixture either.
+add_executable(bayests_unit_model_group unit_model_group.cpp)
+
+target_link_libraries(bayests_unit_model_group PRIVATE bayests_hdf5_helper)
+target_link_libraries(bayests_unit_model_group PRIVATE bayests_warnings)
+
+if(OpenMP_CXX_FOUND)
+    target_link_libraries(bayests_unit_model_group PRIVATE OpenMP::OpenMP_CXX)
+endif()
+
 #####################################################################
 # Tests
 #
@@ -172,7 +185,7 @@ endif()
 # to set up, and no thread pinning, since an exact identity does not care how
 # many threads computed it.
 foreach(_unit vec_to_var forecast_lags stochvol kalman chan_jeliazkov identification
-              vec_klgs_2010 dfm_normal_gamma)
+              vec_klgs_2010 dfm_normal_gamma model_group)
     add_test(NAME "unit.${_unit}" COMMAND "bayests_unit_${_unit}")
     set_tests_properties("unit.${_unit}" PROPERTIES
         ENVIRONMENT_MODIFICATION "${_bayests_test_env_mod}")
@@ -181,18 +194,29 @@ endforeach()
 # One generated model file plus the golden run over it.
 #
 #   bayests_make_model_fixture <dest.h5> <model> <none|ssvs|bvs> <covar 0|1>
-#                              <structural 0|1> <h>
+#                              <structural 0|1> <h> [group]
+#
+# An optional seventh argument is the group the model is written under and read
+# back through; without one the model's tree hangs at the root of the file, which
+# is where a file holding a single model puts it.
 function(bayests_add_model_fixture name model varsel covar structural horizon)
+    set(_group "${ARGV6}")
+
     add_test(NAME "fixture.${name}"
         COMMAND bayests_make_model_fixture
                 "${BAYESTS_FIXTURE_DIR}/${name}.h5"
-                "${model}" "${varsel}" "${covar}" "${structural}" "${horizon}")
+                "${model}" "${varsel}" "${covar}" "${structural}" "${horizon}" ${_group})
     set_tests_properties("fixture.${name}" PROPERTIES
         FIXTURES_SETUP "fx.${name}"
         ENVIRONMENT_MODIFICATION "${_bayests_test_env_mod}")
 
+    set(_golden_group "")
+    if(_group)
+        set(_golden_group --group "${_group}")
+    endif()
+
     add_test(NAME "golden.${name}"
-        COMMAND bayests_golden "${BAYESTS_FIXTURE_DIR}/${name}.h5")
+        COMMAND bayests_golden ${_golden_group} "${BAYESTS_FIXTURE_DIR}/${name}.h5")
     set_tests_properties("golden.${name}" PROPERTIES
         FIXTURES_REQUIRED "fx.${name}"
         ENVIRONMENT "${_bayests_pin_threads}"
@@ -221,6 +245,17 @@ bayests_add_model_fixture(VarNormalGamma-structural VarNormalGamma     none 0 1 
 bayests_add_model_fixture(VarNormalGamma-nofcst     VarNormalGamma     none 0 0 0)
 bayests_add_model_fixture(VarNormalGamma-ssvs-covar VarNormalGamma     ssvs 1 0 4)
 bayests_add_model_fixture(VarNormalGamma-bvs-covar  VarNormalGamma     bvs  1 0 4)
+
+# The same model as the -plain row above, written under a group instead of at the
+# root of its file and run with --group. It is the far end of what
+# unit.model_group covers: that end of a full draw / log likelihood / forecast
+# run resolves through the group, in a file whose root holds nothing.
+#
+# The fingerprints it prints are the -plain row's, digit for digit -- same
+# sampler, same seed, same numbers on disk in a different place -- so the two can
+# be diffed against each other on one machine as well as each against itself
+# across a change.
+bayests_add_model_fixture(VarNormalGamma-grouped    VarNormalGamma     none 0 0 4 /models/3)
 
 bayests_add_model_fixture(VarNormalStochvol-plain      VarNormalStochvol none 0 0 4)
 bayests_add_model_fixture(VarNormalStochvol-bvs        VarNormalStochvol bvs  0 0 4)

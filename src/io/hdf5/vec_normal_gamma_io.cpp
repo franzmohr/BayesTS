@@ -8,7 +8,7 @@
 namespace bayests::hdf5_io::vec_normal_gamma
 {
 
-VecNormalGammaInput read_input(const HighFive::File &file)
+VecNormalGammaInput read_input(const ModelFile &file)
 {
     VecNormalGammaInput input;
 
@@ -58,7 +58,7 @@ VecNormalGammaInput read_input(const HighFive::File &file)
     return input;
 }
 
-VecNormalGammaDraws read_coefficients(const HighFive::File &file)
+VecNormalGammaDraws read_coefficients(const ModelFile &file)
 {
     VecNormalGammaDraws draws;
 
@@ -94,7 +94,7 @@ VecNormalGammaDraws read_coefficients(const HighFive::File &file)
     return draws;
 }
 
-void write_coefficients(HighFive::File &file, const VecNormalGammaDraws &draws)
+void write_coefficients(const ModelFile &file, const VecNormalGammaDraws &draws)
 {
     ensure_group(file, "/posterior");
 

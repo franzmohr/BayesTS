@@ -8,7 +8,7 @@
 namespace bayests::hdf5_io::var_tvp_wishart
 {
 
-VarTvpWishartInput read_input(const HighFive::File &file)
+VarTvpWishartInput read_input(const ModelFile &file)
 {
     VarTvpWishartInput input;
 
@@ -59,7 +59,7 @@ VarTvpWishartInput read_input(const HighFive::File &file)
 // every model's readers through. Unlike VarTvpGamma, whose precision is stored
 // per period and has to be read against the spec, this model's u_sigma_inv is
 // one k x k matrix per draw, so the dataset is read as it stands.
-VarTvpWishartDraws read_loglik_coefficients(const HighFive::File &file,
+VarTvpWishartDraws read_loglik_coefficients(const ModelFile &file,
                                             [[maybe_unused]] const VarTvpWishartInput &input)
 {
     VarTvpWishartDraws draws;
@@ -76,7 +76,7 @@ VarTvpWishartDraws read_loglik_coefficients(const HighFive::File &file,
     return draws;
 }
 
-VarTvpWishartDraws read_forecast_coefficients(const HighFive::File &file,
+VarTvpWishartDraws read_forecast_coefficients(const ModelFile &file,
                                               const VarTvpWishartInput &input)
 {
     VarTvpWishartDraws draws;
@@ -102,7 +102,7 @@ VarTvpWishartDraws read_forecast_coefficients(const HighFive::File &file,
     return draws;
 }
 
-void write_coefficients(HighFive::File &file, const VarTvpWishartDraws &draws)
+void write_coefficients(const ModelFile &file, const VarTvpWishartDraws &draws)
 {
     ensure_group(file, "/posterior");
 

@@ -30,13 +30,14 @@ VarTvpWishart::~VarTvpWishart()
 {
 }
 
-void VarTvpWishart::draw_coefficients(const std::filesystem::path &filepath_arg)
+void VarTvpWishart::draw_coefficients(const ModelLocation &location_arg)
 {
-    // Store filepath for later use
-    this->filepath = filepath_arg;
+    // Store the location for later use
+    this->location = location_arg;
 
-    // Open file
-    HighFive::File file = open_hdf5_file_readwrite(filepath);
+    // Open the file and name the model inside it
+    HighFive::File h5 = open_hdf5_file_readwrite(location.file);
+    const ModelFile file(h5, location.group);
 
     try
     {
@@ -61,33 +62,34 @@ void VarTvpWishart::draw_coefficients(const std::filesystem::path &filepath_arg)
     }
 }
 
-void VarTvpWishart::forecast(const std::filesystem::path &filepath_arg)
+void VarTvpWishart::forecast(const ModelLocation &location_arg)
 {
-    // Store filepath for later use
-    this->filepath = filepath_arg;
+    // Store the location for later use
+    this->location = location_arg;
 
-    // Open file
-    HighFive::File file = open_hdf5_file_readwrite(filepath);
+    // Open the file and name the model inside it
+    HighFive::File h5 = open_hdf5_file_readwrite(location.file);
+    const ModelFile file(h5, location.group);
 
     try
     {
         if (!dataset_has_data(file, "/posterior/u_sigma_inv/coeffs"))
         {
-            std::cerr << "Error processing " << filepath << ": Posterior draws of u_sigma_inv are missing." << std::endl;
+            std::cerr << "Error processing " << location.describe() << ": Posterior draws of u_sigma_inv are missing." << std::endl;
             return;
         }
 
         // Stop if h (the forecast horizon) does not exist
         if (!attribute_exists(file, "/model", "h"))
         {
-            std::cerr << "Error processing " << filepath << ": Forecast horizon h is missing." << std::endl;
+            std::cerr << "Error processing " << location.describe() << ": Forecast horizon h is missing." << std::endl;
             return;
         }
 
         // Stop if forecasts are already available in the obeject
         if (dataset_has_data(file, "/posterior/forecast"))
         {
-            std::cerr << "Error processing " << filepath << ": Forecasts are already available." << std::endl;
+            std::cerr << "Error processing " << location.describe() << ": Forecasts are already available." << std::endl;
             return;
         }
 
@@ -109,13 +111,14 @@ void VarTvpWishart::forecast(const std::filesystem::path &filepath_arg)
     }
 }
 
-void VarTvpWishart::log_likelihood(const std::filesystem::path &filepath_arg)
+void VarTvpWishart::log_likelihood(const ModelLocation &location_arg)
 {
-    // Store filepath for later use
-    this->filepath = filepath_arg;
+    // Store the location for later use
+    this->location = location_arg;
 
-    // Open file
-    HighFive::File file = open_hdf5_file_readwrite(filepath);
+    // Open the file and name the model inside it
+    HighFive::File h5 = open_hdf5_file_readwrite(location.file);
+    const ModelFile file(h5, location.group);
 
     try
     {
@@ -127,7 +130,7 @@ void VarTvpWishart::log_likelihood(const std::filesystem::path &filepath_arg)
 
         if (!dataset_has_data(file, "/posterior/u_sigma_inv/coeffs"))
         {
-            std::cerr << "Error processing " << filepath << ": Posterior draws of u_sigma_inv are missing." << std::endl;
+            std::cerr << "Error processing " << location.describe() << ": Posterior draws of u_sigma_inv are missing." << std::endl;
             return;
         }
 

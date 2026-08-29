@@ -17,21 +17,21 @@ namespace bayests::hdf5_io::var_tvp_gamma
 /// exactly how the sampler decides what to run. Anything missing that the
 /// model does need is reported by VarTvpGammaInput::validate(), where the
 /// message can name the field.
-VarTvpGammaInput read_input(const HighFive::File &file);
+VarTvpGammaInput read_input(const ModelFile &file);
 
 /// Reads posterior draws for the likelihood: the whole coefficient path, since
 /// every period is scored under its own coefficients, and the last period's
 /// precision, which is the one this model scores every observation under.
-VarTvpGammaDraws read_loglik_coefficients(const HighFive::File &file,
+VarTvpGammaDraws read_loglik_coefficients(const ModelFile &file,
                                           const VarTvpGammaInput &input);
 
 /// Reads posterior draws for the forecast: the last in-sample period of both
 /// the coefficient path and the precision, which is what a forecast carries
 /// forward.
-VarTvpGammaDraws read_forecast_coefficients(const HighFive::File &file,
+VarTvpGammaDraws read_forecast_coefficients(const ModelFile &file,
                                             const VarTvpGammaInput &input);
 
-void write_coefficients(HighFive::File &file, const VarTvpGammaDraws &draws);
+void write_coefficients(const ModelFile &file, const VarTvpGammaDraws &draws);
 
 } // namespace bayests::hdf5_io::var_tvp_gamma
 

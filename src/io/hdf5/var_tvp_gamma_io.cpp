@@ -8,7 +8,7 @@
 namespace bayests::hdf5_io::var_tvp_gamma
 {
 
-VarTvpGammaInput read_input(const HighFive::File &file)
+VarTvpGammaInput read_input(const ModelFile &file)
 {
     VarTvpGammaInput input;
 
@@ -74,7 +74,7 @@ VarTvpGammaInput read_input(const HighFive::File &file)
     return input;
 }
 
-VarTvpGammaDraws read_loglik_coefficients(const HighFive::File &file,
+VarTvpGammaDraws read_loglik_coefficients(const ModelFile &file,
                                           const VarTvpGammaInput &input)
 {
     VarTvpGammaDraws draws;
@@ -88,7 +88,7 @@ VarTvpGammaDraws read_loglik_coefficients(const HighFive::File &file,
     return draws;
 }
 
-VarTvpGammaDraws read_forecast_coefficients(const HighFive::File &file,
+VarTvpGammaDraws read_forecast_coefficients(const ModelFile &file,
                                             const VarTvpGammaInput &input)
 {
     VarTvpGammaDraws draws;
@@ -105,7 +105,7 @@ VarTvpGammaDraws read_forecast_coefficients(const HighFive::File &file,
     return draws;
 }
 
-void write_coefficients(HighFive::File &file, const VarTvpGammaDraws &draws)
+void write_coefficients(const ModelFile &file, const VarTvpGammaDraws &draws)
 {
     ensure_group(file, "/posterior");
 

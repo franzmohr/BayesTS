@@ -13,7 +13,7 @@ namespace
 
 /// The parts of the posterior that do not depend on how much of the volatility
 /// path the caller wants.
-void read_common_draws(const HighFive::File &file, VarNormalStochvolDraws &draws)
+void read_common_draws(const ModelFile &file, VarNormalStochvolDraws &draws)
 {
     if (dataset_has_data(file, "/posterior/a/coeffs"))
     {
@@ -39,7 +39,7 @@ void read_common_draws(const HighFive::File &file, VarNormalStochvolDraws &draws
 
 } // namespace
 
-VarNormalStochvolInput read_input(const HighFive::File &file)
+VarNormalStochvolInput read_input(const ModelFile &file)
 {
     VarNormalStochvolInput input;
 
@@ -95,7 +95,7 @@ VarNormalStochvolInput read_input(const HighFive::File &file)
     return input;
 }
 
-VarNormalStochvolDraws read_coefficients(const HighFive::File &file)
+VarNormalStochvolDraws read_coefficients(const ModelFile &file)
 {
     VarNormalStochvolDraws draws;
     read_common_draws(file, draws);
@@ -108,7 +108,7 @@ VarNormalStochvolDraws read_coefficients(const HighFive::File &file)
     return draws;
 }
 
-VarNormalStochvolDraws read_forecast_coefficients(const HighFive::File &file,
+VarNormalStochvolDraws read_forecast_coefficients(const ModelFile &file,
                                                   const VarNormalStochvolInput &input)
 {
     VarNormalStochvolDraws draws;
@@ -125,7 +125,7 @@ VarNormalStochvolDraws read_forecast_coefficients(const HighFive::File &file,
     return draws;
 }
 
-void write_coefficients(HighFive::File &file, const VarNormalStochvolDraws &draws)
+void write_coefficients(const ModelFile &file, const VarNormalStochvolDraws &draws)
 {
     ensure_group(file, "/posterior");
 

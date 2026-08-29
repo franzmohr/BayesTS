@@ -16,20 +16,20 @@ namespace bayests::hdf5_io::vec_tvp_wishart
 /// yields an input with those parts left empty, which is exactly how the sampler
 /// decides what to run. Anything missing that the model does need is reported by
 /// VecTvpWishartInput::validate(), where the message can name the field.
-VecTvpWishartInput read_input(const HighFive::File &file);
+VecTvpWishartInput read_input(const ModelFile &file);
 
 /// Reads posterior draws for the likelihood: the whole coefficient and
 /// cointegration paths, since every period is scored under its own, against the
 /// one precision each draw carries.
-VecTvpWishartDraws read_loglik_coefficients(const HighFive::File &file,
+VecTvpWishartDraws read_loglik_coefficients(const ModelFile &file,
                                             const VecTvpWishartInput &input);
 
 /// The same, with both paths cut to the last in-sample period -- what a forecast
 /// carries forward. The precision does not move, so it is read whole.
-VecTvpWishartDraws read_forecast_coefficients(const HighFive::File &file,
+VecTvpWishartDraws read_forecast_coefficients(const ModelFile &file,
                                               const VecTvpWishartInput &input);
 
-void write_coefficients(HighFive::File &file, const VecTvpWishartDraws &draws);
+void write_coefficients(const ModelFile &file, const VecTvpWishartDraws &draws);
 
 } // namespace bayests::hdf5_io::vec_tvp_wishart
 

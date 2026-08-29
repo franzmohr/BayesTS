@@ -8,7 +8,7 @@
 namespace bayests::hdf5_io::vec_tvp_stochvol
 {
 
-VecTvpStochvolInput read_input(const HighFive::File &file)
+VecTvpStochvolInput read_input(const ModelFile &file)
 {
     VecTvpStochvolInput input;
 
@@ -96,7 +96,7 @@ VecTvpStochvolInput read_input(const HighFive::File &file)
     return input;
 }
 
-VecTvpStochvolDraws read_loglik_coefficients(const HighFive::File &file,
+VecTvpStochvolDraws read_loglik_coefficients(const ModelFile &file,
                                              const VecTvpStochvolInput &input)
 {
     VecTvpStochvolDraws draws;
@@ -114,7 +114,7 @@ VecTvpStochvolDraws read_loglik_coefficients(const HighFive::File &file,
     return draws;
 }
 
-VecTvpStochvolDraws read_forecast_coefficients(const HighFive::File &file,
+VecTvpStochvolDraws read_forecast_coefficients(const ModelFile &file,
                                                const VecTvpStochvolInput &input)
 {
     VecTvpStochvolDraws draws;
@@ -136,7 +136,7 @@ VecTvpStochvolDraws read_forecast_coefficients(const HighFive::File &file,
     return draws;
 }
 
-void write_coefficients(HighFive::File &file, const VecTvpStochvolDraws &draws)
+void write_coefficients(const ModelFile &file, const VecTvpStochvolDraws &draws)
 {
     ensure_group(file, "/posterior");
 

@@ -17,20 +17,20 @@ namespace bayests::hdf5_io::vec_tvp_gamma
 /// empty, which is exactly how the sampler decides what to run. Anything
 /// missing that the model does need is reported by
 /// VecTvpGammaInput::validate(), where the message can name the field.
-VecTvpGammaInput read_input(const HighFive::File &file);
+VecTvpGammaInput read_input(const ModelFile &file);
 
 /// Reads posterior draws for the likelihood: the whole coefficient and
 /// cointegration paths, since every period is scored under its own, plus the
 /// precision in whichever of its two shapes the covariance block implies.
-VecTvpGammaDraws read_loglik_coefficients(const HighFive::File &file,
+VecTvpGammaDraws read_loglik_coefficients(const ModelFile &file,
                                           const VecTvpGammaInput &input);
 
 /// The same, with both paths cut to the last in-sample period -- and the
 /// precision too, when a covariance block makes it move.
-VecTvpGammaDraws read_forecast_coefficients(const HighFive::File &file,
+VecTvpGammaDraws read_forecast_coefficients(const ModelFile &file,
                                             const VecTvpGammaInput &input);
 
-void write_coefficients(HighFive::File &file, const VecTvpGammaDraws &draws);
+void write_coefficients(const ModelFile &file, const VecTvpGammaDraws &draws);
 
 } // namespace bayests::hdf5_io::vec_tvp_gamma
 

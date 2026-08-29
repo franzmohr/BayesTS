@@ -8,7 +8,7 @@
 namespace bayests::hdf5_io::vec_klgs_2010
 {
 
-VecKlgs2010Input read_input(const HighFive::File &file)
+VecKlgs2010Input read_input(const ModelFile &file)
 {
     VecKlgs2010Input input;
 
@@ -46,7 +46,7 @@ VecKlgs2010Input read_input(const HighFive::File &file)
     return input;
 }
 
-VecKlgs2010Draws read_coefficients(const HighFive::File &file)
+VecKlgs2010Draws read_coefficients(const ModelFile &file)
 {
     VecKlgs2010Draws draws;
 
@@ -66,7 +66,7 @@ VecKlgs2010Draws read_coefficients(const HighFive::File &file)
     return draws;
 }
 
-void write_coefficients(HighFive::File &file, const VecKlgs2010Draws &draws)
+void write_coefficients(const ModelFile &file, const VecKlgs2010Draws &draws)
 {
     ensure_group(file, "/posterior");
 

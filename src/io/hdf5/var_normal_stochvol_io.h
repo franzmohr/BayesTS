@@ -21,20 +21,20 @@ namespace bayests::hdf5_io::var_normal_stochvol
 /// The starting variance of the log-volatility innovations lives under
 /// /priors/u_sigma/sigma on disk but is a state, not a prior, so it is read
 /// into `initial` where the sampler expects to find it.
-VarNormalStochvolInput read_input(const HighFive::File &file);
+VarNormalStochvolInput read_input(const ModelFile &file);
 
 /// Reads posterior draws written by a previous run, with the whole volatility
 /// path -- one k x k precision per period -- which is what the likelihood
 /// scores each observation under.
-VarNormalStochvolDraws read_coefficients(const HighFive::File &file);
+VarNormalStochvolDraws read_coefficients(const ModelFile &file);
 
 /// The same, with the precision restricted to the last in-sample period. That
 /// is the value a forecast path carries forward, and reading only it keeps the
 /// sampler from having to know where in the stored path to look.
-VarNormalStochvolDraws read_forecast_coefficients(const HighFive::File &file,
+VarNormalStochvolDraws read_forecast_coefficients(const ModelFile &file,
                                                   const VarNormalStochvolInput &input);
 
-void write_coefficients(HighFive::File &file, const VarNormalStochvolDraws &draws);
+void write_coefficients(const ModelFile &file, const VarNormalStochvolDraws &draws);
 
 } // namespace bayests::hdf5_io::var_normal_stochvol
 

@@ -8,7 +8,7 @@
 namespace bayests::hdf5_io::dfm_normal_gamma
 {
 
-DfmNormalGammaInput read_input(const HighFive::File &file)
+DfmNormalGammaInput read_input(const ModelFile &file)
 {
     DfmNormalGammaInput input;
 
@@ -55,7 +55,7 @@ DfmNormalGammaInput read_input(const HighFive::File &file)
     return input;
 }
 
-DfmNormalGammaDraws read_coefficients(const HighFive::File &file)
+DfmNormalGammaDraws read_coefficients(const ModelFile &file)
 {
     DfmNormalGammaDraws draws;
 
@@ -83,7 +83,7 @@ DfmNormalGammaDraws read_coefficients(const HighFive::File &file)
     return draws;
 }
 
-void write_coefficients(HighFive::File &file, const DfmNormalGammaDraws &draws)
+void write_coefficients(const ModelFile &file, const DfmNormalGammaDraws &draws)
 {
     ensure_group(file, "/posterior");
 

@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <stdexcept>
 
 // Returns true if the path has an HDF5 extension (.hdf5 or .h5), case-insensitive
 bool is_hdf5_file(const std::filesystem::path &filepath)
@@ -39,8 +40,78 @@ HighFive::File open_hdf5_file_readwrite(const std::filesystem::path &filepath)
 	}
 }
 
+std::string normalize_hdf5_group(const std::string &group)
+{
+	// The root of the file, however it was spelled. Left as the empty string
+	// rather than "/" so that resolve() is a plain concatenation and a model at
+	// the root names exactly the paths it named before this existed.
+	if (group.empty() || group == "/")
+	{
+		return "";
+	}
+
+	std::string normalized = group;
+
+	if (normalized.front() != '/')
+	{
+		normalized.insert(normalized.begin(), '/');
+	}
+	while (normalized.size() > 1 && normalized.back() == '/')
+	{
+		normalized.pop_back();
+	}
+
+	// Every component between the slashes, checked for the two things that would
+	// make the resolved path name something other than what the caller wrote.
+	std::size_t start = 1;
+	while (start <= normalized.size())
+	{
+		const std::size_t end = normalized.find('/', start);
+		const std::string component =
+			normalized.substr(start, end == std::string::npos ? std::string::npos : end - start);
+
+		if (component.empty())
+		{
+			throw std::invalid_argument("Group '" + group + "' has an empty component");
+		}
+		if (component == "." || component == "..")
+		{
+			throw std::invalid_argument("Group '" + group +
+			                            "' contains '" + component +
+			                            "', which would resolve relative to somewhere else in "
+			                            "the file");
+		}
+
+		if (end == std::string::npos)
+		{
+			break;
+		}
+		start = end + 1;
+	}
+
+	return normalized;
+}
+
+void require_group(const HighFive::File &file, const std::string &group)
+{
+	if (group.empty())
+	{
+		return;
+	}
+
+	if (!file.exist(group))
+	{
+		throw std::runtime_error("No group '" + group + "' in this file");
+	}
+
+	if (file.getObjectType(group) != HighFive::ObjectType::Group)
+	{
+		throw std::runtime_error("'" + group + "' is not a group in this file");
+	}
+}
+
 // Get algorithm type
-std::string get_algorithm_type(const HighFive::File &file)
+std::string get_algorithm_type(const ModelFile &file)
 {
 	try {
 		HighFive::Group model_group = file.getGroup("/model");
@@ -50,12 +121,13 @@ std::string get_algorithm_type(const HighFive::File &file)
 		return model_type;
 	}
 	catch (const HighFive::Exception &e) {
-		throw std::runtime_error("Failed to detect algorithm flag: " + std::string(e.what()));
+		throw std::runtime_error("Failed to detect algorithm flag at '" +
+		                         file.resolve("/model") + "': " + std::string(e.what()));
 	}
 }
 
 // Get integer attribute from group
-int get_attribute_int(const HighFive::File &file, const std::string &group_name, const std::string &attr_name)
+int get_attribute_int(const ModelFile &file, const std::string &group_name, const std::string &attr_name)
 {
 	try {
 		HighFive::Group group = file.getGroup(group_name);
@@ -79,7 +151,7 @@ int get_attribute_int(const HighFive::File &file, const std::string &group_name,
 			const double rounded = std::round(value);
 			if (std::abs(value - rounded) > 1e-9) {
 				throw std::runtime_error("Attribute '" + attr_name + "' of group '" +
-				                         group_name + "' is " + std::to_string(value) +
+				                         file.resolve(group_name) + "' is " + std::to_string(value) +
 				                         ", which is not a whole number");
 			}
 			return static_cast<int>(rounded);
@@ -91,12 +163,12 @@ int get_attribute_int(const HighFive::File &file, const std::string &group_name,
 	}
 	catch (const HighFive::Exception &e) {
 		throw std::runtime_error("Failed to read integer attribute '" + attr_name +
-		                         "' from group '" + group_name + "': " + std::string(e.what()));
+		                         "' from group '" + file.resolve(group_name) + "': " + std::string(e.what()));
 	}
 }
 
 // Get double attribute from group
-double get_attribute_double(const HighFive::File &file, const std::string &group_name, const std::string &attr_name)
+double get_attribute_double(const ModelFile &file, const std::string &group_name, const std::string &attr_name)
 {
 	try {
 		HighFive::Group group = file.getGroup(group_name);
@@ -107,12 +179,12 @@ double get_attribute_double(const HighFive::File &file, const std::string &group
 	}
 	catch (const HighFive::Exception &e) {
 		throw std::runtime_error("Failed to read double attribute '" + attr_name +
-		                         "' from group '" + group_name + "': " + std::string(e.what()));
+		                         "' from group '" + file.resolve(group_name) + "': " + std::string(e.what()));
 	}
 }
 
 // Get double attribute from group
-std::string get_attribute_string(const HighFive::File &file, const std::string &group_name, const std::string &attr_name)
+std::string get_attribute_string(const ModelFile &file, const std::string &group_name, const std::string &attr_name)
 {
 	try {
 		HighFive::Group group = file.getGroup(group_name);
@@ -123,12 +195,12 @@ std::string get_attribute_string(const HighFive::File &file, const std::string &
 	}
 	catch (const HighFive::Exception &e) {
 		throw std::runtime_error("Failed to read string attribute '" + attr_name +
-		                         "' from group '" + group_name + "': " + std::string(e.what()));
+		                         "' from group '" + file.resolve(group_name) + "': " + std::string(e.what()));
 	}
 }
 
 // Get double attribute from group
-bool get_attribute_bool(const HighFive::File &file, const std::string &group_name, const std::string &attr_name)
+bool get_attribute_bool(const ModelFile &file, const std::string &group_name, const std::string &attr_name)
 {
 	try {
 		HighFive::Group group = file.getGroup(group_name);
@@ -139,12 +211,12 @@ bool get_attribute_bool(const HighFive::File &file, const std::string &group_nam
 	}
 	catch (const HighFive::Exception &e) {
 		throw std::runtime_error("Failed to read boolean attribute '" + attr_name +
-		                         "' from group '" + group_name + "': " + std::string(e.what()));
+		                         "' from group '" + file.resolve(group_name) + "': " + std::string(e.what()));
 	}
 }
 
 // Read dataset and transform it into an Armadillo matrix
-arma::mat hdf5_dataset_to_armadillo_matrix_double(const HighFive::File &file, const std::string &dataset_name)
+arma::mat hdf5_dataset_to_armadillo_matrix_double(const ModelFile &file, const std::string &dataset_name)
 {
 	try {
 		// Open dataset
@@ -174,13 +246,13 @@ arma::mat hdf5_dataset_to_armadillo_matrix_double(const HighFive::File &file, co
 		return arma::trans(result);
 	}
 	catch (const HighFive::Exception &e) {
-		throw std::runtime_error("Failed to read dataset '" + dataset_name + "': " + std::string(e.what()));
+		throw std::runtime_error("Failed to read dataset '" + file.resolve(dataset_name) + "': " + std::string(e.what()));
 	}
 }
 
 
 // Read dataset and transform it into an Armadillo matrix
-arma::mat hdf5_dataset_to_armadillo_matrix_integer(const HighFive::File &file, const std::string &dataset_name)
+arma::mat hdf5_dataset_to_armadillo_matrix_integer(const ModelFile &file, const std::string &dataset_name)
 {
 	try {
 		// Open dataset
@@ -210,12 +282,12 @@ arma::mat hdf5_dataset_to_armadillo_matrix_integer(const HighFive::File &file, c
 		return arma::trans(result);
 	}
 	catch (const HighFive::Exception &e) {
-		throw std::runtime_error("Failed to read dataset '" + dataset_name + "': " + std::string(e.what()));
+		throw std::runtime_error("Failed to read dataset '" + file.resolve(dataset_name) + "': " + std::string(e.what()));
 	}
 }
 
 // Read integer value from dataset
-double get_dataset_double(const HighFive::File &file, const std::string &dataset_name)
+double get_dataset_double(const ModelFile &file, const std::string &dataset_name)
 {
 	try {
 		HighFive::DataSet dataset = file.getDataSet(dataset_name);
@@ -224,11 +296,11 @@ double get_dataset_double(const HighFive::File &file, const std::string &dataset
 		return value;
 	}
 	catch (const HighFive::Exception &e) {
-		throw std::runtime_error("Failed to read double from dataset '" + dataset_name + "': " + std::string(e.what()));
+		throw std::runtime_error("Failed to read double from dataset '" + file.resolve(dataset_name) + "': " + std::string(e.what()));
 	}
 }
 
-int get_dataset_int(const HighFive::File &file, const std::string &dataset_name)
+int get_dataset_int(const ModelFile &file, const std::string &dataset_name)
 {
 	try {
 		HighFive::DataSet dataset = file.getDataSet(dataset_name);
@@ -247,7 +319,7 @@ int get_dataset_int(const HighFive::File &file, const std::string &dataset_name)
 			// does not say what it appears to; truncating would hide it.
 			const double rounded = std::round(value);
 			if (std::abs(value - rounded) > 1e-9) {
-				throw std::runtime_error("Dataset '" + dataset_name + "' is " +
+				throw std::runtime_error("Dataset '" + file.resolve(dataset_name) + "' is " +
 				                         std::to_string(value) +
 				                         ", which is not a whole number");
 			}
@@ -259,12 +331,12 @@ int get_dataset_int(const HighFive::File &file, const std::string &dataset_name)
 		return value;
 	}
 	catch (const HighFive::Exception &e) {
-		throw std::runtime_error("Failed to read integer from dataset '" + dataset_name + "': " + std::string(e.what()));
+		throw std::runtime_error("Failed to read integer from dataset '" + file.resolve(dataset_name) + "': " + std::string(e.what()));
 	}
 }
 
 // Write Armadillo matrix to HDF5 dataset
-void write_armadillo_matrix_to_hdf5(HighFive::File &file, const std::string &dataset_name, const arma::mat &matrix, const bool add_mcpar)
+void write_armadillo_matrix_to_hdf5(const ModelFile &file, const std::string &dataset_name, const arma::mat &matrix, const bool add_mcpar)
 {
 	try {
 		// Transpose matrix back (Armadillo is column-major, HDF5 expects row-major)
@@ -299,12 +371,12 @@ void write_armadillo_matrix_to_hdf5(HighFive::File &file, const std::string &dat
 		}
 	}
 	catch (const HighFive::Exception &e) {
-		throw std::runtime_error("Failed to write dataset '" + dataset_name + "': " + std::string(e.what()));
+		throw std::runtime_error("Failed to write dataset '" + file.resolve(dataset_name) + "': " + std::string(e.what()));
 	}
 }
 
 // Write a single double value to HDF5 dataset
-void write_dataset_double(HighFive::File &file, const std::string &dataset_name, double value)
+void write_dataset_double(const ModelFile &file, const std::string &dataset_name, double value)
 {
 	try {
 		// Create a scalar dataspace
@@ -315,12 +387,12 @@ void write_dataset_double(HighFive::File &file, const std::string &dataset_name,
 		dataset.write(value);
 	}
 	catch (const HighFive::Exception &e) {
-		throw std::runtime_error("Failed to write value to dataset '" + dataset_name + "': " + std::string(e.what()));
+		throw std::runtime_error("Failed to write value to dataset '" + file.resolve(dataset_name) + "': " + std::string(e.what()));
 	}
 }
 
 // Check if a dataset exists and contains data
-bool dataset_has_data(const HighFive::File &file, const std::string &dataset_name)
+bool dataset_has_data(const ModelFile &file, const std::string &dataset_name)
 {
 	try {
 		if (!file.exist(dataset_name)) {
@@ -344,7 +416,7 @@ bool dataset_has_data(const HighFive::File &file, const std::string &dataset_nam
 }
 
 // Check if an attribute exists in a group
-bool attribute_exists(const HighFive::File &file, const std::string &group_name, const std::string &attr_name)
+bool attribute_exists(const ModelFile &file, const std::string &group_name, const std::string &attr_name)
 {
 	try {
 		if (!file.exist(group_name)) {

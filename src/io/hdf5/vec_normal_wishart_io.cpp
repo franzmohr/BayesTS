@@ -8,7 +8,7 @@
 namespace bayests::hdf5_io::vec_normal_wishart
 {
 
-VecNormalWishartInput read_input(const HighFive::File &file)
+VecNormalWishartInput read_input(const ModelFile &file)
 {
     VecNormalWishartInput input;
 
@@ -52,7 +52,7 @@ VecNormalWishartInput read_input(const HighFive::File &file)
     return input;
 }
 
-VecNormalWishartDraws read_coefficients(const HighFive::File &file)
+VecNormalWishartDraws read_coefficients(const ModelFile &file)
 {
     VecNormalWishartDraws draws;
 
@@ -76,7 +76,7 @@ VecNormalWishartDraws read_coefficients(const HighFive::File &file)
     return draws;
 }
 
-void write_coefficients(HighFive::File &file, const VecNormalWishartDraws &draws)
+void write_coefficients(const ModelFile &file, const VecNormalWishartDraws &draws)
 {
     ensure_group(file, "/posterior");
 

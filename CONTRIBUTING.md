@@ -53,12 +53,22 @@ structs underneath get reshaped several times on the way there.
    the structs from step 1 and to flip the layout at the boundary — draws in
    columns inside the sampler, draws in rows on disk — which is why it comes
    after the structs are final rather than being drafted alongside them.
+
+   These take a `ModelFile`, not a `HighFive::File`: a file plus the group the
+   model hangs under, which resolves every path handed to it. Keep naming the
+   absolute paths (`"/data/train/y"`, `"/posterior/a/coeffs"`) and the model
+   works under `--group` for free. Reaching past it to the underlying file —
+   `file.file()` — puts the reader back at the root of the file, which is a
+   model that cannot be one of several in one file.
 5. **The front-end: `src/models/models.h`, `src/models/<Model>.cpp`, and the
    entry in `src/models/model_factory.cpp`, plus its line in
    `src/models/CMakeLists.txt`.** The factory key is the string stored in the
    model file's `/model/algorithm` attribute, so registering it is the single
    step that makes the model reachable from the command line. Leaving it for
-   last means a half-finished sampler cannot be invoked by accident.
+   last means a half-finished sampler cannot be invoked by accident. The three
+   entry points take a `ModelLocation` — the file and the group — and open the
+   file with `ModelFile file(h5, location.group)`; copy the shape from any
+   existing `src/models/<Model>.cpp` and everything below it is unchanged.
 6. **The fixture, `test/make_model_fixture.cpp`**, unless the model has recorded
    inputs checked into `test/`. `test/golden_models.cpp` itself needs no change:
    it dispatches through `create_model` on `/model/algorithm`, so step 5 is what

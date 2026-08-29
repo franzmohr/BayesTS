@@ -17,19 +17,19 @@ namespace bayests::hdf5_io::vec_normal_stochvol
 /// empty, which is exactly how the sampler decides what to run. Anything
 /// missing that the model does need is reported by
 /// VecNormalStochvolInput::validate(), where the message can name the field.
-VecNormalStochvolInput read_input(const HighFive::File &file);
+VecNormalStochvolInput read_input(const ModelFile &file);
 
 /// Everything in the posterior, the volatility path included. What the
 /// likelihood wants: every period is scored under its own precision.
-VecNormalStochvolDraws read_coefficients(const HighFive::File &file);
+VecNormalStochvolDraws read_coefficients(const ModelFile &file);
 
 /// The same, with the precision cut to the last in-sample period -- the one a
 /// forecast carries forward. The coefficients do not move, so they are read
 /// whole.
-VecNormalStochvolDraws read_forecast_coefficients(const HighFive::File &file,
+VecNormalStochvolDraws read_forecast_coefficients(const ModelFile &file,
                                                   const VecNormalStochvolInput &input);
 
-void write_coefficients(HighFive::File &file, const VecNormalStochvolDraws &draws);
+void write_coefficients(const ModelFile &file, const VecNormalStochvolDraws &draws);
 
 } // namespace bayests::hdf5_io::vec_normal_stochvol
 

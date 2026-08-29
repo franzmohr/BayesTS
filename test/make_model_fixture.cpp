@@ -10,7 +10,7 @@
 // existing file, and there is nothing to decorate. This tool writes one from
 // scratch.
 //
-//   make_model_fixture <dest.h5> <model> <varsel> <covar> <structural> <h>
+//   make_model_fixture <dest.h5> <model> <varsel> <covar> <structural> <h> [group]
 //
 //     model       VarNormalGamma | VarNormalStochvol | VarTvpGamma
 //                 | VarTvpWishart | VarTvpStochvol
@@ -26,6 +26,12 @@
 //                                           A_0 is not identified against an
 //                                           unrestricted Sigma)
 //     h           forecast horizon; 0 writes no forecast regressors
+//     group       the group to write the model under, e.g. /models/3. Optional;
+//                 without it the model's tree hangs at the root of the file,
+//                 which is where a file holding one model puts it. With it the
+//                 same file can be read back by `bayests <command> --group`, so
+//                 a run over a nested model is comparable to one over a model at
+//                 the root.
 //
 // The VECs are written from a different set of dimensions and a different
 // regressor layout than the VAR models -- differences with an error correction
@@ -118,7 +124,7 @@ private:
     unsigned long long state_;
 };
 
-void write_mat(HighFive::File &file, const std::string &dataset, const arma::mat &m)
+void write_mat(const ModelFile &file, const std::string &dataset, const arma::mat &m)
 {
     write_armadillo_matrix_to_hdf5(file, dataset, m, false);
 }
@@ -127,14 +133,14 @@ void write_mat(HighFive::File &file, const std::string &dataset, const arma::mat
 /// them. Written as an Armadillo column, because the writer transposes on the
 /// way out -- and the orientation matters: the readers that skip vectorise()
 /// and assign the result straight to an arma::vec only accept a column back.
-void write_row(HighFive::File &file, const std::string &dataset, const arma::vec &v)
+void write_row(const ModelFile &file, const std::string &dataset, const arma::vec &v)
 {
     write_armadillo_matrix_to_hdf5(file, dataset, arma::mat(v), false);
 }
 
 /// A one-element integer dataset read back with get_dataset_int(), which reads
 /// a scalar rather than a row.
-void write_int_scalar(HighFive::File &file, const std::string &dataset, int value)
+void write_int_scalar(const ModelFile &file, const std::string &dataset, int value)
 {
     if (file.exist(dataset))
     {
@@ -143,7 +149,7 @@ void write_int_scalar(HighFive::File &file, const std::string &dataset, int valu
     file.createDataSet<int>(dataset, HighFive::DataSpace::From(value)).write(value);
 }
 
-void write_int_row(HighFive::File &file, const std::string &dataset,
+void write_int_row(const ModelFile &file, const std::string &dataset,
                    const std::vector<int> &values)
 {
     if (file.exist(dataset))
@@ -154,7 +160,7 @@ void write_int_row(HighFive::File &file, const std::string &dataset,
     file.createDataSet<int>(dataset, HighFive::DataSpace::From(data)).write(data);
 }
 
-void ensure_group(HighFive::File &file, const std::string &group)
+void ensure_group(const ModelFile &file, const std::string &group)
 {
     if (!file.exist(group))
     {
@@ -163,7 +169,7 @@ void ensure_group(HighFive::File &file, const std::string &group)
 }
 
 template <typename T>
-void write_attribute(HighFive::File &file, const std::string &group_name,
+void write_attribute(const ModelFile &file, const std::string &group_name,
                      const std::string &name, const T &value)
 {
     ensure_group(file, group_name);
@@ -181,7 +187,7 @@ void write_attribute(HighFive::File &file, const std::string &group_name,
 /// still giving them an inclusion probability, which is what a VEC needs: the
 /// prior is indexed by the whole of `a`, but selection may not reach the
 /// loadings at the front of it.
-void write_selection(HighFive::File &file, const std::string &prior_group, arma::uword n,
+void write_selection(const ModelFile &file, const std::string &prior_group, arma::uword n,
                      arma::uword skip = 0)
 {
     std::vector<int> include;
@@ -195,7 +201,7 @@ void write_selection(HighFive::File &file, const std::string &prior_group, arma:
 
 /// Spike well inside the slab, so both mixture components stay reachable and
 /// the inclusion draws actually flip.
-void write_ssvs(HighFive::File &file, const std::string &prior_group, arma::uword n)
+void write_ssvs(const ModelFile &file, const std::string &prior_group, arma::uword n)
 {
     write_row(file, prior_group + "/tau0", arma::vec(n, arma::fill::value(0.1)));
     write_row(file, prior_group + "/tau1", arma::vec(n, arma::fill::value(10.0)));
@@ -270,7 +276,7 @@ arma::mat build_forecast_regressors(const arma::mat &series, const Layout &layou
     return z;
 }
 
-void write_common(HighFive::File &file, const std::string &model, const std::string &varsel,
+void write_common(const ModelFile &file, const std::string &model, const std::string &varsel,
                   bool covar, bool structural, int h, const Layout &layout,
                   const arma::mat &series, const arma::mat &z_train)
 {
@@ -322,7 +328,7 @@ void write_common(HighFive::File &file, const std::string &model, const std::str
     }
 }
 
-void write_var_normal_gamma(HighFive::File &file, const std::string &varsel, bool covar,
+void write_var_normal_gamma(const ModelFile &file, const std::string &varsel, bool covar,
                             const Layout &layout)
 {
     const arma::uword nparams = static_cast<arma::uword>(layout.nparams);
@@ -365,7 +371,7 @@ void write_var_normal_gamma(HighFive::File &file, const std::string &varsel, boo
     }
 }
 
-void write_var_normal_stochvol(HighFive::File &file, const std::string &varsel, bool covar,
+void write_var_normal_stochvol(const ModelFile &file, const std::string &varsel, bool covar,
                                const Layout &layout)
 {
     const arma::uword nparams = static_cast<arma::uword>(layout.nparams);
@@ -408,7 +414,7 @@ void write_var_normal_stochvol(HighFive::File &file, const std::string &varsel, 
     }
 }
 
-void write_var_tvp_gamma(HighFive::File &file, const std::string &varsel, bool covar,
+void write_var_tvp_gamma(const ModelFile &file, const std::string &varsel, bool covar,
                          const Layout &layout)
 {
     const arma::uword nparams = static_cast<arma::uword>(layout.nparams);
@@ -465,7 +471,7 @@ void write_var_tvp_gamma(HighFive::File &file, const std::string &varsel, bool c
 
 /// The coefficient block every time-varying parameter model shares: a path, the
 /// precision of its innovations and the state it starts from.
-void write_tvp_coefficients(HighFive::File &file, const std::string &varsel, arma::uword nparams)
+void write_tvp_coefficients(const ModelFile &file, const std::string &varsel, arma::uword nparams)
 {
     // The state innovation variances are stored inverted; the sampler flips the
     // diagonal back on the way in. A tight prior keeps the random walk from
@@ -487,7 +493,7 @@ void write_tvp_coefficients(HighFive::File &file, const std::string &varsel, arm
     }
 }
 
-void write_var_tvp_wishart(HighFive::File &file, const std::string &varsel, const Layout &layout)
+void write_var_tvp_wishart(const ModelFile &file, const std::string &varsel, const Layout &layout)
 {
     write_tvp_coefficients(file, varsel, static_cast<arma::uword>(layout.nparams));
 
@@ -498,7 +504,7 @@ void write_var_tvp_wishart(HighFive::File &file, const std::string &varsel, cons
     write_mat(file, "/initial/u_sigma_inv", arma::eye<arma::mat>(kK, kK));
 }
 
-void write_var_tvp_stochvol(HighFive::File &file, const std::string &varsel, bool covar,
+void write_var_tvp_stochvol(const ModelFile &file, const std::string &varsel, bool covar,
                             const Layout &layout)
 {
     const arma::uword nparams = static_cast<arma::uword>(layout.nparams);
@@ -706,7 +712,7 @@ std::string vec_error_spec(const std::string &model, bool covar)
     return covar ? prefix + "+covar" : prefix;
 }
 
-void write_vec_common(HighFive::File &file, const std::string &model, const std::string &varsel,
+void write_vec_common(const ModelFile &file, const std::string &model, const std::string &varsel,
                       bool covar, bool structural, int h, const arma::mat &levels,
                       const arma::mat &dy, const arma::mat &w, const arma::mat &z_train,
                       const arma::mat &x_train)
@@ -755,7 +761,7 @@ void write_vec_common(HighFive::File &file, const std::string &model, const std:
 /// Selection over a VEC's coefficients starts past the loadings: every VEC's
 /// validate() rejects a scheme that reaches them, and an indicator left at one
 /// for a position the sweep never visits is how they stay in.
-void write_vec_selection(HighFive::File &file, const std::string &varsel, arma::uword nparams,
+void write_vec_selection(const ModelFile &file, const std::string &varsel, arma::uword nparams,
                          bool with_ssvs)
 {
     write_row(file, "/initial/a_lambda", arma::vec(nparams, arma::fill::ones));
@@ -767,7 +773,7 @@ void write_vec_selection(HighFive::File &file, const std::string &varsel, arma::
 }
 
 /// The constant coefficient block: a normal prior and one starting value.
-void write_vec_constant_coefficients(HighFive::File &file, const std::string &varsel,
+void write_vec_constant_coefficients(const ModelFile &file, const std::string &varsel,
                                      arma::uword nparams, bool with_ssvs)
 {
     write_row(file, "/priors/a/mu", arma::vec(nparams, arma::fill::zeros));
@@ -783,7 +789,7 @@ void write_vec_constant_coefficients(HighFive::File &file, const std::string &va
 /// The constant cointegration space prior of Koop, Leon-Gonzalez and Strachan
 /// (2010): a scalar shrinkage and the central location of the space, k_beta
 /// square rather than n_beta square.
-void write_vec_constant_coint(HighFive::File &file)
+void write_vec_constant_coint(const ModelFile &file)
 {
     write_row(file, "/initial/beta", vec_initial_beta());
     write_dataset_double(file, "/priors/beta/v_inv", 0.1);
@@ -793,7 +799,7 @@ void write_vec_constant_coint(HighFive::File &file)
 /// The time-varying cointegration space: a path, where it starts, and how fast
 /// it may turn. No state variance among them -- the innovation variance is the
 /// identity and is what pins beta's scale.
-void write_vec_tvp_coint(HighFive::File &file)
+void write_vec_tvp_coint(const ModelFile &file)
 {
     const arma::vec beta = vec_initial_beta();
     write_mat(file, "/initial/beta", arma::repmat(beta, 1, kTT));
@@ -806,7 +812,7 @@ void write_vec_tvp_coint(HighFive::File &file)
 /// The time-varying coefficient block, which is the VAR's: a path, the precision
 /// of its innovations and the state it starts from. Selection is the VEC's,
 /// though, so it is written here rather than by write_tvp_coefficients().
-void write_vec_tvp_coefficients(HighFive::File &file, const std::string &varsel,
+void write_vec_tvp_coefficients(const ModelFile &file, const std::string &varsel,
                                 arma::uword nparams)
 {
     write_tvp_coefficients(file, "none", nparams);
@@ -818,7 +824,7 @@ void write_vec_tvp_coefficients(HighFive::File &file, const std::string &varsel,
 }
 
 /// The constant covariance block, as the constant-coefficient VARs write it.
-void write_vec_constant_psi(HighFive::File &file, const std::string &varsel, arma::uword n_psi,
+void write_vec_constant_psi(const ModelFile &file, const std::string &varsel, arma::uword n_psi,
                             bool with_ssvs)
 {
     ensure_group(file, "/priors/psi");
@@ -840,7 +846,7 @@ void write_vec_constant_psi(HighFive::File &file, const std::string &varsel, arm
 /// The time-varying covariance block, as the time-varying VARs write it --
 /// including the selection scheme in its own group, which is why it can differ
 /// from the model's.
-void write_vec_tvp_psi(HighFive::File &file, const std::string &varsel, arma::uword n_psi)
+void write_vec_tvp_psi(const ModelFile &file, const std::string &varsel, arma::uword n_psi)
 {
     ensure_group(file, "/priors/psi");
     write_mat(file, "/initial/psi", arma::mat(n_psi, kTT, arma::fill::zeros));
@@ -864,7 +870,7 @@ void write_vec_tvp_psi(HighFive::File &file, const std::string &varsel, arma::uw
 }
 
 /// The stochastic volatility block, shared by the two VECs that carry one.
-void write_vec_stochvol(HighFive::File &file)
+void write_vec_stochvol(const ModelFile &file)
 {
     // The offset keeps log(u^2 + offset) finite when a residual lands on zero,
     // and bounds it well inside the range the ten-component mixture covers.
@@ -882,7 +888,7 @@ void write_vec_stochvol(HighFive::File &file)
 /// The independent gamma priors on the error precisions. `initial` is the
 /// dataset the model reads its starting precision from: the constant-coefficient
 /// VECs call it u_sigma_inv and the time-varying ones u_omega_inv.
-void write_vec_gamma_errors(HighFive::File &file, const std::string &initial)
+void write_vec_gamma_errors(const ModelFile &file, const std::string &initial)
 {
     write_row(file, "/priors/u_sigma/shape", arma::vec(kK, arma::fill::value(3.0)));
     write_row(file, "/priors/u_sigma/rate", arma::vec(kK, arma::fill::value(2.0)));
@@ -891,7 +897,7 @@ void write_vec_gamma_errors(HighFive::File &file, const std::string &initial)
 
 /// The non-SUR Koop, Leon-Gonzalez and Strachan (2010) sampler: the same priors
 /// VecNormalWishart carries, and no selection block -- validate() rejects one.
-void write_vec_klgs_2010(HighFive::File &file, arma::uword nparams)
+void write_vec_klgs_2010(const ModelFile &file, arma::uword nparams)
 {
     write_vec_constant_coefficients(file, "none", nparams, false);
     write_vec_constant_coint(file);
@@ -901,7 +907,7 @@ void write_vec_klgs_2010(HighFive::File &file, arma::uword nparams)
     write_mat(file, "/initial/u_sigma_inv", arma::eye<arma::mat>(kK, kK));
 }
 
-void write_vec_normal_gamma(HighFive::File &file, const std::string &varsel, bool covar,
+void write_vec_normal_gamma(const ModelFile &file, const std::string &varsel, bool covar,
                             arma::uword nparams)
 {
     write_vec_constant_coefficients(file, varsel, nparams, true);
@@ -914,7 +920,7 @@ void write_vec_normal_gamma(HighFive::File &file, const std::string &varsel, boo
     }
 }
 
-void write_vec_normal_stochvol(HighFive::File &file, const std::string &varsel, bool covar,
+void write_vec_normal_stochvol(const ModelFile &file, const std::string &varsel, bool covar,
                                arma::uword nparams)
 {
     write_vec_constant_coefficients(file, varsel, nparams, false);
@@ -927,7 +933,7 @@ void write_vec_normal_stochvol(HighFive::File &file, const std::string &varsel, 
     }
 }
 
-void write_vec_tvp_wishart(HighFive::File &file, const std::string &varsel, arma::uword nparams)
+void write_vec_tvp_wishart(const ModelFile &file, const std::string &varsel, arma::uword nparams)
 {
     write_vec_tvp_coefficients(file, varsel, nparams);
     write_vec_tvp_coint(file);
@@ -939,7 +945,7 @@ void write_vec_tvp_wishart(HighFive::File &file, const std::string &varsel, arma
     write_mat(file, "/initial/u_sigma_inv", arma::eye<arma::mat>(kK, kK));
 }
 
-void write_vec_tvp_gamma(HighFive::File &file, const std::string &varsel, bool covar,
+void write_vec_tvp_gamma(const ModelFile &file, const std::string &varsel, bool covar,
                          arma::uword nparams)
 {
     write_vec_tvp_coefficients(file, varsel, nparams);
@@ -952,7 +958,7 @@ void write_vec_tvp_gamma(HighFive::File &file, const std::string &varsel, bool c
     }
 }
 
-void write_vec_tvp_stochvol(HighFive::File &file, const std::string &varsel, bool covar,
+void write_vec_tvp_stochvol(const ModelFile &file, const std::string &varsel, bool covar,
                             arma::uword nparams)
 {
     write_vec_tvp_coefficients(file, varsel, nparams);
@@ -1020,7 +1026,7 @@ arma::mat simulate_dfm(Lcg &rng)
     return x;
 }
 
-void write_dfm_normal_gamma(HighFive::File &file, int h, const arma::mat &x)
+void write_dfm_normal_gamma(const ModelFile &file, int h, const arma::mat &x)
 {
     write_attribute<std::string>(file, "/model", "algorithm", "DfmNormalGamma");
     write_attribute<int>(file, "/model", "k", kDfmK);
@@ -1071,7 +1077,7 @@ void write_dfm_normal_gamma(HighFive::File &file, int h, const arma::mat &x)
 }
 
 /// Dispatches to the six above. Returns false if the name is not a VEC.
-bool write_vec_model(HighFive::File &file, const std::string &model, const std::string &varsel,
+bool write_vec_model(const ModelFile &file, const std::string &model, const std::string &varsel,
                      bool covar, arma::uword nparams)
 {
     if (model == "VecKlgs2010")
@@ -1115,10 +1121,11 @@ bool is_vec_model(const std::string &model)
 
 int main(int argc, char *argv[])
 {
-    if (argc != 7)
+    if (argc != 7 && argc != 8)
     {
         std::cerr << "Usage: " << argv[0]
-                  << " <dest.h5> <model> <none|ssvs|bvs> <covar 0|1> <structural 0|1> <h>\n";
+                  << " <dest.h5> <model> <none|ssvs|bvs> <covar 0|1> <structural 0|1> <h>"
+                     " [group]\n";
         return 2;
     }
 
@@ -1128,6 +1135,25 @@ int main(int argc, char *argv[])
     const bool covar = std::string(argv[4]) != "0";
     const bool structural = std::string(argv[5]) != "0";
     const int h = std::stoi(argv[6]);
+
+    // The group the model is written under, normalized the same way the reader
+    // normalizes --group, so the two agree on what "/models/3/" means.
+    std::string group;
+    if (argc == 8)
+    {
+        try
+        {
+            group = normalize_hdf5_group(argv[7]);
+        }
+        catch (const std::exception &e)
+        {
+            std::cerr << "Error: " << e.what() << std::endl;
+            return 2;
+        }
+    }
+
+    // For the messages below: "dest.h5" or "dest.h5:/models/3".
+    const std::string group_suffix = group.empty() ? "" : ":" + group;
 
     const bool is_vec = is_vec_model(model);
     const bool is_dfm = model == "DfmNormalGamma";
@@ -1174,7 +1200,12 @@ int main(int argc, char *argv[])
         }
         std::filesystem::remove(dest);
 
-        HighFive::File file(dest.string(), HighFive::File::Create);
+        HighFive::File h5(dest.string(), HighFive::File::Create);
+
+        // Everything below names absolute paths -- "/model", "/data/train/y" --
+        // and this is what puts the group in front of them. Empty group, same
+        // paths as before.
+        const ModelFile file(h5, group);
 
         Layout layout;
         layout.n_structural = structural ? kK * (kK - 1) / 2 : 0;
@@ -1188,7 +1219,7 @@ int main(int argc, char *argv[])
         {
             write_dfm_normal_gamma(file, h, simulate_dfm(rng));
 
-            std::cout << "wrote " << dest.string() << " (" << model << ", h=" << h
+            std::cout << "wrote " << dest.string() << group_suffix << " (" << model << ", h=" << h
                       << ", k=" << kDfmK << ", tt=" << kTT << ", n_factors=" << kDfmN
                       << ", p=" << kDfmP << ", n_lambda=" << kDfmNLambda << ", n_a=" << kDfmNA
                       << ")\n";
@@ -1209,7 +1240,7 @@ int main(int argc, char *argv[])
                              x_train);
             write_vec_model(file, model, varsel, covar, nparams);
 
-            std::cout << "wrote " << dest.string() << " (" << model << ", varsel=" << varsel
+            std::cout << "wrote " << dest.string() << group_suffix << " (" << model << ", varsel=" << varsel
                       << ", covar=" << covar << ", structural=" << structural << ", h=" << h
                       << ", k=" << kK << ", tt=" << kTT << ", rank=" << kVecRank
                       << ", nparams=" << nparams << ")\n";
@@ -1242,7 +1273,7 @@ int main(int argc, char *argv[])
             write_var_tvp_gamma(file, varsel, covar, layout);
         }
 
-        std::cout << "wrote " << dest.string() << " (" << model << ", varsel=" << varsel
+        std::cout << "wrote " << dest.string() << group_suffix << " (" << model << ", varsel=" << varsel
                   << ", covar=" << covar << ", structural=" << structural << ", h=" << h
                   << ", k=" << kK << ", tt=" << kTT << ", nparams=" << layout.nparams << ")\n";
     }

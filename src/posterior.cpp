@@ -2,26 +2,33 @@
 // Copyright (c) 2026 Franz X. Mohr
 
 
+#include "cli_options.h"
 #include "models/models.h"
 #include "io/hdf5/hdf5_and_armadillo.h"
 #include <iostream>
 #include <filesystem>
 #include <string>
 
-// Helper function to process a single file
-static int process_single_file_evaluation(const std::filesystem::path& filepath, bool run_coefficients, bool run_forecasts, bool run_loglik) {
+// Helper function to process a single model
+static int process_single_file_evaluation(const ModelLocation &location, bool run_coefficients,
+                                         bool run_forecasts, bool run_loglik)
+{
 	try
 	{
 		std::string model_type;
 
 		{
 			// Open HDF5 file (will be closed when scope ends)
-			HighFive::File file = open_hdf5_file(filepath);
+			HighFive::File h5 = open_hdf5_file(location.file);
 
-			// Get model type from file
-			model_type = get_algorithm_type(file);
+			// A --group that names nothing is reported here rather than as a
+			// missing dataset further in.
+			require_group(h5, location.group);
 
-			// File is automatically closed here when 'file' goes out of scope
+			// Get model type from the model's own /model group
+			model_type = get_algorithm_type(ModelFile(h5, location.group));
+
+			// File is automatically closed here when 'h5' goes out of scope
 		}
 
 		// Initialize model
@@ -30,24 +37,24 @@ static int process_single_file_evaluation(const std::filesystem::path& filepath,
 		// Posterior draws
 		if (run_coefficients)
 		{
-			model->draw_coefficients(filepath);
+			model->draw_coefficients(location);
 		}
 
 		// Information criteria
 		if (run_loglik)
 		{
-			model->log_likelihood(filepath);
+			model->log_likelihood(location);
 		}
 
 		// Forecasts
 		if (run_forecasts)
 		{
-			model->forecast(filepath);
+			model->forecast(location);
 		}
 	}
 	catch (const std::exception &e)
 	{
-		std::cerr << "Error processing " << filepath << ": " << e.what() << std::endl;
+		std::cerr << "Error processing " << location.describe() << ": " << e.what() << std::endl;
 		return 1;
 	}
 
@@ -56,41 +63,19 @@ static int process_single_file_evaluation(const std::filesystem::path& filepath,
 
 int posterior(int argc, char *argv[])
 {
+	CommandOptions options;
+	if (!parse_command_options(argc, argv, "posterior", true, options))
+	{
+		return 2;
+	}
 
-	// Get filepath from command line argument
-	std::filesystem::path filepath = argv[2];
+	const std::filesystem::path filepath = options.path;
 
 	// Check if path exists
 	if (!std::filesystem::exists(filepath))
 	{
 		std::cerr << "Error: Path does not exist: " << filepath << std::endl;
 		return 1;
-	}
-
-	// Parse optional flags
-	bool run_coefficients = true;
-	bool run_forecasts = true;
-	bool run_loglik = true;
-
-	for (int i = 3; i < argc; ++i)
-	{
-		std::string arg = argv[i];
-		if (arg == "--no-coefficients")
-		{
-			run_coefficients = false;
-		}
-		else if (arg == "--no-forecasts")
-		{
-			run_forecasts = false;
-		}
-		else if (arg == "--no-loglik")
-		{
-			run_loglik = false;
-		}
-		else
-		{
-			std::cerr << "Warning: Unknown flag '" << arg << "' ignored" << std::endl;
-		}
 	}
 
 	// Check if path is a directory
@@ -107,8 +92,11 @@ int posterior(int argc, char *argv[])
 		{
 			if (entry.is_regular_file() && is_hdf5_file(entry.path()))
 			{
-				std::cout << "Processing: " << entry.path() << std::endl;
-				failures += process_single_file_evaluation(entry.path(), run_coefficients, run_forecasts, run_loglik);
+				const ModelLocation location{entry.path(), options.group};
+				std::cout << "Processing: " << location.describe() << std::endl;
+				failures += process_single_file_evaluation(location, options.run_coefficients,
+				                                          options.run_forecasts,
+				                                          options.run_loglik);
 			}
 		}
 		return failures == 0 ? 0 : 1;
@@ -121,7 +109,9 @@ int posterior(int argc, char *argv[])
 			std::cerr << "Error: Not an hdf5 file: " << filepath << std::endl;
 			return 1;
 		}
-		return process_single_file_evaluation(filepath, run_coefficients, run_forecasts, run_loglik);
+		return process_single_file_evaluation(ModelLocation{filepath, options.group},
+		                                     options.run_coefficients, options.run_forecasts,
+		                                     options.run_loglik);
 	}
 	else
 	{

@@ -17,13 +17,13 @@ namespace bayests::hdf5_io::vec_normal_gamma
 /// empty, which is exactly how the sampler decides what to run. Anything
 /// missing that the model does need is reported by
 /// VecNormalGammaInput::validate(), where the message can name the field.
-VecNormalGammaInput read_input(const HighFive::File &file);
+VecNormalGammaInput read_input(const ModelFile &file);
 
 /// Everything in the posterior. Nothing in this model moves with time, so one
 /// reader serves the forecast and the likelihood alike.
-VecNormalGammaDraws read_coefficients(const HighFive::File &file);
+VecNormalGammaDraws read_coefficients(const ModelFile &file);
 
-void write_coefficients(HighFive::File &file, const VecNormalGammaDraws &draws);
+void write_coefficients(const ModelFile &file, const VecNormalGammaDraws &draws);
 
 } // namespace bayests::hdf5_io::vec_normal_gamma
 

@@ -20,13 +20,13 @@ namespace bayests::hdf5_io::vec_klgs_2010
 /// Optional groups are skipped rather than demanded: a file without regressors
 /// or without forecast data yields an input with those parts left empty, which
 /// is exactly how the sampler decides what to run.
-VecKlgs2010Input read_input(const HighFive::File &file);
+VecKlgs2010Input read_input(const ModelFile &file);
 
 /// Reads posterior draws written by a previous run, transposed back into the
 /// sampler's draw-per-column layout.
-VecKlgs2010Draws read_coefficients(const HighFive::File &file);
+VecKlgs2010Draws read_coefficients(const ModelFile &file);
 
-void write_coefficients(HighFive::File &file, const VecKlgs2010Draws &draws);
+void write_coefficients(const ModelFile &file, const VecKlgs2010Draws &draws);
 
 } // namespace bayests::hdf5_io::vec_klgs_2010
 

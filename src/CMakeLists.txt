@@ -4,6 +4,7 @@
 #####################################################################
 # Internal libraries
 add_library(bayests_subcommands
+    cli_options.cpp
     coefficients.cpp
     forecasts.cpp
     loglik.cpp

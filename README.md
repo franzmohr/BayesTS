@@ -161,8 +161,14 @@ each file in place.
 | `forecasts` | One forecast path per posterior draw |
 | `loglik` | Pointwise log likelihood, draws × periods |
 
-`coefficients`, `forecasts` and `loglik` take no flags. `posterior` runs all
-three by default and any of them can be switched off:
+Every command takes `--group <path>`, the group a model's tree hangs under inside
+its file. Without it the tree hangs at the root of the file, which is where a
+file holding a single model puts it; with it every path in the table below is
+read and written under that group instead, so one file can hold several models
+side by side. In directory mode the same group is looked for in every file.
+
+`posterior` additionally runs all three steps by default, and any of them can be
+switched off. `coefficients`, `forecasts` and `loglik` take no step flags.
 
 ```bash
 # Everything
@@ -170,6 +176,9 @@ bayests posterior model.h5
 
 # Draw the coefficients, but skip the forecast and the log likelihood
 bayests posterior model.h5 --no-forecasts --no-loglik
+
+# The model under /models/3 of a file that holds several
+bayests posterior models.h5 --group /models/3
 
 # Every model file below models/, forecasts only
 bayests forecasts models/
@@ -185,16 +194,21 @@ reported on `stderr` and the walk continues to the next one, but the exit status
 is 1 if any file failed — so a script driving a directory of models can tell
 whether everything in it was processed.
 
-A command line that cannot be acted on at all — no arguments, or a first
-argument that is not one of the four commands — prints the usage message and
-exits 2. The two codes are worth keeping apart in a script: 1 means the run
-started and something in it failed, 2 means it never started.
+A command line that cannot be acted on at all — no arguments, a first argument
+that is not one of the four commands, or a `--group` with no value or one that
+cannot name an HDF5 group — prints the reason and exits 2. The two codes are
+worth keeping apart in a script: 1 means the run started and something in it
+failed, 2 means it never started. A `--group` that is well formed but names
+nothing in the file is the first kind, not the second: the command line was
+actionable, the file just did not hold that model.
 
 ### The model file
 
-Groups and datasets the readers look for. Only `/model`'s `algorithm`, `k`,
-`iterations` and `burnin` are required — everything else is read through a
-default, so a file written for a simpler model still describes a valid one.
+Groups and datasets the readers look for, as paths within one model. They are
+paths from the root of the file unless `--group` was given, in which case they
+hang under that group instead. Only `/model`'s `algorithm`, `k`, `iterations` and
+`burnin` are required — everything else is read through a default, so a file
+written for a simpler model still describes a valid one.
 
 | Location | Contents |
 | --- | --- |

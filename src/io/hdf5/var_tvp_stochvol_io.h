@@ -17,21 +17,21 @@ namespace bayests::hdf5_io::var_tvp_stochvol
 /// exactly how the sampler decides what to run. Anything missing that the
 /// model does need is reported by VarTvpStochvolInput::validate(), where the
 /// message can name the field.
-VarTvpStochvolInput read_input(const HighFive::File &file);
+VarTvpStochvolInput read_input(const ModelFile &file);
 
 /// Reads posterior draws for the likelihood: the whole coefficient path, since
 /// every period is scored under its own coefficients, and the last period's
 /// precision, which is the one this model scores every observation under.
-VarTvpStochvolDraws read_loglik_coefficients(const HighFive::File &file,
+VarTvpStochvolDraws read_loglik_coefficients(const ModelFile &file,
                                              const VarTvpStochvolInput &input);
 
 /// Reads posterior draws for the forecast: the last in-sample period of both
 /// the coefficient path and the precision, which is what a forecast carries
 /// forward.
-VarTvpStochvolDraws read_forecast_coefficients(const HighFive::File &file,
+VarTvpStochvolDraws read_forecast_coefficients(const ModelFile &file,
                                                const VarTvpStochvolInput &input);
 
-void write_coefficients(HighFive::File &file, const VarTvpStochvolDraws &draws);
+void write_coefficients(const ModelFile &file, const VarTvpStochvolDraws &draws);
 
 } // namespace bayests::hdf5_io::var_tvp_stochvol
 

@@ -8,7 +8,7 @@
 namespace bayests::hdf5_io::vec_tvp_wishart
 {
 
-VecTvpWishartInput read_input(const HighFive::File &file)
+VecTvpWishartInput read_input(const ModelFile &file)
 {
     VecTvpWishartInput input;
 
@@ -71,7 +71,7 @@ VecTvpWishartInput read_input(const HighFive::File &file)
 // every model's readers through. Unlike VecTvpGamma, whose precision may be
 // stored per period, this model's u_sigma_inv is one k x k matrix per draw, so
 // the dataset is read as it stands.
-VecTvpWishartDraws read_loglik_coefficients(const HighFive::File &file,
+VecTvpWishartDraws read_loglik_coefficients(const ModelFile &file,
                                             [[maybe_unused]] const VecTvpWishartInput &input)
 {
     VecTvpWishartDraws draws;
@@ -92,7 +92,7 @@ VecTvpWishartDraws read_loglik_coefficients(const HighFive::File &file,
     return draws;
 }
 
-VecTvpWishartDraws read_forecast_coefficients(const HighFive::File &file,
+VecTvpWishartDraws read_forecast_coefficients(const ModelFile &file,
                                               const VecTvpWishartInput &input)
 {
     VecTvpWishartDraws draws;
@@ -117,7 +117,7 @@ VecTvpWishartDraws read_forecast_coefficients(const HighFive::File &file,
     return draws;
 }
 
-void write_coefficients(HighFive::File &file, const VecTvpWishartDraws &draws)
+void write_coefficients(const ModelFile &file, const VecTvpWishartDraws &draws)
 {
     ensure_group(file, "/posterior");
 

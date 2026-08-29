@@ -13,7 +13,7 @@ namespace
 
 /// The coefficient and cointegration paths, cut to one period or read whole.
 /// `period_width` of zero means the whole path.
-void read_paths(const HighFive::File &file, const VecTvpGammaInput &input,
+void read_paths(const ModelFile &file, const VecTvpGammaInput &input,
                 VecTvpGammaDraws &draws, bool last_period_only)
 {
     const arma::uword tt = input.train.periods(input.spec.k);
@@ -36,7 +36,7 @@ void read_paths(const HighFive::File &file, const VecTvpGammaInput &input,
 
 } // namespace
 
-VecTvpGammaInput read_input(const HighFive::File &file)
+VecTvpGammaInput read_input(const ModelFile &file)
 {
     VecTvpGammaInput input;
 
@@ -114,7 +114,7 @@ VecTvpGammaInput read_input(const HighFive::File &file)
     return input;
 }
 
-VecTvpGammaDraws read_loglik_coefficients(const HighFive::File &file,
+VecTvpGammaDraws read_loglik_coefficients(const ModelFile &file,
                                           const VecTvpGammaInput &input)
 {
     VecTvpGammaDraws draws;
@@ -126,7 +126,7 @@ VecTvpGammaDraws read_loglik_coefficients(const HighFive::File &file,
     return draws;
 }
 
-VecTvpGammaDraws read_forecast_coefficients(const HighFive::File &file,
+VecTvpGammaDraws read_forecast_coefficients(const ModelFile &file,
                                             const VecTvpGammaInput &input)
 {
     VecTvpGammaDraws draws;
@@ -138,7 +138,7 @@ VecTvpGammaDraws read_forecast_coefficients(const HighFive::File &file,
     return draws;
 }
 
-void write_coefficients(HighFive::File &file, const VecTvpGammaDraws &draws)
+void write_coefficients(const ModelFile &file, const VecTvpGammaDraws &draws)
 {
     ensure_group(file, "/posterior");
 

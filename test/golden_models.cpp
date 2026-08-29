@@ -10,7 +10,13 @@
 // consume the RNG in the same order print the same fingerprint, digit for
 // digit; any change in the order of the draws shows up immediately.
 //
-//   bayests_golden <fixture.h5> [more.h5 ...]
+//   bayests_golden [--group <path>] <fixture.h5> [more.h5 ...]
+//
+// --group is the group each model's tree hangs under inside its file, for a
+// fixture that does not sit at the root -- make_model_fixture writes one there
+// when it is given a group of its own. The same group is used for every fixture
+// named, since the point of the option here is to run a model written under a
+// group through the same fingerprints as one written at the root.
 //
 // The model is taken from /model/algorithm. The checked-in VarNormalWishart
 // fixtures predate that attribute, so its absence means VarNormalWishart;
@@ -96,7 +102,7 @@ void fingerprint(const std::string &label, const arma::mat &m)
            m.min(), m.max(), weighted);
 }
 
-void report_if_present(const HighFive::File &file, const std::string &dataset)
+void report_if_present(const ModelFile &file, const std::string &dataset)
 {
     if (!dataset_has_data(file, dataset))
     {
@@ -109,14 +115,18 @@ void report_if_present(const HighFive::File &file, const std::string &dataset)
 // The fixtures carry a full /posterior group, and every entry point returns
 // early when its output already exists. Copy the fixture and clear them.
 std::filesystem::path stage_fixture(const std::filesystem::path &fixture,
-                                    const std::filesystem::path &scratch)
+                                    const std::filesystem::path &scratch,
+                                    const std::string &group)
 {
     std::filesystem::create_directories(scratch);
     std::filesystem::path staged = scratch / fixture.filename();
     std::filesystem::copy_file(fixture, staged,
                                std::filesystem::copy_options::overwrite_existing);
 
-    HighFive::File file = open_hdf5_file_readwrite(staged);
+    HighFive::File h5 = open_hdf5_file_readwrite(staged);
+    require_group(h5, group);
+
+    const ModelFile file(h5, group);
     for (const char *dataset : kOutputs)
     {
         if (file.exist(dataset))
@@ -134,9 +144,10 @@ bool threads_pinned()
     return omp && blas && std::string(omp) == "1" && std::string(blas) == "1";
 }
 
-std::string model_of(const std::filesystem::path &staged)
+std::string model_of(const std::filesystem::path &staged, const std::string &group)
 {
-    HighFive::File file = open_hdf5_file(staged);
+    HighFive::File h5 = open_hdf5_file(staged);
+    const ModelFile file(h5, group);
     if (!attribute_exists(file, "/model", "algorithm"))
     {
         return "VarNormalWishart";
@@ -144,10 +155,12 @@ std::string model_of(const std::filesystem::path &staged)
     return get_algorithm_type(file);
 }
 
-int run_fixture(const std::filesystem::path &fixture, const std::filesystem::path &scratch)
+int run_fixture(const std::filesystem::path &fixture, const std::filesystem::path &scratch,
+                const std::string &group)
 {
-    std::filesystem::path staged = stage_fixture(fixture, scratch);
-    const std::string model_type = model_of(staged);
+    std::filesystem::path staged = stage_fixture(fixture, scratch, group);
+    const ModelLocation location{staged, group};
+    const std::string model_type = model_of(staged, group);
 
     printf("%s [%s]\n", fixture.filename().string().c_str(), model_type.c_str());
 
@@ -156,15 +169,16 @@ int run_fixture(const std::filesystem::path &fixture, const std::filesystem::pat
     // One seed per entry point, so a change in one does not shift the stream
     // seen by the next and turn a single regression into three.
     arma::arma_rng::set_seed(kSeed);
-    model->draw_coefficients(staged);
+    model->draw_coefficients(location);
 
     arma::arma_rng::set_seed(kSeed);
-    model->log_likelihood(staged);
+    model->log_likelihood(location);
 
     arma::arma_rng::set_seed(kSeed);
-    model->forecast(staged);
+    model->forecast(location);
 
-    HighFive::File file = open_hdf5_file(staged);
+    HighFive::File h5 = open_hdf5_file(staged);
+    const ModelFile file(h5, group);
     for (const char *dataset : kOutputs)
     {
         report_if_present(file, dataset);
@@ -176,9 +190,44 @@ int run_fixture(const std::filesystem::path &fixture, const std::filesystem::pat
 
 int main(int argc, char *argv[])
 {
-    if (argc < 2)
+    std::string group;
+    std::vector<std::string> fixtures;
+
+    for (int i = 1; i < argc; ++i)
     {
-        std::cerr << "Usage: " << argv[0] << " <fixture.h5> [more.h5 ...]\n";
+        const std::string arg = argv[i];
+        if (arg == "--group")
+        {
+            if (i + 1 >= argc)
+            {
+                std::cerr << "Error: --group needs the path of a group\n";
+                return 2;
+            }
+            group = argv[++i];
+        }
+        else if (arg.rfind("--group=", 0) == 0)
+        {
+            group = arg.substr(std::string("--group=").size());
+        }
+        else
+        {
+            fixtures.push_back(arg);
+        }
+    }
+
+    if (fixtures.empty())
+    {
+        std::cerr << "Usage: " << argv[0] << " [--group <path>] <fixture.h5> [more.h5 ...]\n";
+        return 2;
+    }
+
+    try
+    {
+        group = normalize_hdf5_group(group);
+    }
+    catch (const std::exception &e)
+    {
+        std::cerr << "Error: " << e.what() << '\n';
         return 2;
     }
 
@@ -193,15 +242,15 @@ int main(int argc, char *argv[])
         std::filesystem::temp_directory_path() / "bayests_golden";
 
     int failures = 0;
-    for (int i = 1; i < argc; ++i)
+    for (const std::string &fixture : fixtures)
     {
         try
         {
-            failures += run_fixture(argv[i], scratch);
+            failures += run_fixture(fixture, scratch, group);
         }
         catch (const std::exception &e)
         {
-            std::cerr << "Error processing " << argv[i] << ": " << e.what() << '\n';
+            std::cerr << "Error processing " << fixture << ": " << e.what() << '\n';
             ++failures;
         }
     }

@@ -2,37 +2,42 @@
 // Copyright (c) 2026 Franz X. Mohr
 
 
+#include "cli_options.h"
 #include "models/models.h"
 #include "io/hdf5/hdf5_and_armadillo.h"
 #include <iostream>
 #include <filesystem>
-#include <string>
 
-// Helper function to process a single file
-static int process_single_file_forecasts(const std::filesystem::path& filepath) {
+// Helper function to process a single model
+static int process_single_file_forecasts(const ModelLocation &location)
+{
 	try
 	{
 		std::string model_type;
 
 		{
 			// Open HDF5 file (will be closed when scope ends)
-			HighFive::File file = open_hdf5_file(filepath);
+			HighFive::File h5 = open_hdf5_file(location.file);
 
-			// Get model type from file
-			model_type = get_algorithm_type(file);
+			// A --group that names nothing is reported here rather than as a
+			// missing dataset further in.
+			require_group(h5, location.group);
 
-			// File is automatically closed here when 'file' goes out of scope
+			// Get model type from the model's own /model group
+			model_type = get_algorithm_type(ModelFile(h5, location.group));
+
+			// File is automatically closed here when 'h5' goes out of scope
 		}
 
 		// Initialize model
 		auto model = create_model(model_type);
 
-		model->forecast(filepath);
-		
+		// Perform the forecast
+		model->forecast(location);
 	}
 	catch (const std::exception &e)
 	{
-		std::cerr << "Error processing " << filepath << ": " << e.what() << std::endl;
+		std::cerr << "Error processing " << location.describe() << ": " << e.what() << std::endl;
 		return 1;
 	}
 
@@ -41,17 +46,13 @@ static int process_single_file_forecasts(const std::filesystem::path& filepath) 
 
 int forecasts(int argc, char *argv[])
 {
-	// main() already rejects a call without a path, but each subcommand is
-	// reachable on its own and must not index argv past the end.
-	if (argc < 3)
+	CommandOptions options;
+	if (!parse_command_options(argc, argv, "forecasts", false, options))
 	{
-		std::cerr << "Usage: bayests forecasts <file.h5 | directory>" << std::endl;
 		return 2;
 	}
 
-
-	// Get filepath from command line argument
-	std::filesystem::path filepath = argv[2];
+	const std::filesystem::path filepath = options.path;
 
 	// Check if path exists
 	if (!std::filesystem::exists(filepath))
@@ -63,19 +64,19 @@ int forecasts(int argc, char *argv[])
 	// Check if path is a directory
 	if (std::filesystem::is_directory(filepath))
 	{
-
 		// A file that fails is reported and the walk continues, but the exit
 		// status has to say that something failed: a caller looping over model
 		// directories cannot see stderr per file.
 		int failures = 0;
 
 		// Loop over all files in the directory and subdirectories recursively
-		for (const auto& entry : std::filesystem::recursive_directory_iterator(filepath))
+		for (const auto &entry : std::filesystem::recursive_directory_iterator(filepath))
 		{
 			if (entry.is_regular_file() && is_hdf5_file(entry.path()))
 			{
-				std::cout << "Processing: " << entry.path() << std::endl;
-				failures += process_single_file_forecasts(entry.path());
+				const ModelLocation location{entry.path(), options.group};
+				std::cout << "Processing: " << location.describe() << std::endl;
+				failures += process_single_file_forecasts(location);
 			}
 		}
 		return failures == 0 ? 0 : 1;
@@ -88,7 +89,7 @@ int forecasts(int argc, char *argv[])
 			std::cerr << "Error: Not an hdf5 file: " << filepath << std::endl;
 			return 1;
 		}
-		return process_single_file_forecasts(filepath);
+		return process_single_file_forecasts(ModelLocation{filepath, options.group});
 	}
 	else
 	{

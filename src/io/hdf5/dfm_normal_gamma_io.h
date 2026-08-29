@@ -22,13 +22,13 @@ namespace bayests::hdf5_io::dfm_normal_gamma
 /// `/model/n_factors` is what read_spec() picks the factor count out of, and a
 /// file that omits it describes a model with none -- which
 /// DfmNormalGammaInput::validate() rejects by name rather than running.
-DfmNormalGammaInput read_input(const HighFive::File &file);
+DfmNormalGammaInput read_input(const ModelFile &file);
 
 /// Reads posterior draws written by a previous run, transposed back into the
 /// sampler's draw-per-column layout.
-DfmNormalGammaDraws read_coefficients(const HighFive::File &file);
+DfmNormalGammaDraws read_coefficients(const ModelFile &file);
 
-void write_coefficients(HighFive::File &file, const DfmNormalGammaDraws &draws);
+void write_coefficients(const ModelFile &file, const DfmNormalGammaDraws &draws);
 
 } // namespace bayests::hdf5_io::dfm_normal_gamma
 

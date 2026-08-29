@@ -26,6 +26,38 @@ Dates are ISO. Versions follow the `project(VERSION)` in `CMakeLists.txt`.
 
 ### Added
 
+* **`--group <path>`** on all four commands: the group a model's tree hangs
+  under inside its HDF5 file. Without it every path is read from the root of the
+  file exactly as before, so nothing that already works has to change; with it
+  one file can hold several models side by side —
+
+  ```bash
+  bayests posterior models.h5 --group /models/3
+  ```
+
+  — and a directory walk looks for the same group in every file it visits. A
+  `--group` that cannot name a group exits 2 before a file is opened; one that
+  names nothing in the file exits 1, saying which path was missing.
+
+  What made this more than a new flag is that every path the io layer names is
+  absolute, and in HDF5 a leading slash resolves from the root of the file even
+  through a group handle — so handing the readers a `HighFive::Group` would have
+  silently gone on reading the root. The group is therefore put on the front of
+  the path by a new `ModelFile` handle (file plus group) that the io layer takes
+  in place of a `HighFive::File`. It converts implicitly from one, which is why
+  no reader, writer or fixture that has no group to name changed at all.
+
+  *Draws are unchanged*, and not only by inspection: `test/CMakeLists.txt` now
+  writes the `VarNormalGamma-plain` fixture a second time under `/models/3` and
+  runs it through the golden harness with `--group`. The two print identical
+  fingerprints, digit for digit, over all thirteen posterior datasets — same
+  sampler, same seed, the same numbers in a different place in the file. The full
+  suite (140 tests, including the recorded `VarNormalWishart` and
+  `VecNormalWishart` fixtures) passes unchanged. `test/unit_model_group.cpp`
+  covers the other end: that a model written under a group is at that group and
+  *not* at the root, which a round-trip test alone could not tell apart from a
+  prefix that was dropped.
+
 * **`DfmNormalGamma`**, a dynamic factor model — the first model here that is not
   a regression, and the fourteenth registered algorithm.
 

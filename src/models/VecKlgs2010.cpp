@@ -30,13 +30,14 @@ VecKlgs2010::~VecKlgs2010()
 {
 }
 
-void VecKlgs2010::draw_coefficients(const std::filesystem::path &filepath_arg)
+void VecKlgs2010::draw_coefficients(const ModelLocation &location_arg)
 {
-    // Store filepath for later use
-    this->filepath = filepath_arg;
+    // Store the location for later use
+    this->location = location_arg;
 
-    // Open file
-    HighFive::File file = open_hdf5_file_readwrite(filepath);
+    // Open the file and name the model inside it
+    HighFive::File h5 = open_hdf5_file_readwrite(location.file);
+    const ModelFile file(h5, location.group);
 
     try
     {
@@ -61,19 +62,20 @@ void VecKlgs2010::draw_coefficients(const std::filesystem::path &filepath_arg)
     }
 }
 
-void VecKlgs2010::forecast(const std::filesystem::path &filepath_arg)
+void VecKlgs2010::forecast(const ModelLocation &location_arg)
 {
-    // Store filepath for later use
-    this->filepath = filepath_arg;
+    // Store the location for later use
+    this->location = location_arg;
 
-    // Open file
-    HighFive::File file = open_hdf5_file_readwrite(filepath);
+    // Open the file and name the model inside it
+    HighFive::File h5 = open_hdf5_file_readwrite(location.file);
+    const ModelFile file(h5, location.group);
 
     try
     {
         if (!dataset_has_data(file, "/posterior/u_sigma_inv/coeffs"))
         {
-            std::cerr << "Error processing " << filepath << ": Posterior draws of u_sigma_inv are missing." << std::endl;
+            std::cerr << "Error processing " << location.describe() << ": Posterior draws of u_sigma_inv are missing." << std::endl;
             return;
         }
 
@@ -104,13 +106,14 @@ void VecKlgs2010::forecast(const std::filesystem::path &filepath_arg)
     }
 }
 
-void VecKlgs2010::log_likelihood(const std::filesystem::path &filepath_arg)
+void VecKlgs2010::log_likelihood(const ModelLocation &location_arg)
 {
-    // Store filepath for later use
-    this->filepath = filepath_arg;
+    // Store the location for later use
+    this->location = location_arg;
 
-    // Open file
-    HighFive::File file = open_hdf5_file_readwrite(filepath);
+    // Open the file and name the model inside it
+    HighFive::File h5 = open_hdf5_file_readwrite(location.file);
+    const ModelFile file(h5, location.group);
 
     try
     {
@@ -122,7 +125,7 @@ void VecKlgs2010::log_likelihood(const std::filesystem::path &filepath_arg)
 
         if (!dataset_has_data(file, "/posterior/u_sigma_inv/coeffs"))
         {
-            std::cerr << "Error processing " << filepath << ": Posterior draws of u_sigma_inv are missing." << std::endl;
+            std::cerr << "Error processing " << location.describe() << ": Posterior draws of u_sigma_inv are missing." << std::endl;
             return;
         }
 

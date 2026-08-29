@@ -17,14 +17,14 @@ namespace bayests::hdf5_io::var_normal_gamma
 /// exactly how the sampler decides what to run. Anything missing that the
 /// model does need is reported by VarNormalGammaInput::validate(), where the
 /// message can name the field.
-VarNormalGammaInput read_input(const HighFive::File &file);
+VarNormalGammaInput read_input(const ModelFile &file);
 
 /// Reads posterior draws written by a previous run, transposed back into the
 /// sampler's draw-per-column layout. The error precision of this model does
 /// not move with time, so the same draws serve the forecast and the likelihood.
-VarNormalGammaDraws read_coefficients(const HighFive::File &file);
+VarNormalGammaDraws read_coefficients(const ModelFile &file);
 
-void write_coefficients(HighFive::File &file, const VarNormalGammaDraws &draws);
+void write_coefficients(const ModelFile &file, const VarNormalGammaDraws &draws);
 
 } // namespace bayests::hdf5_io::var_normal_gamma
 
