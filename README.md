@@ -7,6 +7,9 @@
 [![CMake](https://img.shields.io/badge/CMake-%E2%89%A5%203.25-blue.svg)](CMakeLists.txt)
 [![Platforms](https://img.shields.io/badge/platforms-Linux%20%7C%20Windows-lightgrey.svg)](https://github.com/franzmohr/BayesTS/actions/workflows/ci.yml)
 
+[![GitHub Sponsors](https://img.shields.io/badge/Sponsor-%E2%9D%A4-ea4aaa?logo=github-sponsors&logoColor=white)](https://github.com/sponsors/franzmohr)
+[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-FFDD00?logo=buymeacoffee&logoColor=black)](https://www.buymeacoffee.com/franzmohr)
+
 Bayesian time series estimation in C++: Gibbs samplers for vector autoregressive
 models, driven either from the command line or from an embedded host such as an
 R package.
