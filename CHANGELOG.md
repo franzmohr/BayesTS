@@ -26,6 +26,83 @@ Dates are ISO. Versions follow the `project(VERSION)` in `CMakeLists.txt`.
 
 ### Added
 
+* **`DfmNormalStochvol`**, a dynamic factor model with stochastic volatility in
+  both error terms — the fifteenth registered algorithm.
+
+  ```
+  x_t = Lambda f_t + u_t,                u_t ~ N(0, U_t),  U_t = diag(exp(h^u_t)),
+  f_t = sum_{j=1..p} A_j f_{t-j} + v_t,  v_t ~ N(0, V_t),  V_t = diag(exp(h^v_t)),
+  ```
+
+  with every element of both log-volatilities a random walk of its own.
+  `DfmNormalGamma` with its two gamma priors replaced by two stochastic
+  volatility blocks and nothing else changed: `Normal` still says the loadings and
+  the factor transition are constant, as it does in `VarNormalStochvol` against
+  `VarTvpStochvol`. Seven Gibbs blocks against five. The volatility draw is the
+  ten-component mixture of Omori et al. (2007), through the same
+  `stochvol_ocsn_2007` the VEC samplers call.
+
+  Both placements are there because neither substitutes for the other.
+  Idiosyncratic volatility reweights the series that identify the factors, which
+  is what a sample spanning a change in volatility needs and what keeps a single
+  wild observation from being dragged into the factor. Factor-innovation
+  volatility is the common component's own, and it is what stops the `k`
+  idiosyncratic variances from jointly absorbing a shock every series felt at
+  once — the factor is otherwise flattest exactly when it should move most.
+
+  Three things in the numerics are worth knowing about:
+
+  * The factor path needed no new algorithm. `chan_jeliazkov_2009` already took a
+    covariance per period in both equations. What it does need is the period
+    indexing to be right, and it is off by one from this model's: it indexes the
+    transition that produces state column `t` by `t - 1`, so the stack handed to
+    it is this model's shifted up by a period. `draw_factor_path_sv` in
+    `dfm_support.h` is the only place that shift lives, and it is the one thing
+    here a plausible mistake would leave *running* — a model whose volatility lags
+    its own innovations by a period fails nothing.
+  * The prior over the first `p` factors now uses those `p` periods' own
+    covariances rather than one repeated. `initial_state_covariance` takes either
+    shape, dispatching on the height, so `DfmNormalGamma` is unaffected.
+  * The transition loses `DfmNormalGamma`'s Kronecker collapse:
+    `sum_t kron(x_t x_t', V_t^-1)` does not factor into `kron(X X', V^-1)`. What
+    survives is that `V_t` is diagonal, so the `n_factors` equations are
+    conditionally independent and each contributes its own weighted
+    cross-product — `n_factors` products of size (`n_factors p`)²`tt` instead of
+    `tt` Kronecker products, and nothing allocated per period. Still no
+    `(tt n_factors) x (n_factors² p)` matrix.
+
+  *There is nothing to compare the draws against* — no second implementation and
+  no closed form — so `test/unit_dfm_normal_stochvol.cpp` covers it the way
+  `unit_dfm_normal_gamma.cpp` covers its neighbour, and only for what the
+  volatility changed. Forty-seven checks in four groups: the per-period
+  conventions exactly, including the transition moments against the Kronecker sum
+  they replace (agreement to 1e-11) and a variance made large in one period only,
+  which has to move that period and no other; the factor path against a dense
+  posterior built with a covariance per period, at `p` = 0, 1 and 2 (the mean and
+  covariance of 30 000 draws within 0.005 of it, where the alignment is what the
+  comparison pins, since the dense construction has no room for an off-by-one);
+  recovery from a sample simulated with one variance falling and the other rising
+  over 800 periods, which the chain has to find both the level and the direction
+  of; and what `validate()` refuses, the swapped `k`/`n_factors` widths among it.
+  Two fixtures run the whole thing through the file layer and the command line.
+
+  *Draws are unchanged* for every existing model. Three shared files were touched
+  and none of them alters an existing path: `precision_of` in
+  `chan_jeliazkov_2009.cpp` gained a diagonal branch that returns the same
+  numbers a Cholesky inverse of a diagonal matrix does; `initial_state_covariance`
+  gained a second accepted shape, with a test that the one-covariance spelling is
+  bit-identical to the stack of copies; and `DfmNormalGammaInput::validate()`
+  moved its shared checks into `validate_dfm_shape()` unchanged. The full suite
+  (145 tests, up from 140, including the recorded `VarNormalWishart` and
+  `VecNormalWishart` fixtures) passes.
+
+  One performance note that is not specific to this model. `precision_of` is
+  called once per *period* when a covariance moves with time, and it was a dense
+  `inv_sympd` — at 100 series over 300 periods, 300 O(k³) factorisations of a
+  matrix that is zero off the diagonal, some 3e8 flops a draw. It now scans for
+  diagonality in O(k²) and divides. Every time-varying parameter model here
+  reaches it with a diagonal state covariance, so they get the same saving.
+
 * **`--group <path>`** on all four commands: the group a model's tree hangs
   under inside its HDF5 file. Without it every path is read from the root of the
   file exactly as before, so nothing that already works has to change; with it

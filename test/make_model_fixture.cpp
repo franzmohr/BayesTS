@@ -16,7 +16,7 @@
 //                 | VarTvpWishart | VarTvpStochvol
 //                 | VecKlgs2010 | VecNormalGamma | VecNormalStochvol
 //                 | VecTvpGamma | VecTvpWishart | VecTvpStochvol
-//                 | DfmNormalGamma
+//                 | DfmNormalGamma | DfmNormalStochvol
 //     varsel      none | ssvs | bvs        (ssvs reaches VarNormalGamma and
 //                                           VecNormalGamma only; VecKlgs2010
 //                                           takes none at all)
@@ -1076,6 +1076,81 @@ void write_dfm_normal_gamma(const ModelFile &file, int h, const arma::mat &x)
     }
 }
 
+/// The same model with the two gamma priors replaced by two stochastic
+/// volatility blocks.
+///
+/// The tree is DfmNormalGamma's but for the error groups, which now carry what
+/// VarNormalStochvol's `/priors/u_sigma` carries -- and carry it twice, once at
+/// the width of the observed series and once at the width of the factors. That
+/// pair of widths is the point of having this fixture: it is the one thing the
+/// in-memory unit test cannot check, because the file is where a host has to get
+/// them right.
+void write_dfm_normal_stochvol(const ModelFile &file, int h, const arma::mat &x)
+{
+    write_attribute<std::string>(file, "/model", "algorithm", "DfmNormalStochvol");
+    write_attribute<int>(file, "/model", "k", kDfmK);
+    write_attribute<int>(file, "/model", "p", kDfmP);
+    write_attribute<int>(file, "/model", "n_factors", kDfmN);
+    write_attribute<int>(file, "/model", "iterations", kIterations);
+    write_attribute<int>(file, "/model", "burnin", kBurnin);
+    write_attribute<std::string>(file, "/model", "varsel", "none");
+    write_attribute<bool>(file, "/model", "structural", false);
+    write_attribute<std::string>(file, "/model", "error", "sv");
+
+    ensure_group(file, "/data");
+    ensure_group(file, "/data/train");
+    ensure_group(file, "/priors");
+    ensure_group(file, "/priors/lambda");
+    ensure_group(file, "/priors/a");
+    ensure_group(file, "/priors/u_sigma");
+    ensure_group(file, "/priors/v_sigma");
+    ensure_group(file, "/initial");
+
+    // Stored already stacked, one row, the way the other models' response is.
+    write_row(file, "/data/train/y", arma::vectorise(x));
+
+    // The free loadings, in the row-major order the sampler draws them.
+    write_row(file, "/priors/lambda/mu", arma::vec(kDfmNLambda, arma::fill::zeros));
+    write_mat(file, "/priors/lambda/v_inv", arma::eye<arma::mat>(kDfmNLambda, kDfmNLambda) * 0.01);
+    write_row(file, "/initial/lambda", arma::vec(kDfmNLambda, arma::fill::value(0.5)));
+
+    write_row(file, "/priors/a/mu", arma::vec(kDfmNA, arma::fill::zeros));
+    write_mat(file, "/priors/a/v_inv", arma::eye<arma::mat>(kDfmNA, kDfmNA) * 0.01);
+    write_row(file, "/initial/a", arma::vec(kDfmNA, arma::fill::zeros));
+
+    // The idiosyncratic volatility, one log-volatility per observed series. The
+    // offset keeps log(u^2 + offset) finite when a residual lands on zero, and
+    // `sigma` is the starting value of the innovation variance rather than a
+    // prior -- see dfm_normal_stochvol_io.h.
+    write_row(file, "/priors/u_sigma/offset", arma::vec(kDfmK, arma::fill::value(1e-4)));
+    write_row(file, "/priors/u_sigma/sigma", arma::vec(kDfmK, arma::fill::value(0.1)));
+    write_row(file, "/priors/u_sigma/shape", arma::vec(kDfmK, arma::fill::value(3.0)));
+    write_row(file, "/priors/u_sigma/rate", arma::vec(kDfmK, arma::fill::value(0.2)));
+    write_row(file, "/priors/u_sigma/mu", arma::vec(kDfmK, arma::fill::zeros));
+    write_mat(file, "/priors/u_sigma/v_inv", arma::eye<arma::mat>(kDfmK, kDfmK));
+
+    write_mat(file, "/initial/u_h", arma::mat(kTT, kDfmK, arma::fill::zeros));
+    write_row(file, "/initial/u_h_init", arma::vec(kDfmK, arma::fill::zeros));
+
+    // The factor innovations', at the width of the factors and not of the series.
+    write_row(file, "/priors/v_sigma/offset", arma::vec(kDfmN, arma::fill::value(1e-4)));
+    write_row(file, "/priors/v_sigma/sigma", arma::vec(kDfmN, arma::fill::value(0.1)));
+    write_row(file, "/priors/v_sigma/shape", arma::vec(kDfmN, arma::fill::value(3.0)));
+    write_row(file, "/priors/v_sigma/rate", arma::vec(kDfmN, arma::fill::value(0.2)));
+    write_row(file, "/priors/v_sigma/mu", arma::vec(kDfmN, arma::fill::zeros));
+    write_mat(file, "/priors/v_sigma/v_inv", arma::eye<arma::mat>(kDfmN, kDfmN));
+
+    write_mat(file, "/initial/v_h", arma::mat(kTT, kDfmN, arma::fill::zeros));
+    write_row(file, "/initial/v_h_init", arma::vec(kDfmN, arma::fill::zeros));
+
+    // No /data/forecast: a DFM forecasts by running its transition on from the
+    // last drawn factors, so the horizon is the whole of what it needs.
+    if (h > 0)
+    {
+        write_attribute<int>(file, "/model", "h", h);
+    }
+}
+
 /// Dispatches to the six above. Returns false if the name is not a VEC.
 bool write_vec_model(const ModelFile &file, const std::string &model, const std::string &varsel,
                      bool covar, arma::uword nparams)
@@ -1156,7 +1231,7 @@ int main(int argc, char *argv[])
     const std::string group_suffix = group.empty() ? "" : ":" + group;
 
     const bool is_vec = is_vec_model(model);
-    const bool is_dfm = model == "DfmNormalGamma";
+    const bool is_dfm = model == "DfmNormalGamma" || model == "DfmNormalStochvol";
 
     if (model != "VarNormalGamma" && model != "VarNormalStochvol" && model != "VarTvpGamma" &&
         model != "VarTvpWishart" && model != "VarTvpStochvol" && !is_vec && !is_dfm)
@@ -1166,8 +1241,9 @@ int main(int argc, char *argv[])
     }
     if (is_dfm && (varsel != "none" || covar || structural))
     {
-        std::cerr << "DfmNormalGamma takes no variable selection, no covariance block and no "
-                     "contemporaneous coefficients: see DfmNormalGammaInput::validate()\n";
+        std::cerr << "A dynamic factor model takes no variable selection, no covariance block "
+                     "and no contemporaneous coefficients: see validate_dfm_shape() in "
+                     "src/core/inputs.cpp\n";
         return 2;
     }
     if (varsel != "none" && varsel != "ssvs" && varsel != "bvs")
@@ -1217,7 +1293,15 @@ int main(int argc, char *argv[])
 
         if (is_dfm)
         {
-            write_dfm_normal_gamma(file, h, simulate_dfm(rng));
+            const arma::mat x = simulate_dfm(rng);
+            if (model == "DfmNormalStochvol")
+            {
+                write_dfm_normal_stochvol(file, h, x);
+            }
+            else
+            {
+                write_dfm_normal_gamma(file, h, x);
+            }
 
             std::cout << "wrote " << dest.string() << group_suffix << " (" << model << ", h=" << h
                       << ", k=" << kDfmK << ", tt=" << kTT << ", n_factors=" << kDfmN

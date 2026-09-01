@@ -137,6 +137,19 @@ public:
     void log_likelihood(const ModelLocation &location_arg) override;
 };
 
+class DfmNormalStochvol : public BaseModel
+{
+private:
+    // Where the model is: file plus the group its tree hangs under
+    ModelLocation location;
+public:
+    DfmNormalStochvol();
+    ~DfmNormalStochvol() override;
+    void draw_coefficients(const ModelLocation &location_arg) override;
+    void forecast(const ModelLocation &location_arg) override;
+    void log_likelihood(const ModelLocation &location_arg) override;
+};
+
 class VecNormalWishart : public BaseModel
 {
 private:

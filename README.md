@@ -55,11 +55,12 @@ factor model:
 | `VecTvpStochvol` | Random walk, beta included | Stochastic volatility, optional time-varying covariance block | BVS |
 | `VecKlgs2010` | `VecNormalWishart` drawn without the SUR system | Wishart | none |
 | `DfmNormalGamma` | Constant, normal prior on the loadings and on the factor transition | Independent gamma, on the idiosyncratic errors and the factor innovations | none |
+| `DfmNormalStochvol` | Constant, normal prior on the loadings and on the factor transition | Stochastic volatility, on the idiosyncratic errors and the factor innovations | none |
 
 The twelve VARs and VECs support exogenous regressors, deterministic terms, a
 structural (contemporaneous-coefficient) form, forecasting and a pointwise log
-likelihood laid out for WAIC and PSIS-LOO. `VecKlgs2010` and `DfmNormalGamma`
-are the two exceptions, each in its own way — see below.
+likelihood laid out for WAIC and PSIS-LOO. `VecKlgs2010` and the two `Dfm*`
+entries are the exceptions, each in its own way — see below.
 
 `VecKlgs2010` is the one entry that is not a model of its own. It is
 `VecNormalWishart` — the cointegration sampler of Koop, León-González and
@@ -80,7 +81,7 @@ cost. What the compact form gives up is variable selection, which acts on the
 columns of the matrix it declines to build; `validate()` rejects either scheme
 rather than ignoring it.
 
-`DfmNormalGamma` is the one model here that is not a regression:
+The two `Dfm*` entries are the models here that are not regressions:
 
 ```
 x_t = Lambda f_t + u_t,                u_t ~ N(0, U),  U diagonal,
@@ -104,6 +105,20 @@ The factor path is drawn whole by the same `chan_jeliazkov_2009` band sampler
 listed above: its posterior precision is block banded of bandwidth `p`, so the
 sweep is O(`tt` `n_factors`³) against the O(`tt`³ `n_factors`³) of forming the
 `tt·n_factors` square precision and factorising it.
+
+`DfmNormalStochvol` is that model with both `U` and `V` moving with time, each
+element of both log-volatilities a random walk of its own. `Normal` still names
+the coefficients: the loadings and the transition are constant, exactly as in
+`VarNormalStochvol` against `VarTvpStochvol`. The two placements do different
+work — volatility in `u_t` reweights the series that identify the factors, so a
+series that was noisy early and quiet later stops contributing on the same terms
+throughout; volatility in `v_t` is the common component's own, and it is what
+keeps the `k` idiosyncratic variances from jointly absorbing a shock every series
+felt at once. Both error groups take the `offset`/`shape`/`rate`/`mu`/`v_inv`
+priors `VarNormalStochvol` takes, at the width of the series and of the factors
+respectively, and `/posterior/u_sigma_inv/coeffs` widens from `k` per draw to
+`k·tt`. The forecast holds both volatilities at their last in-sample value, as
+every stochastic volatility model here does.
 
 Two algorithms carry the implementation weight. The time-varying coefficient
 paths are drawn as a single block with the simulation smoother of Durbin and

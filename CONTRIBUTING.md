@@ -118,7 +118,8 @@ a pull request.
 Two models have no generator, because `test/make_model_fixture.cpp` cannot write
 them — `VarNormalWishart` and `VecNormalWishart`, not every VEC: the other six
 are generated like the VAR models, from the VEC block at the bottom of that
-file, as is `DfmNormalGamma` from the DFM block below it. Their tests are
+file, as are `DfmNormalGamma` and `DfmNormalStochvol` from the DFM block below
+it. Their tests are
 registered only when pointed at a recorded model file, and are skipped with a
 note at configure time otherwise:
 
