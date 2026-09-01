@@ -26,6 +26,48 @@ Dates are ISO. Versions follow the `project(VERSION)` in `CMakeLists.txt`.
 
 ### Added
 
+* **All fifteen samplers now have a generated fixture, so the suite depends on
+  no data outside the repository.** `VarNormalWishart` and `VecNormalWishart`
+  were the two exceptions: their tests existed only when
+  `BAYESTS_WISHART_FIXTURE` or `BAYESTS_VEC_FIXTURE` pointed at a recorded model
+  file, and since `*.h5` is gitignored and a recording runs to hundreds of
+  megabytes, that meant they never ran in CI — including in `fingerprints.yml`,
+  which is what would have caught a shared refactor moving their posteriors.
+
+  **Draws are unchanged.** The change is confined to `test/`; no sampler, no
+  header and no I/O code was touched. The full before/after comparison from
+  CONTRIBUTING.md was run on one build: **64 unchanged, 0 moved**, with the only
+  other differences the four fixtures derived from recordings that no longer
+  exist and the eight generated ones that replace them.
+
+  The exclusion turned out to be historical rather than technical.
+  `make_model_fixture` already wrote every dataset either reader asks for:
+  `VarNormalWishart` is the coefficient block of `write_var_normal_gamma` beside
+  the error block of `write_var_tvp_wishart`, and `VecNormalWishart` reads the
+  same file `VecKlgs2010` does — every VEC fixture carries both the compact and
+  the SUR regressors, so only `/model/algorithm` separated them. Eight rows join
+  the generation matrix: `plain`, `ssvs`, `bvs` and `nofcst` for each. No
+  `covar` row, because neither model has a psi block, and no `structural` row,
+  because `require_identified_structural()` refuses A_0 against an unrestricted
+  Sigma. 138 tests from a clean clone become 154.
+
+  What a generated file cannot be is a real sample under a real prior. The two
+  model-specific build options are replaced by one that is not tied to a model:
+
+  ```bash
+  cmake --preset <preset> -DBAYESTS_RECORDED_FIXTURES="a.h5;b.h5"
+  ```
+
+  Each file gets a `golden.recorded-<name>` test dispatched on its own
+  `/model/algorithm`, and nothing in the suite depends on one being supplied.
+  `test/make_varsel_fixture.cpp` is removed with them: it existed to bolt a
+  selection block and forecast regressors onto a recording so
+  `VarNormalWishart`'s varsel and forecast branches could be reached at all, and
+  the generated rows now reach them directly.
+
+  Nothing under `src/core/` or `include/bayests/` changed, so there is nothing
+  here for the vendoring packages to propagate.
+
 * **`DfmNormalStochvol`**, a dynamic factor model with stochastic volatility in
   both error terms — the fifteenth registered algorithm.
 
@@ -556,7 +598,88 @@ Dates are ISO. Versions follow the `project(VERSION)` in `CMakeLists.txt`.
   six fixtures cover it from a clean clone: plain, BVS, covariance block, both,
   structural and no forecast.
 
+* **`test/diff_fingerprints.sh`**, which compares two fingerprint recordings by
+  fixture rather than by line. Test tooling and documentation only — nothing
+  under `src/` or `include/` was touched, so draws are unchanged by
+  construction.
+
+  `diff before.txt after.txt` prints nothing when no number moved and every
+  fingerprint line of every affected fixture when one did, so a change to a
+  shared algorithm produces tens of thousands of lines that say no more than the
+  list of fixture names would. The new script prints that list, prints one
+  fixture's lines when given its name as a third argument, and exits non-zero
+  when anything moved or appears on only one side. Either argument may be a
+  `record_fingerprints.sh` recording or a raw `ctest -V` redirect: both are
+  reduced to headers and fingerprint lines before anything is compared, so the
+  two forms are comparable against each other and recordings made before this
+  existed are still usable.
+
+  Its verdict was checked against the `fingerprints.yml` step summary, which
+  reports the same comparison for a pull request and keeps its own
+  implementation of it — on the psi-scope-fix recordings both name the same two
+  fixtures, `VarTvpGamma-bvs-covar` and `VarTvpStochvol-bvs-covar`.
+
+  README, `CONTRIBUTING.md` and `CLAUDE.md` gave `ctest -V > file` followed by a
+  plain `diff` as the recipe, which is where the 400–800 KB recordings in
+  `test/baselines/` came from; all three now give the two scripts instead.
+
 ### Changed
+
+* **README: the places it had drifted from the code are corrected.**
+  Documentation only — no sampler, no header and no I/O code was touched, so
+  draws are unchanged by construction. Each was checked against the source named
+  beside it:
+
+  * The coverage sentence still read "twelve of the fourteen samplers", from
+    before `DfmNormalStochvol`. Thirteen of fifteen have a generated fixture —
+    the distinct model column of `test/CMakeLists.txt`'s
+    `bayests_add_model_fixture` calls. The same two numbers were stale in
+    `CLAUDE.md`, along with a test count of 133 that is now 138 from a clean
+    clone.
+  * "The twelve VARs and VECs support … a structural form" contradicted the
+    README's own structural paragraph. `require_identified_structural()` refuses
+    it for the four Wishart models and `VecKlgs2010`; eight of the twelve take
+    it.
+  * The `wishart` spelling of `error` was attributed to `VarTvpWishart` alone.
+    Both `var_tvp_wishart_io.cpp` and `vec_tvp_wishart_io.cpp` compare against
+    it, and neither model has a psi block, so it turns no covariance block on —
+    which is the opposite of what the sentence around it says.
+  * The model-file table was missing every VEC cointegration path
+    (`/priors/beta`, `/initial/beta`, `/posterior/beta/coeffs`), the DFM's
+    `/initial/lambda`, `/initial/v_sigma_inv`, `/initial/u_h`, `/initial/v_h`,
+    `/posterior/lambda/coeffs`, `/posterior/factors/coeffs` and
+    `/posterior/v_sigma_inv/coeffs`, and the psi block's own `varsel` attribute
+    at `/model/priors/psi` — which is what decides selection on the covariance
+    block in the four time-varying models that have one, and which the README
+    had never mentioned in either place.
+  * `--no-coefficients` and the `--group=<path>` spelling are documented;
+    `BAYESTS_VEC_FIXTURE` and `BAYESTS_RUNTIME_DEP_DIRS` join the build-options
+    table, both of which the prose already used.
+  * "Two algorithms carry the implementation weight" is three: the README's own
+    DFM paragraph describes `chan_jeliazkov_2009` as the third. The references
+    section listed two of the six works the body cites or the source implements,
+    and now lists all six.
+  * Two sentences pointed at `test/golden_models.cpp` for "the recorded
+    fingerprints", which it does not hold and which the Tests section says is
+    never checked in.
+
+* **README: the model-file orientation is now stated for both kinds of reader,
+  and the algorithm count is fifteen.** Documentation only — no sampler, no
+  header and no I/O code was touched, so draws are unchanged by construction.
+
+  The old wording, "draws run along the **rows** on disk", is true of what an R
+  session sees and false of what the file holds. In HDF5's own dataspace terms
+  every stored matrix is one row per quantity and one column per draw — `h5py`
+  reports `/posterior/a/coeffs` of a 12-parameter, 80-draw model as `(12, 80)`
+  — and R's readers show the transpose because R is column-major where HDF5 is
+  row-major. Both orientations are now given, and named as such, since a
+  downstream reading these files from Python or C was being told the wrong
+  thing. Verified against `write_armadillo_matrix_to_hdf5`, which transposes
+  the already-transposed `write_draws` argument back to quantity-by-draws
+  before writing, and against fixtures read from both `h5py` and `hdf5r`.
+
+  The count sentence still said fourteen, and enumerated one dynamic factor
+  model, from before `DfmNormalStochvol` was added above.
 
 * **`chan_jeliazkov_2009` accepts a constant `z`.** It was the one argument of
   the four that had to arrive as a stack of one block per period; `sigma_u`,
@@ -662,6 +785,14 @@ Dates are ISO. Versions follow the `project(VERSION)` in `CMakeLists.txt`.
   same combinations for the same reason.
 
 ### Fixed
+
+* **The seven-component stochastic volatility mixture was attributed to the
+  wrong author.** `stochvol_ksc_1998.cpp`, `stochvol_mixture.h` and
+  `stochvol_ocsn_2007.cpp` named it "Kohn, Shephard and Chib (1998)" in five doc
+  comments. It is Kim, Shephard and Chib (1998) — the KSC the file name has
+  carried all along, and the citation README already gives correctly. Comments
+  only; no constant, no code path and no header changed, so draws are unchanged
+  by construction.
 
 * **Every time varying parameter sampler read the simulation smoother's output
   one period late.** `kalman_durbin_koopman_2002` returns `M x (T+1)` columns, of

@@ -38,9 +38,9 @@ Requires a C++20 compiler and Fortran (for LAPACK). Built on
 ## Models
 
 The `/model/algorithm` attribute in the model file selects the sampler; it is
-the only thing that decides which one runs. Fourteen are registered — six VARs,
-the same six as VECs, one alternative implementation of a VEC, and a dynamic
-factor model:
+the only thing that decides which one runs. Fifteen are registered — six VARs,
+the same six as VECs, one alternative implementation of a VEC, and two dynamic
+factor models:
 
 | `algorithm` | Coefficients | Error precision | Variable selection |
 | --- | --- | --- | --- |
@@ -60,10 +60,13 @@ factor model:
 | `DfmNormalGamma` | Constant, normal prior on the loadings and on the factor transition | Independent gamma, on the idiosyncratic errors and the factor innovations | none |
 | `DfmNormalStochvol` | Constant, normal prior on the loadings and on the factor transition | Stochastic volatility, on the idiosyncratic errors and the factor innovations | none |
 
-The twelve VARs and VECs support exogenous regressors, deterministic terms, a
-structural (contemporaneous-coefficient) form, forecasting and a pointwise log
-likelihood laid out for WAIC and PSIS-LOO. `VecKlgs2010` and the two `Dfm*`
-entries are the exceptions, each in its own way — see below.
+The twelve VARs and VECs support exogenous regressors, deterministic terms,
+forecasting and a pointwise log likelihood laid out for WAIC and PSIS-LOO. Eight
+of them also take a structural (contemporaneous-coefficient) form: the four
+Wishart models leave the error covariance unrestricted, which leaves `A_0`
+unidentified, so they refuse it — see the structural paragraph at the end of this
+section. `VecKlgs2010` and the two `Dfm*` entries are the exceptions to the rest,
+each in its own way — see below.
 
 `VecKlgs2010` is the one entry that is not a model of its own. It is
 `VecNormalWishart` — the cointegration sampler of Koop, León-González and
@@ -123,12 +126,13 @@ respectively, and `/posterior/u_sigma_inv/coeffs` widens from `k` per draw to
 `k·tt`. The forecast holds both volatilities at their last in-sample value, as
 every stochastic volatility model here does.
 
-Two algorithms carry the implementation weight. The time-varying coefficient
+Three algorithms carry the implementation weight. The time-varying coefficient
 paths are drawn as a single block with the simulation smoother of Durbin and
 Koopman (2002), so the whole path moves at once rather than period by period.
 Stochastic volatility uses the ten-component normal mixture of Omori et al.
 (2007), which turns the non-linear measurement equation into a conditionally
-linear one. The `*TvpStochvol` pair combines both.
+linear one. The `*TvpStochvol` pair combines both. The third is the band sampler
+of Chan and Jeliazkov (2009) described above, which draws the DFM factor path.
 
 Each VEC differs from the VAR beside it in one place, the same place every time:
 the first `k * rank` regressors are `beta' w_{t-1}`, so they are not data but a
@@ -185,8 +189,12 @@ file holding a single model puts it; with it every path in the table below is
 read and written under that group instead, so one file can hold several models
 side by side. In directory mode the same group is looked for in every file.
 
+Both spellings of the flag are accepted: `--group /models/3` and
+`--group=/models/3`.
+
 `posterior` additionally runs all three steps by default, and any of them can be
-switched off. `coefficients`, `forecasts` and `loglik` take no step flags.
+switched off with `--no-coefficients`, `--no-forecasts` and `--no-loglik`.
+`coefficients`, `forecasts` and `loglik` take no step flags.
 
 ```bash
 # Everything
@@ -236,19 +244,32 @@ written for a simpler model still describes a valid one.
 | `/data/train/x` | The regressors in the compact layout, `tt` rows by one column each; read by `VecKlgs2010` in place of `z` |
 | `/data/forecast/z` | Out-of-sample regressors; required when `h` > 0 |
 | `/priors/a`, `/priors/psi` | Normal prior `mu` and `v_inv` for the coefficients and the covariance block, plus `inprior`, `include`, and `tau0`/`tau1` for SSVS |
+| `/model/priors/psi` (attribute) | `varsel` for the covariance block on its own, read by the four time-varying models that have one; the `/model` attribute above governs the coefficients |
 | `/priors/u_sigma` | `shape`/`rate` for gamma precisions, `df`/`scale` for Wishart, `mu`/`v_inv`/`sigma`/`offset` for stochastic volatility |
+| `/priors/beta` | A VEC only: `p_tau_inv`, the prior precision of the cointegration space, and for the time-varying three `mu`/`v_inv` over beta before the sample and the state autoregression `rho` |
 | `/priors/lambda`, `/priors/v_sigma` | A DFM only: normal `mu`/`v_inv` over the free loadings, and `shape`/`rate` for the factor innovation precisions |
-| `/initial/…` | Starting values: `a`, `psi`, `u_sigma_inv`, `u_omega_inv`, `h`, the `*_init` states and the `*_lambda`, `*_sigma_inv` blocks the samplers that need them read |
-| `/posterior/…` | Written by the run: `a/coeffs`, `a/lambda`, `a/sigma`, the matching `psi/…`, `u_sigma_inv/coeffs`, `u_omega_inv/coeffs`, `forecast` and `loglik` |
+| `/initial/…` | Starting values: `a`, `psi`, `u_sigma_inv`, `u_omega_inv`, `h`, the `*_init` states and the `*_lambda`, `*_sigma_inv` blocks the samplers that need them read; `beta` for a VEC; `lambda`, `v_sigma_inv` and, under stochastic volatility, `u_h`/`v_h` for a DFM |
+| `/posterior/…` | Written by the run: `a/coeffs`, `a/lambda`, `a/sigma`, the matching `psi/…`, `u_sigma_inv/coeffs`, `u_omega_inv/coeffs`, `forecast` and `loglik`; `beta/coeffs` for a VEC; `lambda/coeffs`, `factors/coeffs` and `v_sigma_inv/coeffs` for a DFM |
 
-Two conventions are worth knowing before writing a file by hand. Draws run
-along the **rows** on disk, which is what R and `coda` expect of an `mcmc`
-object, and are transposed to one draw per column inside the samplers.
+Two conventions are worth knowing before writing a file by hand. The first is
+which way round the matrices are stored, and it is worth stating twice, because
+the answer depends on which language is asking. In HDF5's own dataspace terms
+every dataset above is **one row per quantity and one column per draw** — h5py
+reports `/posterior/a/coeffs` of a 12-parameter, 80-draw model as `(12, 80)`,
+and `/data/train/z` is `nparams × (tt k)`. R's HDF5 readers reverse the
+dimension order, R being column-major where HDF5 is row-major, so an R session
+sees the transpose of each: **draws in rows**, which is what R and `coda` expect
+of an `mcmc` object, and why the `start`/`end`/`thin` attributes are written
+alongside. Inside the samplers a draw is one column. A reader coming from
+Python or C should expect the dataspace orientation, not R's.
+
 Variable-selection positions are stored **one-based**, the way R and the file
 format count, and converted on read. The `error` attribute is what turns the
-covariance block on, and its spelling is model-specific: `gamma+covar` for the
-gamma models, `sv+covar` for stochastic volatility, `wishart` for
-`VarTvpWishart`.
+covariance block on, and the spelling that does it is model-specific:
+`gamma+covar` for the gamma models and `sv+covar` for stochastic volatility. The
+value `VarTvpWishart` and `VecTvpWishart` compare against is `wishart`, but
+neither carries a psi block — their covariance is the Wishart precision alone —
+so on those two the attribute turns nothing on and is there for symmetry.
 
 ## Building from source
 
@@ -397,7 +418,8 @@ subdirectory, or use a preset, which already does.
 | `BAYESTS_BUILD_TESTS` | `ON` | Build the regression harnesses in `test/` |
 | `BAYESTS_NATIVE_ARCH` | `OFF` | `-march=native`; not redistributable, see *Packaging* |
 | `BAYESTS_BUNDLE_RUNTIME_DEPS` | `ON` (Windows) | Copy the runtime DLLs next to the executable |
-| `BAYESTS_WISHART_FIXTURE` | *(empty)* | Recorded model file the `VarNormalWishart` tests derive from; those tests are skipped when unset |
+| `BAYESTS_RECORDED_FIXTURES` | *(empty)* | Recorded model files, `;`-separated, each registering an extra golden test; the generated suite runs without them |
+| `BAYESTS_RUNTIME_DEP_DIRS` | *(empty)* | Extra directories to resolve the bundled runtime libraries from, see *Packaging* |
 
 ## Tests
 
@@ -437,11 +459,21 @@ record the output before a change and diff it against the output after, on the
 same machine and with the same build:
 
 ```bash
-ctest --test-dir build/bin/my-windows-default -R golden -V > test/baselines/before.txt
+test/record_fingerprints.sh build/bin/my-windows-default test/baselines/before.txt
 # ... make the change, rebuild ...
-ctest --test-dir build/bin/my-windows-default -R golden -V > test/baselines/after.txt
-diff test/baselines/before.txt test/baselines/after.txt
+test/record_fingerprints.sh build/bin/my-windows-default test/baselines/after.txt
+test/diff_fingerprints.sh test/baselines/before.txt test/baselines/after.txt
 ```
+
+`record_fingerprints.sh` keeps the fixture headers and the fingerprint lines of a
+`ctest -V` run and drops the progress bars, timings and absolute paths that
+differ between two runs of an unchanged build. `diff_fingerprints.sh` then
+reports which *fixtures* moved, and prints one fixture's lines when given its
+name as a third argument. Prefer it to a plain `diff`: a recording of the full
+suite is around 90 KB and the `-V` run behind it close to 900 KB, so a change to
+a shared algorithm produces a line diff longer than anyone reads, while the list
+of fixtures it moved is short and is what says whether the blast radius matches
+the intent.
 
 `test/baselines/` is the place for these: it is git-ignored except for its own
 `.gitignore`, and unlike anything under `build/` it survives a `rm -rf build`,
@@ -450,15 +482,16 @@ for the change they precede — a baseline recorded before a *build flag* change
 still diffs cleanly enough to look meaningful, which makes a stale one worse
 than none.
 
-**Coverage.** Twelve of the fourteen samplers are covered from a clean clone —
-every one but `VarNormalWishart` and `VecNormalWishart` — which are the twelve
-`test/make_model_fixture.cpp` can write from scratch.
+**Coverage.** All fifteen samplers are covered from a clean clone:
+`test/make_model_fixture.cpp` writes a model file for every one of them, and the
+suite depends on no data outside the repository.
 
-`VarNormalWishart` and `VecNormalWishart` are the exceptions: they cannot be
-generated, only read from or derived from a recorded model file, so their tests
-appear only when `BAYESTS_WISHART_FIXTURE` and `BAYESTS_VEC_FIXTURE` point at
-one. Teaching `test/make_model_fixture.cpp` to emit them would remove the last
-dependency on data that is not in the repository.
+What a generated file cannot be is a real sample under a real prior — the
+numbers it invents only have to be admissible and reproducible. Recorded model
+files fill that in, and any number of them can be added as extra golden tests
+with `BAYESTS_RECORDED_FIXTURES`, each dispatched on its own
+`/model/algorithm`. None is checked in: `*.h5` is gitignored, and a recording is
+mostly posterior draws.
 
 ## Packaging
 
@@ -803,9 +836,12 @@ Treat a new dependency across those lines as a design change rather than a build
 fix.
 
 The samplers are stochastic, so a refactor is checked by pinning the RNG and
-comparing fingerprints before and after — see `test/golden_models.cpp`. Note
-that the `*.h5` fixtures are not in the repository; `test/make_model_fixture.cpp`
-and `test/make_varsel_fixture.cpp` generate the inputs.
+comparing fingerprints before and after — `test/golden_models.cpp` prints them
+and `test/record_fingerprints.sh` and `test/diff_fingerprints.sh` compare two
+runs, as *Tests* above describes. No expected fingerprint is checked in: they
+shift in the last digits with the toolchain, so the baseline is one you record
+yourself. Note that the `*.h5` fixtures are not in the repository either;
+`test/make_model_fixture.cpp` generates the inputs.
 
 Contributions are accepted under the BSD 3-Clause terms below. New source files
 need the `SPDX-License-Identifier: BSD-3-Clause` header that every existing one
@@ -867,7 +903,8 @@ Parts of this project were written with the help of Claude (Anthropic), used as
 a coding assistant for drafting implementations, refactoring and documentation.
 Generated code is reviewed before it is committed and is held to the same checks
 as anything hand-written: it has to respect the layering, and a change to a
-sampler has to reproduce the recorded fingerprints in `test/golden_models.cpp`.
+sampler has to account for what it does to the fingerprints `test/golden_models.cpp`
+prints, against a recording made before it.
 Authorship of the project, and responsibility for the numerics, rest with the
 maintainer; the licence and the copyright are unaffected. Commits carrying
 assisted work are marked with a `Co-Authored-By` trailer, so the history says
@@ -875,8 +912,24 @@ which ones they are.
 
 ## References
 
+Chan, J. C. C., & Jeliazkov, I. (2009). Efficient simulation and integrated
+likelihood estimation in state space models. *International Journal of
+Mathematical Modelling and Numerical Optimisation*, 1(1-2), 101-120.
+
+Chan, J., Koop, G., Poirier, D. J., & Tobias, J. L. (2019). *Bayesian
+Econometric Methods* (2nd ed.). Cambridge University Press.
+
 Durbin, J., & Koopman, S. J. (2002). A simple and efficient simulation smoother
 for state space time series analysis. *Biometrika*, 89(3), 603-615.
+
+Kim, S., Shephard, N., & Chib, S. (1998). Stochastic volatility: Likelihood
+inference and comparison with ARCH models. *The Review of Economic Studies*,
+65(3), 361-393. Implemented as `stochvol_ksc_1998` and covered by
+`test/unit_stochvol.cpp`; no sampler here draws from it.
+
+Koop, G., León-González, R., & Strachan, R. W. (2010). Efficient posterior
+simulation for cointegrated models with priors on the cointegration space.
+*Econometric Reviews*, 29(2), 224-242.
 
 Omori, Y., Chib, S., Shephard, N., & Nakajima, J. (2007). Stochastic volatility
 with leverage: Fast and efficient likelihood inference. *Journal of

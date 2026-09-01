@@ -1,25 +1,23 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright (c) 2026 Franz X. Mohr
 
-// Builds a complete model file for the samplers that have no checked-in
-// fixtures.
-//
-// VarNormalWishart and VecNormalWishart are the only models with recorded
-// inputs, so the rest could not be put through the same before/after comparison
-// as a refactor. make_varsel_fixture cannot fill the gap: it decorates an
-// existing file, and there is nothing to decorate. This tool writes one from
+// Builds a complete model file for every registered sampler, so that all
+// fifteen can be put through the same before/after fingerprint comparison from
+// a clean clone. No model file is checked in -- *.h5 is gitignored, and a
+// recorded one is mostly posterior draws -- so this tool writes one from
 // scratch.
 //
 //   make_model_fixture <dest.h5> <model> <varsel> <covar> <structural> <h> [group]
 //
-//     model       VarNormalGamma | VarNormalStochvol | VarTvpGamma
-//                 | VarTvpWishart | VarTvpStochvol
-//                 | VecKlgs2010 | VecNormalGamma | VecNormalStochvol
-//                 | VecTvpGamma | VecTvpWishart | VecTvpStochvol
-//                 | DfmNormalGamma | DfmNormalStochvol
-//     varsel      none | ssvs | bvs        (ssvs reaches VarNormalGamma and
-//                                           VecNormalGamma only; VecKlgs2010
-//                                           takes none at all)
+//     model       VarNormalWishart | VarNormalGamma | VarNormalStochvol
+//                 | VarTvpGamma | VarTvpWishart | VarTvpStochvol
+//                 | VecKlgs2010 | VecNormalWishart | VecNormalGamma
+//                 | VecNormalStochvol | VecTvpGamma | VecTvpWishart
+//                 | VecTvpStochvol | DfmNormalGamma | DfmNormalStochvol
+//     varsel      none | ssvs | bvs        (ssvs reaches the four models with
+//                                           constant coefficients and no
+//                                           stochastic volatility only;
+//                                           VecKlgs2010 takes none at all)
 //     covar       0 | 1                    the "+covar" error specification
 //     structural  0 | 1                    (refused with a Wishart error
 //                                           precision or a covariance block --
@@ -293,14 +291,16 @@ void write_common(const ModelFile &file, const std::string &model, const std::st
     write_attribute<std::string>(file, "/model", "varsel", varsel);
     write_attribute<bool>(file, "/model", "structural", structural);
 
-    // The error specification the reader dispatches on. VarTvpWishart carries
-    // no psi block, so it has no "+covar" spelling to reach.
+    // The error specification the reader dispatches on. Neither Wishart model
+    // carries a psi block, so neither has a "+covar" spelling to reach --
+    // VarNormalWishart's reader does not read the attribute at all, and it is
+    // written for a file that can be described on its own.
     std::string prefix = "gamma";
     if (model == "VarNormalStochvol" || model == "VarTvpStochvol")
     {
         prefix = "sv";
     }
-    else if (model == "VarTvpWishart")
+    else if (model == "VarNormalWishart" || model == "VarTvpWishart")
     {
         prefix = "wishart";
     }
@@ -325,6 +325,34 @@ void write_common(const ModelFile &file, const std::string &model, const std::st
         ensure_group(file, "/data/forecast");
         write_mat(file, "/data/forecast/z", build_forecast_regressors(series, layout, h));
         write_attribute<int>(file, "/model", "h", h);
+    }
+}
+
+/// The plainest model in the taxonomy: a normal prior on the coefficients and a
+/// Wishart one on the whole error precision. No psi block, so no covar
+/// parameter -- the "+covar" spelling has nothing to turn on here, the same way
+/// it has nothing to turn on in write_var_tvp_wishart below.
+void write_var_normal_wishart(const ModelFile &file, const std::string &varsel,
+                              const Layout &layout)
+{
+    const arma::uword nparams = static_cast<arma::uword>(layout.nparams);
+
+    write_row(file, "/priors/a/mu", arma::vec(nparams, arma::fill::zeros));
+    write_mat(file, "/priors/a/v_inv", arma::eye<arma::mat>(nparams, nparams));
+    write_row(file, "/initial/a", arma::vec(nparams, arma::fill::zeros));
+
+    write_int_scalar(file, "/priors/u_sigma/df", kK);
+    write_mat(file, "/priors/u_sigma/scale", arma::eye<arma::mat>(kK, kK));
+    write_mat(file, "/initial/u_sigma_inv", arma::eye<arma::mat>(kK, kK));
+
+    if (varsel != "none")
+    {
+        write_row(file, "/initial/a_lambda", arma::vec(nparams, arma::fill::ones));
+        write_selection(file, "/priors/a", nparams);
+        if (varsel == "ssvs")
+        {
+            write_ssvs(file, "/priors/a", nparams);
+        }
     }
 }
 
@@ -700,10 +728,11 @@ arma::mat build_vec_forecast_regressors(const arma::mat &levels, int h)
 }
 
 /// The error specification attribute, which is what every reader dispatches on.
-/// VecTvpWishart carries no psi block, so it has no "+covar" spelling to reach.
+/// None of the three Wishart-precision VECs carries a psi block, so none of them
+/// has a "+covar" spelling to reach.
 std::string vec_error_spec(const std::string &model, bool covar)
 {
-    if (model == "VecTvpWishart" || model == "VecKlgs2010")
+    if (model == "VecTvpWishart" || model == "VecNormalWishart" || model == "VecKlgs2010")
     {
         return "wishart";
     }
@@ -900,6 +929,21 @@ void write_vec_gamma_errors(const ModelFile &file, const std::string &initial)
 void write_vec_klgs_2010(const ModelFile &file, arma::uword nparams)
 {
     write_vec_constant_coefficients(file, "none", nparams, false);
+    write_vec_constant_coint(file);
+
+    write_int_scalar(file, "/priors/u_sigma/df", kK);
+    write_mat(file, "/priors/u_sigma/scale", arma::eye<arma::mat>(kK, kK));
+    write_mat(file, "/initial/u_sigma_inv", arma::eye<arma::mat>(kK, kK));
+}
+
+/// The same priors as VecKlgs2010 above, read from the SUR regressors rather
+/// than the compact ones -- both layouts are in every VEC fixture, so the two
+/// models differ here only in what /model/algorithm names and in the selection
+/// block this one accepts and that one refuses.
+void write_vec_normal_wishart(const ModelFile &file, const std::string &varsel,
+                              arma::uword nparams)
+{
+    write_vec_constant_coefficients(file, varsel, nparams, true);
     write_vec_constant_coint(file);
 
     write_int_scalar(file, "/priors/u_sigma/df", kK);
@@ -1159,6 +1203,10 @@ bool write_vec_model(const ModelFile &file, const std::string &model, const std:
     {
         write_vec_klgs_2010(file, nparams);
     }
+    else if (model == "VecNormalWishart")
+    {
+        write_vec_normal_wishart(file, varsel, nparams);
+    }
     else if (model == "VecNormalGamma")
     {
         write_vec_normal_gamma(file, varsel, covar, nparams);
@@ -1188,8 +1236,9 @@ bool write_vec_model(const ModelFile &file, const std::string &model, const std:
 
 bool is_vec_model(const std::string &model)
 {
-    return model == "VecKlgs2010" || model == "VecNormalGamma" || model == "VecNormalStochvol" ||
-           model == "VecTvpWishart" || model == "VecTvpGamma" || model == "VecTvpStochvol";
+    return model == "VecKlgs2010" || model == "VecNormalWishart" || model == "VecNormalGamma" ||
+           model == "VecNormalStochvol" || model == "VecTvpWishart" || model == "VecTvpGamma" ||
+           model == "VecTvpStochvol";
 }
 
 } // namespace
@@ -1233,8 +1282,9 @@ int main(int argc, char *argv[])
     const bool is_vec = is_vec_model(model);
     const bool is_dfm = model == "DfmNormalGamma" || model == "DfmNormalStochvol";
 
-    if (model != "VarNormalGamma" && model != "VarNormalStochvol" && model != "VarTvpGamma" &&
-        model != "VarTvpWishart" && model != "VarTvpStochvol" && !is_vec && !is_dfm)
+    if (model != "VarNormalWishart" && model != "VarNormalGamma" &&
+        model != "VarNormalStochvol" && model != "VarTvpGamma" && model != "VarTvpWishart" &&
+        model != "VarTvpStochvol" && !is_vec && !is_dfm)
     {
         std::cerr << "Unknown model: " << model << '\n';
         return 2;
@@ -1336,7 +1386,11 @@ int main(int argc, char *argv[])
 
         write_common(file, model, varsel, covar, structural, h, layout, series, z_train);
 
-        if (model == "VarNormalGamma")
+        if (model == "VarNormalWishart")
+        {
+            write_var_normal_wishart(file, varsel, layout);
+        }
+        else if (model == "VarNormalGamma")
         {
             write_var_normal_gamma(file, varsel, covar, layout);
         }

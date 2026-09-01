@@ -103,36 +103,44 @@ RNG and compare fingerprints before and after. `bayests_golden` prints one per
 posterior dataset, so:
 
 ```bash
-ctest --test-dir build/bin/<your-preset> -R golden -V > before.txt
+test/record_fingerprints.sh build/bin/<your-preset> test/baselines/before.txt
 # make the change, rebuild
-ctest --test-dir build/bin/<your-preset> -R golden -V > after.txt
-diff before.txt after.txt
+test/record_fingerprints.sh build/bin/<your-preset> test/baselines/after.txt
+test/diff_fingerprints.sh test/baselines/before.txt test/baselines/after.txt
 ```
 
-Same machine, same build, both times — fingerprints are only comparable within
-one toolchain, which is why none are checked in as expected values. A clean diff
-means the change did not move any number; any hunk is either the effect you
-intended or a regression, and it is worth being able to say which before opening
-a pull request.
+The first script reduces a `ctest -V` run to the fixture headers and fingerprint
+lines, dropping the progress bars, timings and paths that differ between two runs
+of an unchanged build. The second reports which fixtures moved, and prints one
+fixture's lines when given its name as a third argument — reach for it rather
+than `diff` on the recordings themselves, which run to tens of thousands of lines
+once a shared algorithm changes.
 
-Two models have no generator, because `test/make_model_fixture.cpp` cannot write
-them — `VarNormalWishart` and `VecNormalWishart`, not every VEC: the other six
-are generated like the VAR models, from the VEC block at the bottom of that
-file, as are `DfmNormalGamma` and `DfmNormalStochvol` from the DFM block below
-it. Their tests are
-registered only when pointed at a recorded model file, and are skipped with a
-note at configure time otherwise:
+Same machine, same build, both times — fingerprints are only comparable within
+one toolchain, which is why none are checked in as expected values. `0 moved`
+means the change did not move any number; every fixture named is either the
+effect you intended or a regression, and it is worth being able to say which
+before opening a pull request.
+
+Every model has a generator: `test/make_model_fixture.cpp` writes a model file
+for all fifteen — the VAR models from the block at the top, the seven VECs from
+the block below it, the two DFMs from the one below that — so the comparison
+above covers the whole taxonomy from a clean clone.
+
+What the generator cannot supply is a real sample and a real prior. The numbers
+it invents only have to be admissible and reproducible. A file recorded from an
+actual run is the other half of that, and none is checked in — `*.h5` is
+gitignored, and a recording is mostly posterior draws. Any number of them can be
+added as extra golden tests, dispatched on whatever `/model/algorithm` each one
+holds:
 
 ```bash
 cmake --preset <your-preset> \
-      -DBAYESTS_WISHART_FIXTURE=path/to/VarNormalWishart.h5 \
-      -DBAYESTS_VEC_FIXTURE=path/to/VecNormalWishart.h5
+      -DBAYESTS_RECORDED_FIXTURES="path/to/a.h5;path/to/b.h5"
 ```
 
-`VarNormalWishart` derives three fixtures from its file, one per selection
-scheme, and so has a generation step; `VecNormalWishart` reads its file as it
-stands. Neither is at risk of being modified: `bayests_golden` stages its own
-copy under the temporary directory and clears the posterior there, so a recorded
+They are not at risk of being modified: `bayests_golden` stages its own copy
+under the temporary directory and clears the posterior there, so a recorded
 model file is only ever read.
 
 There is also a coverage gap worth knowing rather than a configuration one: no

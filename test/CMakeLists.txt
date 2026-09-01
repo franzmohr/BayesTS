@@ -15,24 +15,17 @@ add_executable(bayests_golden golden_models.cpp)
 target_link_libraries(bayests_golden PRIVATE bayests_models)
 target_link_libraries(bayests_golden PRIVATE bayests_hdf5_helper)
 
-# Builds the inputs for the branches the recorded fixtures never reach.
-add_executable(bayests_make_varsel_fixture make_varsel_fixture.cpp)
-
-target_link_libraries(bayests_make_varsel_fixture PRIVATE bayests_hdf5_helper)
-
-# Writes a model file from scratch for the samplers that have no recorded
-# inputs. See make_model_fixture.cpp.
+# Writes a model file from scratch, for every registered sampler. See
+# make_model_fixture.cpp.
 add_executable(bayests_make_model_fixture make_model_fixture.cpp)
 
 target_link_libraries(bayests_make_model_fixture PRIVATE bayests_hdf5_helper)
 
 target_link_libraries(bayests_golden PRIVATE bayests_warnings)
-target_link_libraries(bayests_make_varsel_fixture PRIVATE bayests_warnings)
 target_link_libraries(bayests_make_model_fixture PRIVATE bayests_warnings)
 
 if(OpenMP_CXX_FOUND)
     target_link_libraries(bayests_golden PRIVATE OpenMP::OpenMP_CXX)
-    target_link_libraries(bayests_make_varsel_fixture PRIVATE OpenMP::OpenMP_CXX)
     target_link_libraries(bayests_make_model_fixture PRIVATE OpenMP::OpenMP_CXX)
 endif()
 
@@ -226,10 +219,10 @@ endfunction()
 
 # The generation matrix. h=4 and k=3 throughout, so a forecast is 4x3 per draw.
 #
-# SSVS appears only for VarNormalGamma: the stochastic volatility and
-# time-varying parameter samplers reject it (see the validate() overloads in
-# src/core/inputs.cpp), so a fixture asking for it would be testing the error
-# path, not the sampler.
+# SSVS appears only for the four models with constant coefficients and no
+# stochastic volatility: the stochastic volatility and time-varying parameter
+# samplers reject it (see the validate() overloads in src/core/inputs.cpp), so a
+# fixture asking for it would be testing the error path, not the sampler.
 #
 # The `covar` flag is what decides whether a model has a psi block at all, and
 # make_model_fixture only writes /model/priors/psi -- and with it psi's own
@@ -238,6 +231,16 @@ endfunction()
 # suffixed selection rows below are for: without them the whole psi selection
 # path went unexercised in every model, while `<scheme>` with covar=0 covered
 # only the lag coefficients.
+
+# No covar row: this model's error precision is the Wishart draw alone, with no
+# psi block for a covariance to live in. No structural row either, for the reason
+# the other Wishart models have none -- A_0 is not identified against an
+# unrestricted Sigma.
+bayests_add_model_fixture(VarNormalWishart-plain     VarNormalWishart   none 0 0 4)
+bayests_add_model_fixture(VarNormalWishart-ssvs      VarNormalWishart   ssvs 0 0 4)
+bayests_add_model_fixture(VarNormalWishart-bvs       VarNormalWishart   bvs  0 0 4)
+bayests_add_model_fixture(VarNormalWishart-nofcst    VarNormalWishart   none 0 0 0)
+
 bayests_add_model_fixture(VarNormalGamma-plain      VarNormalGamma     none 0 0 4)
 bayests_add_model_fixture(VarNormalGamma-ssvs       VarNormalGamma     ssvs 0 0 4)
 bayests_add_model_fixture(VarNormalGamma-bvs        VarNormalGamma     bvs  0 0 4)
@@ -308,6 +311,15 @@ bayests_add_model_fixture(DfmNormalStochvol-nofcst DfmNormalStochvol none 0 0 0)
 bayests_add_model_fixture(VecKlgs2010-plain  VecKlgs2010 none 0 0 4)
 bayests_add_model_fixture(VecKlgs2010-nofcst VecKlgs2010 none 0 0 0)
 
+# The same file the two rows above are written from, read through the SUR
+# regressors instead of the compact ones: every VEC fixture carries both
+# layouts, so only /model/algorithm separates these rows from those. No covar
+# row and no structural row, as for VarNormalWishart above.
+bayests_add_model_fixture(VecNormalWishart-plain  VecNormalWishart none 0 0 4)
+bayests_add_model_fixture(VecNormalWishart-ssvs   VecNormalWishart ssvs 0 0 4)
+bayests_add_model_fixture(VecNormalWishart-bvs    VecNormalWishart bvs  0 0 4)
+bayests_add_model_fixture(VecNormalWishart-nofcst VecNormalWishart none 0 0 0)
+
 bayests_add_model_fixture(VecNormalGamma-plain      VecNormalGamma none 0 0 4)
 bayests_add_model_fixture(VecNormalGamma-ssvs       VecNormalGamma ssvs 0 0 4)
 bayests_add_model_fixture(VecNormalGamma-bvs        VecNormalGamma bvs  0 0 4)
@@ -343,67 +355,48 @@ bayests_add_model_fixture(VecTvpStochvol-nofcst    VecTvpStochvol none 0 0 0)
 bayests_add_model_fixture(VecTvpStochvol-bvs-covar VecTvpStochvol bvs  1 0 4)
 
 #####################################################################
-# VarNormalWishart
+# Recorded model files
 #
-# make_model_fixture cannot write this model, so its fixtures are derived from a
-# recorded file with make_varsel_fixture. No such file is in the repository --
-# they are hundreds of megabytes of sampler output -- so these tests exist only
-# when one is supplied:
+# Everything above is generated, and the numbers in it are invented: admissible
+# and reproducible, but not a real sample and not a real prior. A file recorded
+# from an actual run is the other half of that, and none is in the repository --
+# *.h5 is gitignored, and a recording is mostly posterior draws, hundreds of
+# megabytes for a set of them. So this registers a golden test per file only
+# when files are supplied:
 #
-#   cmake --preset <preset> -DBAYESTS_WISHART_FIXTURE=path/to/recorded.h5
+#   cmake --preset <preset> -DBAYESTS_RECORDED_FIXTURES="a.h5;b.h5"
 #
-# and are skipped, with a note at configure time, when it is not.
-set(BAYESTS_WISHART_FIXTURE "" CACHE FILEPATH
-    "Recorded VarNormalWishart model file the w-* regression fixtures are derived from")
+# and nothing in the suite depends on one being there. The model each file holds
+# is whatever its own /model/algorithm says -- these rows are not tied to a
+# model the way the generated ones are, which is what replaced the two
+# model-specific options this block grew out of.
+#
+# No fixture step: bayests_golden stages its own copy under the temporary
+# directory and clears the outputs there, so a supplied file is read and never
+# written -- see stage_fixture() in golden_models.cpp.
+set(BAYESTS_RECORDED_FIXTURES "" CACHE STRING
+    "Recorded model files to register an extra golden test for, separated by ';'")
 
-if(BAYESTS_WISHART_FIXTURE AND EXISTS "${BAYESTS_WISHART_FIXTURE}")
-    foreach(_scheme none ssvs bvs)
-        add_test(NAME "fixture.w-${_scheme}"
-            COMMAND bayests_make_varsel_fixture
-                    "${BAYESTS_WISHART_FIXTURE}"
-                    "${BAYESTS_FIXTURE_DIR}/w-${_scheme}.h5"
-                    "${_scheme}" 4)
-        set_tests_properties("fixture.w-${_scheme}" PROPERTIES
-            FIXTURES_SETUP "fx.w-${_scheme}"
-            ENVIRONMENT_MODIFICATION "${_bayests_test_env_mod}")
+set(_bayests_recorded_count 0)
+foreach(_recorded IN LISTS BAYESTS_RECORDED_FIXTURES)
+    if(NOT EXISTS "${_recorded}")
+        message(WARNING "BAYESTS_RECORDED_FIXTURES: no such file, skipped - ${_recorded}")
+        continue()
+    endif()
 
-        add_test(NAME "golden.w-${_scheme}"
-            COMMAND bayests_golden "${BAYESTS_FIXTURE_DIR}/w-${_scheme}.h5")
-        set_tests_properties("golden.w-${_scheme}" PROPERTIES
-            FIXTURES_REQUIRED "fx.w-${_scheme}"
-            ENVIRONMENT "${_bayests_pin_threads}"
-            ENVIRONMENT_MODIFICATION "${_bayests_test_env_mod}")
-    endforeach()
-    message(STATUS "VarNormalWishart fixtures derived from ${BAYESTS_WISHART_FIXTURE}")
-else()
-    message(STATUS "BAYESTS_WISHART_FIXTURE not set - VarNormalWishart tests skipped")
-endif()
-
-#####################################################################
-# VecNormalWishart
-#
-# Same arrangement as VarNormalWishart above and for the same reason -- no tool
-# here can write a VEC model file, so the test exists only when one is supplied:
-#
-#   cmake --preset <preset> -DBAYESTS_VEC_FIXTURE=path/to/recorded.h5
-#
-# No fixture step, unlike the block above. That one derives three files from a
-# single recording, one per selection scheme, and so needs a generator; this
-# needs the file exactly as it stands. Nothing has to be copied first either:
-# bayests_golden stages its own copy under the temporary directory and clears the
-# outputs there, so the supplied file is read and never written -- see
-# stage_fixture() in golden_models.cpp.
-set(BAYESTS_VEC_FIXTURE "" CACHE FILEPATH
-    "Recorded VecNormalWishart model file the vec-* regression test reads")
-
-if(BAYESTS_VEC_FIXTURE AND EXISTS "${BAYESTS_VEC_FIXTURE}")
-    add_test(NAME "golden.vec-none" COMMAND bayests_golden "${BAYESTS_VEC_FIXTURE}")
-    set_tests_properties("golden.vec-none" PROPERTIES
+    # Named for the file rather than numbered, so which recording failed is
+    # readable from the ctest output alone.
+    get_filename_component(_recorded_name "${_recorded}" NAME_WE)
+    add_test(NAME "golden.recorded-${_recorded_name}"
+        COMMAND bayests_golden "${_recorded}")
+    set_tests_properties("golden.recorded-${_recorded_name}" PROPERTIES
         ENVIRONMENT "${_bayests_pin_threads}"
         ENVIRONMENT_MODIFICATION "${_bayests_test_env_mod}")
-    message(STATUS "VecNormalWishart test reads ${BAYESTS_VEC_FIXTURE}")
-else()
-    message(STATUS "BAYESTS_VEC_FIXTURE not set - VecNormalWishart tests skipped")
+    math(EXPR _bayests_recorded_count "${_bayests_recorded_count} + 1")
+endforeach()
+
+if(_bayests_recorded_count GREATER 0)
+    message(STATUS "Recorded model files registered: ${_bayests_recorded_count}")
 endif()
 
 # VarTvpWishart carries no psi block, so it has no covar fixture -- and no

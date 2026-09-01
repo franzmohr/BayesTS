@@ -12,9 +12,10 @@
 # machine but the one that recorded it. The fingerprints workflow does that
 # comparison instead, base against head inside a single job.
 #
-# Coverage note: VarNormalWishart's fixtures need BAYESTS_WISHART_FIXTURE
-# pointing at a recorded model file, and those are hundreds of megabytes and not
-# in the repository, so the w-* tests do not run here. See test/CMakeLists.txt.
+# Coverage note: every fixture here is generated, so all fifteen samplers run.
+# What does not run is a recorded model file -- real data under a real prior;
+# those are hundreds of megabytes and not in the repository, so the extra tests
+# BAYESTS_RECORDED_FIXTURES registers are a local step. See test/CMakeLists.txt.
 
 name: CI
 
