@@ -404,6 +404,260 @@ void the_draw_is_well_formed()
     check("a 'z' of the wrong height is rejected", bad_dims);
 }
 
+/// The dense precision and right hand side of the whole path, over `n` state
+/// columns.
+///
+/// Built as products of stacked matrices -- a selection matrix for the prior, a
+/// block diagonal design for the measurements, a difference operator for the
+/// transitions -- rather than by scattering blocks into a band. That is the
+/// point of it: the same object reached by a route that shares no index
+/// arithmetic with the implementation, so an off-by-one in either one shows up
+/// as a disagreement rather than being reproduced on both sides.
+struct Dense
+{
+    arma::mat k;
+    arma::vec b;
+};
+
+Dense dense_system(const Model &d, const arma::uword m, const arma::uword tt,
+                   const arma::uword p, const arma::uword n)
+{
+    const arma::uword kk = d.y.n_rows;
+    const arma::uword side = m * n;
+
+    Dense out;
+    out.k = arma::zeros<arma::mat>(side, side);
+    out.b = arma::zeros<arma::vec>(side);
+
+    // The prior, over the first p columns jointly.
+    arma::mat sp(p * m, side, arma::fill::zeros);
+    sp.cols(0, p * m - 1) = arma::eye<arma::mat>(p * m, p * m);
+    const arma::mat p_prec = arma::inv_sympd(d.P_init);
+    out.k += sp.t() * p_prec * sp;
+    out.b += sp.t() * p_prec * d.a_init;
+
+    // The measurements, one per period, against the whole state.
+    arma::mat zbig(kk * tt, side, arma::fill::zeros);
+    arma::mat ubig(kk * tt, kk * tt, arma::fill::zeros);
+    for (arma::uword t = 0; t < tt; t++)
+    {
+        zbig.submat(t * kk, t * m, (t + 1) * kk - 1, (t + 1) * m - 1) = d.z;
+        ubig.submat(t * kk, t * kk, (t + 1) * kk - 1, (t + 1) * kk - 1) = d.sigma_u;
+    }
+    const arma::mat u_prec = arma::inv_sympd(ubig);
+    out.k += zbig.t() * u_prec * zbig;
+    out.b += zbig.t() * u_prec * arma::vectorise(d.y);
+
+    // The transitions producing columns p ... n - 1. Their residual has mean
+    // zero, so they reach the precision and not the right hand side.
+    const arma::uword rows = n - p;
+    arma::mat hbig(rows * m, side, arma::fill::zeros);
+    arma::mat vbig(rows * m, rows * m, arma::fill::zeros);
+    for (arma::uword t = p; t < n; t++)
+    {
+        const arma::uword r = (t - p) * m;
+        hbig.submat(r, t * m, r + m - 1, (t + 1) * m - 1) = arma::eye<arma::mat>(m, m);
+        for (arma::uword j = 1; j <= p; j++)
+        {
+            hbig.submat(r, (t - j) * m, r + m - 1, (t - j + 1) * m - 1) =
+                -d.B.cols((j - 1) * m, j * m - 1);
+        }
+        vbig.submat(r, r, r + m - 1, r + m - 1) = d.sigma_v;
+    }
+    out.k += hbig.t() * arma::inv_sympd(vbig) * hbig;
+
+    return out;
+}
+
+/// A model with a transition of order two whose coefficients are not symmetric
+/// and do not commute.
+///
+/// Both matter for what the conditional draw is checked on below. A symmetric
+/// coupling would make the block above the diagonal equal to the one below it,
+/// and the cross term this could most plausibly get wrong -- the one that
+/// reaches column i + d from the data of column i, through the transpose of the
+/// only block that is stored -- would then be indistinguishable from the term
+/// beside it.
+Model make_asymmetric_model(const arma::uword k, const arma::uword m, const arma::uword t)
+{
+    arma::arma_rng::set_seed(20260903);
+
+    Model d;
+    d.y = arma::randn<arma::mat>(k, t);
+    d.z = arma::randn<arma::mat>(k, m);
+    d.sigma_u = arma::eye<arma::mat>(k, k) + 0.2;
+    d.sigma_v = arma::diagmat(arma::linspace<arma::vec>(0.05, 0.15, m));
+
+    arma::mat a1(m, m, arma::fill::zeros), a2(m, m, arma::fill::zeros);
+    a1.diag().fill(0.5);
+    a1(0, 1) = 0.3;
+    a1(2, 0) = -0.25;
+    a2.diag().fill(0.1);
+    a2(1, 0) = 0.2;
+
+    d.B = arma::join_horiz(a1, a2);
+    d.a_init = arma::linspace<arma::vec>(0.1, 0.4, 2 * m);
+    d.P_init = arma::eye<arma::mat>(2 * m, 2 * m) * 0.5 + 0.1;
+    return d;
+}
+
+/// The state column past the end of the sample carries no information about the
+/// ones before it, so leaving it out is exact rather than nearly so.
+///
+/// This is what lets the conditional entry point decline to build it -- there it
+/// would be a column half data and half not. Stated as linear algebra and
+/// checked as linear algebra: marginalising the last block out of the dense
+/// system that has it must give the dense system that never had it, precision
+/// and right hand side both.
+void the_trailing_column_marginalises_away()
+{
+    std::printf("the state column past the sample carries no information\n");
+
+    const arma::uword k = 4, m = 3, tt = 7, p = 2;
+    const Model d = make_asymmetric_model(k, m, tt);
+
+    const Dense with_it = dense_system(d, m, tt, p, tt + 1);
+    const Dense without = dense_system(d, m, tt, p, tt);
+
+    const arma::uword keep = m * tt;
+    const arma::uword all = m * (tt + 1);
+    const arma::mat kaa = with_it.k.submat(0, 0, keep - 1, keep - 1);
+    const arma::mat kab = with_it.k.submat(0, keep, keep - 1, all - 1);
+    const arma::mat kbb = with_it.k.submat(keep, keep, all - 1, all - 1);
+
+    const arma::mat marginal = kaa - kab * arma::solve(kbb, kab.t());
+    const arma::vec marginal_b =
+        with_it.b.head(keep) - kab * arma::solve(kbb, with_it.b.tail(all - keep));
+
+    check_below("the marginal precision is the truncated one",
+                arma::abs(marginal - without.k).max(), 1e-10);
+    check_below("the marginal right hand side is the truncated one",
+                arma::abs(marginal_b - without.b).max(), 1e-10);
+    check("and the trailing column was not trivially uncoupled", arma::abs(kab).max() > 0.1);
+}
+
+/// The conditional draw against the conditional distribution, worked out from
+/// the dense precision.
+///
+/// Conditioning a Gaussian on part of itself is K_FF f = b_F - K_FY y, so the
+/// distribution the sampler has to produce is known in closed form here: its
+/// mean solves that system and its covariance is K_FF inverse. Twenty thousand
+/// draws then have to reproduce both, which checks the sub-block extraction and
+/// *both* right hand side corrections at once -- dropping either one moves the
+/// mean while leaving the standard deviations exactly right, which is the shape
+/// this failure takes.
+void it_matches_the_dense_conditional()
+{
+    std::printf("agreement with the dense conditional over 20000 draws\n");
+
+    const arma::uword k = 4, m = 3, tt = 7, p = 2;
+    const arma::uword n_free = 2, n_known = m - n_free;
+    const Model d = make_asymmetric_model(k, m, tt);
+
+    arma::arma_rng::set_seed(99);
+    const arma::mat known = arma::randn<arma::mat>(n_known, tt) + 0.5;
+
+    // The free and the known positions of the stacked path, in its own order:
+    // column by column, and within a column the free elements first.
+    arma::uvec free_idx(n_free * tt), known_idx(n_known * tt);
+    for (arma::uword t = 0; t < tt; t++)
+    {
+        for (arma::uword i = 0; i < n_free; i++)
+        {
+            free_idx(t * n_free + i) = t * m + i;
+        }
+        for (arma::uword i = 0; i < n_known; i++)
+        {
+            known_idx(t * n_known + i) = t * m + n_free + i;
+        }
+    }
+
+    const Dense dense = dense_system(d, m, tt, p, tt);
+    const arma::mat kff = dense.k.submat(free_idx, free_idx);
+    const arma::mat kfy = dense.k.submat(free_idx, known_idx);
+
+    const arma::vec want_mean =
+        arma::solve(kff, dense.b.elem(free_idx) - kfy * arma::vectorise(known));
+    const arma::vec want_sd = arma::sqrt(arma::mat(arma::inv_sympd(kff)).diag());
+
+    const int draws = 20000;
+    arma::vec sum(n_free * tt, arma::fill::zeros), sumsq(n_free * tt, arma::fill::zeros);
+
+    arma::arma_rng::set_seed(7);
+    for (int i = 0; i < draws; i++)
+    {
+        const arma::mat path = chan_jeliazkov_2009_conditional(
+            d.y, d.z, d.sigma_u, d.sigma_v, d.B, d.a_init, d.P_init, known);
+        const arma::vec flat = arma::vectorise(path);
+        sum += flat;
+        sumsq += flat % flat;
+    }
+
+    const arma::vec got_mean = sum / draws;
+    const arma::vec got_sd = arma::sqrt(sumsq / draws - got_mean % got_mean);
+
+    const double se = want_sd.max() / std::sqrt(double(draws));
+    check_below("posterior means agree", arma::abs(got_mean - want_mean).max(), 4.0 * se);
+    check_below("posterior standard deviations agree",
+                arma::abs(got_sd - want_sd).max() / want_sd.max(), 0.05);
+    check("and the conditioning actually moved the mean", arma::abs(want_mean).max() > 0.05);
+    std::printf("      widest marginal sd %.4f, 4 se = %.4f\n", want_sd.max(), 4.0 * se);
+}
+
+/// Conditioning on nothing is the whole path over the periods, and the shape and
+/// the rejections are what the caller of a factor augmented VAR will hit first.
+void the_conditional_draw_is_well_formed()
+{
+    std::printf("shape and rejections of the conditional draw\n");
+
+    const arma::uword k = 4, m = 3, tt = 7;
+    const Model d = make_asymmetric_model(k, m, tt);
+    const arma::mat known = arma::randn<arma::mat>(1, tt);
+
+    arma::arma_rng::set_seed(3);
+    const arma::mat first = chan_jeliazkov_2009_conditional(d.y, d.z, d.sigma_u, d.sigma_v, d.B,
+                                                            d.a_init, d.P_init, known);
+    arma::arma_rng::set_seed(3);
+    const arma::mat second = chan_jeliazkov_2009_conditional(d.y, d.z, d.sigma_u, d.sigma_v, d.B,
+                                                             d.a_init, d.P_init, known);
+
+    check("the result is (M - R) x T", first.n_rows == m - 1 && first.n_cols == tt);
+    check("the result is finite", first.is_finite());
+    check("the same seed gives the same draw", arma::approx_equal(first, second, "absdiff", 0.0));
+
+    const arma::mat nothing_known(0, tt);
+    const arma::mat whole = chan_jeliazkov_2009_conditional(d.y, d.z, d.sigma_u, d.sigma_v, d.B,
+                                                            d.a_init, d.P_init, nothing_known);
+    check("conditioning on nothing draws the whole state",
+          whole.n_rows == m && whole.n_cols == tt && whole.is_finite());
+
+    bool rejected = false;
+    try
+    {
+        const arma::mat everything = arma::randn<arma::mat>(m, tt);
+        chan_jeliazkov_2009_conditional(d.y, d.z, d.sigma_u, d.sigma_v, d.B, d.a_init, d.P_init,
+                                        everything);
+    }
+    catch (const std::invalid_argument &)
+    {
+        rejected = true;
+    }
+    check("a 'known' that leaves nothing to draw is rejected", rejected);
+
+    bool wrong_periods = false;
+    try
+    {
+        const arma::mat short_known = arma::randn<arma::mat>(1, tt - 1);
+        chan_jeliazkov_2009_conditional(d.y, d.z, d.sigma_u, d.sigma_v, d.B, d.a_init, d.P_init,
+                                        short_known);
+    }
+    catch (const std::invalid_argument &)
+    {
+        wrong_periods = true;
+    }
+    check("a 'known' with the wrong number of periods is rejected", wrong_periods);
+}
+
 /// Runs one group and reports a throw as a failure of that group rather than
 /// letting it abort the harness. A wrong band can make the posterior precision
 /// indefinite, so "it threw" is a result this test has to be able to print --
@@ -433,6 +687,9 @@ int main()
     run_group("group: the lags land right", the_lags_land_on_the_right_periods);
     run_group("group: agreement with the smoother", it_agrees_with_the_simulation_smoother);
     run_group("group: well formed", the_draw_is_well_formed);
+    run_group("group: the trailing column", the_trailing_column_marginalises_away);
+    run_group("group: the dense conditional", it_matches_the_dense_conditional);
+    run_group("group: conditional well formed", the_conditional_draw_is_well_formed);
 
     std::printf("\n%s\n", failures == 0 ? "all checks passed" : "THERE WERE FAILURES");
     return failures == 0 ? 0 : 1;

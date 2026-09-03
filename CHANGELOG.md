@@ -796,6 +796,43 @@ Dates are ISO. Versions follow the `project(VERSION)` in `CMakeLists.txt`.
   plain `diff` as the recipe, which is where the 400–800 KB recordings in
   `test/baselines/` came from; all three now give the two scripts instead.
 
+* **`chan_jeliazkov_2009_conditional()`**, a second entry point to the banded
+  state path draw that holds the trailing elements of every state column at
+  observed values instead of drawing them.
+
+  *Draws are unchanged.* No sampler calls it yet — it is the algorithm a factor
+  augmented VAR needs, landed on its own so that the refactor underneath it can
+  be checked in isolation. The existing entry point was split into an assembly,
+  the conditioning step and the draw, with the moved bodies left textually
+  identical; `test/record_fingerprints.sh` before and after the split reports
+  `76 unchanged, 0 moved` over all 1140 fingerprints of a clean-clone suite,
+  which is every sampler that reaches the band — the four DFMs and every
+  time-varying parameter VAR and VEC.
+
+  What it is for. A dynamic factor model draws its whole state; a factor
+  augmented VAR cannot, because half of its state is data — the transition is a
+  VAR over the unobserved factors and the observed variables jointly. Adding
+  those variables as measurements with a tiny error variance is the usual
+  shortcut and is not available to a precision based sampler at all, exact
+  observation being infinite precision. Conditioning is exact instead, and cheap:
+  partitioning the assembled precision into the drawn rows F and the observed
+  rows Y gives `K_FF f = b_F - K_FY y`, which is the same band one block size
+  narrower — still banded, because the observed positions are the same rows of
+  every block, and still positive definite, a principal submatrix of a positive
+  definite matrix being one.
+
+  Two things a caller should know. The measurement is given against the *whole*
+  state, `[Lambda_f Lambda_y]`, and the observations are passed unmodified:
+  subtracting `Lambda_y y_t` from the data by hand as well would subtract it
+  twice, since that term is one of the cross terms the conditioning removes.
+  And there is no trailing column to drop — the state column past the end of the
+  sample would be half data and half not, so it is never built. That is exact,
+  not an approximation: the term it contributes is a normalised Gaussian density
+  in that column alone. `unit_chan_jeliazkov.cpp` checks it as linear algebra,
+  marginalising the last block out of a dense system and recovering the
+  truncated one to 3.6e-15, and checks the draw itself against the dense
+  conditional's mean and standard deviation over 20000 draws.
+
 ### Changed
 
 * **README: the places it had drifted from the code are corrected.**

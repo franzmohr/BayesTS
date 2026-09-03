@@ -109,6 +109,10 @@ precision. Two algorithms carry the weight underneath:
 `kalman_durbin_koopman_2002` (whole-path simulation smoother for time-varying
 coefficients) and `stochvol_ocsn_2007` (the ten-component normal mixture).
 `chan_jeliazkov_2009` draws banded state paths and serves the DFM factor path.
+It has a second entry point, `chan_jeliazkov_2009_conditional`, which holds the
+trailing elements of every state column at observed values rather than drawing
+them — what a state vector that is part data needs. The two share the assembly
+and the draw; conditioning sits between them and neither half knows about it.
 
 **One function draws that path for all four DFMs**, `draw_factor_path()` in
 `src/core/models/dfm_support.h`, and every one of its four per-period arguments
