@@ -12,6 +12,8 @@ add_library(bayests_models
             model_factory.cpp
             DfmNormalGamma.cpp
             DfmNormalStochvol.cpp
+            DfmTvpGamma.cpp
+            DfmTvpStochvol.cpp
             VarNormalGamma.cpp
             VarNormalStochvol.cpp
             VarNormalWishart.cpp

@@ -33,7 +33,7 @@ namespace
 {
 
 using bayests::core::accumulate_transition_moments;
-using bayests::core::draw_factor_path_sv;
+using bayests::core::draw_factor_path;
 using bayests::core::fill_lagged_factors;
 using bayests::core::fill_lambda;
 using bayests::core::fill_stacked_diagonal;
@@ -212,7 +212,7 @@ void the_transition_moments_are_the_kronecker_sum()
 
 /// A factor innovation that can only be large in one period has to be large in
 /// that one -- the alignment check, stated so that dropping the shift in
-/// draw_factor_path_sv fails it by a period.
+/// draw_factor_path fails it by a period.
 void the_volatility_lands_in_its_own_period()
 {
     std::printf("a variance large in one period gives one large factor\n");
@@ -242,7 +242,7 @@ void the_volatility_lands_in_its_own_period()
         for (int r = 0; r < 200; r++)
         {
             const arma::mat path =
-                draw_factor_path_sv(x_t, lambda, u_stack, v_stack, a_mat, n, 1);
+                draw_factor_path(x_t, lambda, u_stack, v_stack, a_mat, n, 1);
             for (int t = 0; t < tt; t++)
             {
                 const double size = std::abs(path(0, t));
@@ -383,7 +383,7 @@ void the_factor_path_is_the_posterior_it_should_be()
         for (int r = 0; r < reps; r++)
         {
             sample.col(r) = arma::vectorise(
-                draw_factor_path_sv(x_t, lambda, u_stack, v_stack, a_mat, n, p > 0 ? p : 1));
+                draw_factor_path(x_t, lambda, u_stack, v_stack, a_mat, n, p > 0 ? p : 1));
         }
 
         const arma::vec got_mean = arma::mean(sample, 1);

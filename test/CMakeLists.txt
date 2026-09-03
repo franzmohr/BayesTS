@@ -71,9 +71,12 @@ add_executable(bayests_unit_identification unit_identification.cpp)
 add_executable(bayests_unit_vec_klgs_2010 unit_vec_klgs_2010.cpp)
 add_executable(bayests_unit_dfm_normal_gamma unit_dfm_normal_gamma.cpp)
 add_executable(bayests_unit_dfm_normal_stochvol unit_dfm_normal_stochvol.cpp)
+add_executable(bayests_unit_dfm_tvp_gamma unit_dfm_tvp_gamma.cpp)
+add_executable(bayests_unit_dfm_tvp_stochvol unit_dfm_tvp_stochvol.cpp)
 
 foreach(_core_unit bayests_unit_identification bayests_unit_vec_klgs_2010
-                   bayests_unit_dfm_normal_gamma bayests_unit_dfm_normal_stochvol)
+                   bayests_unit_dfm_normal_gamma bayests_unit_dfm_normal_stochvol
+                   bayests_unit_dfm_tvp_gamma bayests_unit_dfm_tvp_stochvol)
     target_link_libraries(${_core_unit} PRIVATE bayests_core)
     target_link_libraries(${_core_unit} PRIVATE bayests_warnings)
 
@@ -112,8 +115,10 @@ endif()
 # just the input it needs.
 #
 # What these tests do and do not check: bayests_golden prints a fingerprint per
-# posterior dataset and exits non-zero only if a fixture throws. So this is a
-# smoke test over every sampler and code path, not a numerical regression test.
+# posterior dataset, and fails a fixture that throws or whose run produced
+# nothing -- see the header of golden_models.cpp. It compares nothing against an
+# expectation, so this is a smoke test over every sampler and code path, not a
+# numerical regression test.
 # Fingerprints are deliberately not checked in as expected values -- they shift
 # in the last digits with the compiler, the BLAS and, when BAYESTS_NATIVE_ARCH
 # is on, the CPU, so a committed baseline would fail on machines other than the
@@ -179,7 +184,8 @@ endif()
 # to set up, and no thread pinning, since an exact identity does not care how
 # many threads computed it.
 foreach(_unit vec_to_var forecast_lags stochvol kalman chan_jeliazkov identification
-              vec_klgs_2010 dfm_normal_gamma dfm_normal_stochvol model_group)
+              vec_klgs_2010 dfm_normal_gamma dfm_normal_stochvol dfm_tvp_gamma
+              dfm_tvp_stochvol model_group)
     add_test(NAME "unit.${_unit}" COMMAND "bayests_unit_${_unit}")
     set_tests_properties("unit.${_unit}" PROPERTIES
         ENVIRONMENT_MODIFICATION "${_bayests_test_env_mod}")
@@ -304,6 +310,19 @@ bayests_add_model_fixture(DfmNormalGamma-plain  DfmNormalGamma none 0 0 4)
 bayests_add_model_fixture(DfmNormalGamma-nofcst DfmNormalGamma none 0 0 0)
 bayests_add_model_fixture(DfmNormalStochvol-plain  DfmNormalStochvol none 0 0 4)
 bayests_add_model_fixture(DfmNormalStochvol-nofcst DfmNormalStochvol none 0 0 0)
+
+# The loadings and the factor transition drift, so the golden run also exercises
+# the two shapes that separates this model from the two above it: a posterior
+# lambda of one M x N block per period, and a forecast that has to be handed the
+# last of them rather than the whole path.
+bayests_add_model_fixture(DfmTvpGamma-plain  DfmTvpGamma none 0 0 4)
+bayests_add_model_fixture(DfmTvpGamma-nofcst DfmTvpGamma none 0 0 0)
+
+# Everything that can move does, so this is the row that exercises the band
+# sampler with all four of its per-period arguments stacked at once -- a loading
+# matrix, a measurement covariance, a transition and a transition covariance.
+bayests_add_model_fixture(DfmTvpStochvol-plain  DfmTvpStochvol none 0 0 4)
+bayests_add_model_fixture(DfmTvpStochvol-nofcst DfmTvpStochvol none 0 0 0)
 
 # No selection rows: VecKlgs2010 draws the coefficients without forming the SUR
 # design matrix a scheme would act on, and validate() refuses either one. No

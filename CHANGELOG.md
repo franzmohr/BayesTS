@@ -26,6 +26,179 @@ Dates are ISO. Versions follow the `project(VERSION)` in `CMakeLists.txt`.
 
 ### Added
 
+* **`DfmTvpStochvol`**, a dynamic factor model whose loadings, factor transition
+  and both error covariances all move with time -- the seventeenth registered
+  algorithm, and the widest model here.
+
+  ```
+  x_t = Lambda_t f_t + u_t,                  u_t ~ N(0, U_t),
+  f_t = sum_{j=1..p} A_{j,t} f_{t-j} + v_t,  v_t ~ N(0, V_t),
+  ```
+
+  with U_t = diag(exp(h^u_t)) and V_t = diag(exp(h^v_t)), and every free element
+  of Lambda, every element of [A_1 .. A_p] and every element of both
+  log-volatilities a random walk of its own. `DfmTvpGamma`'s coefficients over
+  `DfmNormalStochvol`'s errors, and nothing new of its own: the file format is the
+  union of theirs and adds no dataset either does not have. Nine Gibbs blocks
+  against seven. That completes the dynamic factor row as the same 2x2 of
+  coefficients against errors the VAR and VEC rows carry, minus the Wishart
+  column, which a factor model has no use for -- an unrestricted idiosyncratic
+  covariance competes with the factor structure for the same common variation.
+
+  Why both halves. A model that carries one of them has to explain the other with
+  what it has, and the two are easy to mistake for one another: a series whose
+  loading fell looks like a series whose idiosyncratic variance rose, and a period
+  of common turbulence looks like a transition that changed. Carrying both is what
+  lets the data say which, and `test/unit_dfm_tvp_stochvol.cpp` puts that claim to
+  a sample in which the loadings fall, the idiosyncratic volatility falls and the
+  factor volatility rises at once, and checks that all three come back.
+
+  One interaction is worth knowing about because it belongs to neither parent. The
+  loading paths are drawn row by row, each weighted by its own series' volatility
+  period by period, so the periods in which a series was quiet identify its
+  loading path and the periods in which it was wild largely do not -- while the
+  path is free to move between them. That is the drift and the reweighting acting
+  on the same block, and it is the reason the two halves separate at all rather
+  than trading off along a ridge.
+
+  **The factor path draw is now one function for all four dynamic factor models**,
+  `draw_factor_path()` in `src/core/models/dfm_support.h`, in place of the three
+  near-copies that had grown up beside each other -- `draw_factor_path`,
+  `draw_factor_path_sv` and `draw_factor_path_tvp`. Each of its four per-period
+  arguments may arrive as one block or as a stack of one per period, and this
+  model is the first to stack all four: a loading matrix, a measurement
+  covariance, a transition and a transition covariance. The two that describe the
+  *transition* go into the band sampler shifted by a period, because it indexes
+  the transition producing state column t by t - 1 while these models index block
+  t at period t; the two that describe the *measurement* do not, and the prior
+  over the first p states takes both transition arguments unshifted. Three copies
+  of that convention was the arrangement `stochvol_mixture.h` warns about at
+  length, and with a fourth model it would have been four.
+
+  **Draws are unchanged** for every model that existed before, and the merge is
+  the reason that needed checking rather than asserting. The full before/after
+  comparison from CONTRIBUTING.md was run over it on one build and reports
+  **74 unchanged, 0 moved**; the same comparison over the new sampler on top
+  reports 74 unchanged again, the only difference being its two fixtures.
+  `test/unit_dfm_normal_stochvol.cpp` also prints every message its `validate()`
+  produces, and that output is byte-identical across the extraction of
+  `validate_dfm_stochvol_block()` from it.
+
+  `src/core/` and `include/bayests/` both change, so this is one for the
+  vendoring packages to propagate.
+
+  Two generated fixtures join the matrix, `plain` and `nofcst`, and
+  `test/unit_dfm_tvp_stochvol.cpp` covers what neither parent's test reaches: the
+  factor path with all four arguments stacked, against a dense posterior built
+  with every one of them indexed at period t, which is where an off-by-one in
+  either shift would show and where neither could be masked by the other argument
+  being constant. 159 tests from a clean clone become 164.
+
+* **`DfmTvpGamma`**, a dynamic factor model whose loadings and factor transition
+  follow random walks — the sixteenth registered algorithm.
+
+  ```
+  x_t = Lambda_t f_t + u_t,                  u_t ~ N(0, U),  U diagonal,
+  f_t = sum_{j=1..p} A_{j,t} f_{t-j} + v_t,  v_t ~ N(0, V),  V diagonal,
+  ```
+
+  with every free element of Lambda and every element of [A_1 .. A_p] a random
+  walk of its own. `DfmNormalGamma` with its two normal priors on the
+  coefficients replaced by two state equations and nothing else changed: `Tvp`
+  names the coefficients, as it does in `VarTvpGamma` against `VarNormalGamma`,
+  and it names *both* coefficient blocks — a model in which only the loadings
+  drifted would be a different one and is not what this is. Seven Gibbs blocks
+  against five.
+
+  What the drift is for. A loading is a series' exposure to the common factor,
+  and that it held over the whole sample is the assumption a factor model makes
+  most often and defends least: a series can enter or leave the common component
+  without anything about the factor itself changing. A constant-loading model has
+  nowhere to put that except the idiosyncratic variance, which then carries it as
+  noise the series is credited with throughout, including in the periods where
+  the exposure did hold. Drift in the transition is the other half — the
+  persistence of the common component is what a forecast from it runs on.
+
+  The identifying block still does not drift. Lambda's leading `n_factors` square
+  block stays unit lower triangular in every period, because only the product
+  `Lambda_t f_t` is identified: letting the block move would let the rotation and
+  the scale of the factors wander over the sample, and a loading path would then
+  describe the normalisation as much as the exposure it is read as.
+
+  Three things in the numerics are worth knowing about:
+
+  * The factor path needed no new algorithm. `chan_jeliazkov_2009` already took a
+    measurement matrix and a transition per period, so a drifting Lambda and a
+    drifting A reach it as stacks. Both need the shift `draw_factor_path_sv`
+    already applies to its covariances — the band sampler indexes the transition
+    that *produces* state column t by `t - 1`, while this model's block t is
+    period t's own — and both are taken unshifted for the prior over the first
+    p states, which are the truncated transitions rather than transitions
+    producing a later column. Handing either over unshifted throughout would
+    estimate a model whose coefficients lag by a period: a different model, and
+    not a broken one, since nothing would fail.
+  * What a drifting Lambda costs is the shortcut the band sampler takes when the
+    measurement is the same in every period. `Z'U^-1 Z` is formed `tt` times
+    rather than once, and with many observed series that is the dominant cost of
+    the assembly. There is no version of the model that avoids it.
+  * The Kronecker identity `DfmNormalGamma` leans on for its transition — the
+    `n_factors` equations sharing their regressors, so the posterior precision
+    collapses to `kron(X X', V^-1)` and no `(tt n_factors) x (n_factors^2 p)`
+    matrix is built — is a statement about a single coefficient vector and does
+    not survive the coefficients becoming a path. The transition path is drawn as
+    one state of `n_factors^2 p` elements against the SUR design
+    `kron(x_t', I)`, scattered per period. The loading paths are drawn row by
+    row, which is not an economy but the shape of the problem: row i has
+    `min(i, n_factors)` free elements against different regressors, and given the
+    factors and a diagonal U the rows are conditionally independent.
+
+  **Draws are unchanged** for every model that existed before. The new sampler
+  and its file format are additive, and the one thing it touches that was already
+  there is `initial_state_covariance()` in `src/core/models/dfm_support.h`, which
+  gains a shape dispatch so that a stack of one transition per period can be
+  passed for the first p states — the same arrangement it already had for
+  `v_sigma`, and the same one `chan_jeliazkov_2009` uses. For every existing
+  caller the stride is zero and `a_mat.submat(0, c0, n - 1, c1)` is the
+  `a_mat.cols(c0, c1)` it replaces, element for element. Verified rather than
+  argued: the full before/after comparison from CONTRIBUTING.md was run on one
+  build with only that hunk reverted, and reports **72 unchanged, 0 moved**, the
+  only difference being the two new fixtures.
+
+  `src/core/` and `include/bayests/` both change, so this is one for the
+  vendoring packages to propagate.
+
+  Two generated fixtures join the matrix, `plain` and `nofcst` — a DFM takes no
+  variable selection, no covariance block and no contemporaneous coefficients, so
+  there are no other rows for one — and `test/unit_dfm_tvp_gamma.cpp` covers what
+  the state equations changed: the stacking conventions as exact identities, the
+  factor path against a dense posterior built with a loading matrix and a
+  transition per period (which is what pins the shift), and recovery of a loading
+  that really moves and a transition that really decays. 154 tests from a clean
+  clone become 159. `/posterior/lambda/sigma` joins the fingerprint list in
+  `test/golden_models.cpp`, so every recording gains one line per fixture.
+
+* **`bayests_golden` fails a run that produced nothing, instead of printing
+  `absent` fourteen times and passing.** The `BaseModel` front-ends catch every
+  exception and print it to stderr, so until now a model file the sampler
+  rejected outright ran all three entry points, wrote no dataset at all and left
+  the test green. The harness now checks each stage against its own output and
+  exits 1 if any of them came back empty: no posterior draws, no
+  `/posterior/loglik`, or no `/posterior/forecast` in a file whose `h` is
+  positive — the last being the case `CONTRIBUTING.md` has called a failure
+  rather than a configuration for as long as it has said anything about it.
+
+  **Draws are unchanged**: `test/golden_models.cpp` is the harness, not a
+  sampler, and the change is confined to what it does after the run. The whole
+  suite passes as before, which is itself the check that the three conditions
+  do not fire on a legitimate fixture — including the fifteen `nofcst` rows,
+  which have no `h` and so are not asked for a forecast.
+
+  This is a floor, not a guarantee. A model that writes some of its datasets and
+  not others still passes: `absent` is the correct fingerprint for a dataset
+  belonging to another model, and only a per-model table of expected outputs
+  could distinguish the two. The fingerprints are still worth reading when a
+  fixture is added.
+
 * **All fifteen samplers now have a generated fixture, so the suite depends on
   no data outside the repository.** `VarNormalWishart` and `VecNormalWishart`
   were the two exceptions: their tests existed only when

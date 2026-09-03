@@ -1,0 +1,150 @@
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) 2026 Franz X. Mohr
+
+// HDF5 front-end for the DfmTvpStochvol sampler.
+//
+// The numerics live in src/core/models/dfm_tvp_stochvol.cpp and know nothing
+// about files. What is left here is the part that is specific to driving the
+// model from a file on disk: deciding whether the work has already been done,
+// reading the input, and putting the results back.
+
+#include "models/models.h"
+
+#include "bayests/dfm_tvp_stochvol.h"
+#include "io/hdf5/dfm_tvp_stochvol_io.h"
+#include "io/hdf5/hdf5_and_armadillo.h"
+#include "reporters/console_reporter.h"
+
+#include <iostream>
+
+namespace
+{
+namespace io = bayests::hdf5_io::dfm_tvp_stochvol;
+}
+
+DfmTvpStochvol::DfmTvpStochvol()
+{
+}
+
+DfmTvpStochvol::~DfmTvpStochvol()
+{
+}
+
+void DfmTvpStochvol::draw_coefficients(const ModelLocation &location_arg)
+{
+    // Store the location for later use
+    this->location = location_arg;
+
+    // Open the file and name the model inside it
+    HighFive::File h5 = open_hdf5_file_readwrite(location.file);
+    const ModelFile file(h5, location.group);
+
+    try
+    {
+        // Check if posterior data already exists
+        if (dataset_has_data(file, "/posterior/u_sigma_inv/coeffs"))
+        {
+            std::cout << "Posterior data already exists in file. Skipping simulation." << std::endl;
+            return;
+        }
+
+        const bayests::DfmTvpStochvolInput input = io::read_input(file);
+
+        bayests::ConsoleReporter reporter;
+        const bayests::DfmTvpStochvolDraws draws =
+            bayests::DfmTvpStochvolSampler{}.draw_coefficients(input, reporter);
+
+        io::write_coefficients(file, draws);
+    }
+    catch (const std::exception &e)
+    {
+        std::cerr << e.what() << '\n';
+    }
+}
+
+void DfmTvpStochvol::forecast(const ModelLocation &location_arg)
+{
+    // Store the location for later use
+    this->location = location_arg;
+
+    // Open the file and name the model inside it
+    HighFive::File h5 = open_hdf5_file_readwrite(location.file);
+    const ModelFile file(h5, location.group);
+
+    try
+    {
+        if (!dataset_has_data(file, "/posterior/u_sigma_inv/coeffs"))
+        {
+            std::cerr << "Error processing " << location.describe() << ": Posterior draws of u_sigma_inv are missing." << std::endl;
+            return;
+        }
+
+        // Stop if h (the forecast horizon) does not exist
+        if (!attribute_exists(file, "/model", "h"))
+        {
+            return;
+        }
+
+        // Stop if forecasts are already available in the object
+        if (dataset_has_data(file, "/posterior/forecast"))
+        {
+            return;
+        }
+
+        const bayests::DfmTvpStochvolInput input = io::read_input(file);
+
+        // The loadings and the transition move with time, so the forecast
+        // starts from the last in-sample period of each. The two volatility
+        // paths are handed over whole and cut inside the sampler.
+        const bayests::DfmTvpStochvolDraws draws = io::read_forecast_coefficients(file, input);
+
+        bayests::NullReporter reporter;
+        const bayests::ForecastDraws fcst =
+            bayests::DfmTvpStochvolSampler{}.forecast(input, draws, reporter);
+
+        bayests::hdf5_io::write_forecast(file, fcst);
+    }
+    catch (const std::exception &e)
+    {
+        std::cerr << e.what() << '\n';
+    }
+}
+
+void DfmTvpStochvol::log_likelihood(const ModelLocation &location_arg)
+{
+    // Store the location for later use
+    this->location = location_arg;
+
+    // Open the file and name the model inside it
+    HighFive::File h5 = open_hdf5_file_readwrite(location.file);
+    const ModelFile file(h5, location.group);
+
+    try
+    {
+        // Stop if the log likelihood is already available
+        if (dataset_has_data(file, "/posterior/loglik"))
+        {
+            return;
+        }
+
+        if (!dataset_has_data(file, "/posterior/u_sigma_inv/coeffs"))
+        {
+            std::cerr << "Error processing " << location.describe() << ": Posterior draws of u_sigma_inv are missing." << std::endl;
+            return;
+        }
+
+        const bayests::DfmTvpStochvolInput input = io::read_input(file);
+
+        // The whole loading path and the whole idiosyncratic precision path:
+        // every period is scored under its own Lambda_t and its own U_t.
+        const bayests::DfmTvpStochvolDraws draws = io::read_loglik_coefficients(file);
+
+        const arma::mat loglik = bayests::DfmTvpStochvolSampler{}.log_likelihood(input, draws);
+
+        bayests::hdf5_io::write_log_likelihood(file, loglik);
+    }
+    catch (const std::exception &e)
+    {
+        std::cerr << e.what() << '\n';
+    }
+}

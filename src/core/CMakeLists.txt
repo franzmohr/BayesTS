@@ -17,6 +17,8 @@ add_library(bayests_core
             models/dfm_support.h
             models/dfm_normal_gamma.cpp
             models/dfm_normal_stochvol.cpp
+            models/dfm_tvp_gamma.cpp
+            models/dfm_tvp_stochvol.cpp
             models/var_normal_gamma.cpp
             models/var_normal_stochvol.cpp
             models/var_normal_wishart.cpp

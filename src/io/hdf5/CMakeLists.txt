@@ -12,6 +12,8 @@ add_library(bayests_hdf5_helper
             model_io_common.cpp model_io_common.h
             dfm_normal_gamma_io.cpp dfm_normal_gamma_io.h
             dfm_normal_stochvol_io.cpp dfm_normal_stochvol_io.h
+            dfm_tvp_gamma_io.cpp dfm_tvp_gamma_io.h
+            dfm_tvp_stochvol_io.cpp dfm_tvp_stochvol_io.h
             var_normal_gamma_io.cpp var_normal_gamma_io.h
             var_normal_stochvol_io.cpp var_normal_stochvol_io.h
             var_normal_wishart_io.cpp var_normal_wishart_io.h

@@ -18,9 +18,19 @@
 // named, since the point of the option here is to run a model written under a
 // group through the same fingerprints as one written at the root.
 //
-// The model is taken from /model/algorithm. The checked-in VarNormalWishart
-// fixtures predate that attribute, so its absence means VarNormalWishart;
-// anything make_model_fixture writes names itself.
+// The model is taken from /model/algorithm. A recorded file may predate that
+// attribute, in which case its absence means VarNormalWishart; anything
+// make_model_fixture writes names itself.
+//
+// Exit codes: 2 for an unusable command line, 1 if a fixture throws or if any of
+// the three entry points produced nothing -- no draws, no log likelihood, or no
+// forecast where the horizon is positive. That last check is what keeps a green
+// run from meaning less than it looks like: the front-ends catch their own
+// exceptions, so before it, a file the sampler rejected outright ran, printed
+// `absent` fourteen times and passed. It is not a check that the model wrote
+// everything it should: `absent` remains the right fingerprint for a dataset
+// that belongs to another model, and only a per-model table could tell the two
+// apart.
 //
 // Threading has to be pinned as well -- a multi-threaded BLAS reassociates
 // floating-point reductions -- so the caller must set OMP_NUM_THREADS=1 and
@@ -62,6 +72,7 @@ constexpr const char *kOutputs[] = {
     // of inclusion indicators; `factors/coeffs` is the drawn state path, which
     // is part of that posterior rather than derivable from it.
     "/posterior/lambda/coeffs",
+    "/posterior/lambda/sigma",
     "/posterior/factors/coeffs",
     "/posterior/v_sigma_inv/coeffs",
     "/posterior/psi/coeffs",
@@ -102,14 +113,31 @@ void fingerprint(const std::string &label, const arma::mat &m)
            m.min(), m.max(), weighted);
 }
 
-void report_if_present(const ModelFile &file, const std::string &dataset)
+void report(const ModelFile &file, const std::string &dataset, bool present)
 {
-    if (!dataset_has_data(file, dataset))
+    if (!present)
     {
         printf("  %-30s absent\n", dataset.c_str());
         return;
     }
     fingerprint(dataset, hdf5_dataset_to_armadillo_matrix_double(file, dataset));
+}
+
+/// The two entries of kOutputs written by an entry point of their own rather
+/// than by the draw. Everything else there comes out of draw_coefficients, and
+/// which of those a given model writes depends on the model.
+constexpr const char *kLoglik = "/posterior/loglik";
+constexpr const char *kForecast = "/posterior/forecast";
+
+/// The horizon the file asks for. Absent means zero, which is what a fixture
+/// written with h=0 carries -- no forecast regressors and no attribute.
+int forecast_horizon(const ModelFile &file)
+{
+    if (!attribute_exists(file, "/model", "h"))
+    {
+        return 0;
+    }
+    return get_attribute_int(file, "/model", "h");
 }
 
 // The fixtures carry a full /posterior group, and every entry point returns
@@ -179,11 +207,57 @@ int run_fixture(const std::filesystem::path &fixture, const std::filesystem::pat
 
     HighFive::File h5 = open_hdf5_file(staged);
     const ModelFile file(h5, group);
+
+    int draws_written = 0;
+    bool loglik_written = false;
+    bool forecast_written = false;
     for (const char *dataset : kOutputs)
     {
-        report_if_present(file, dataset);
+        const bool present = dataset_has_data(file, dataset);
+        report(file, dataset, present);
+
+        if (std::string(dataset) == kLoglik)
+        {
+            loglik_written = present;
+        }
+        else if (std::string(dataset) == kForecast)
+        {
+            forecast_written = present;
+        }
+        else if (present)
+        {
+            ++draws_written;
+        }
     }
-    return 0;
+
+    // The three entry points above catch their own exceptions and print to
+    // stderr -- see the BaseModel front-ends -- so a stage that failed leaves
+    // its datasets absent and the run otherwise looks like a model that simply
+    // does not write them. Absent is a legitimate fingerprint for a dataset
+    // another model owns; it is not a legitimate outcome for a whole stage.
+    // Checked here rather than against a per-model list of expected datasets:
+    // this needs no table, and the failure it catches is a stage that produced
+    // nothing at all, which is what a rejected input looks like.
+    const std::string name = fixture.filename().string();
+    int failures = 0;
+
+    if (draws_written == 0)
+    {
+        std::cerr << name << ": draw_coefficients wrote no posterior draws\n";
+        ++failures;
+    }
+    if (!loglik_written)
+    {
+        std::cerr << name << ": log_likelihood wrote no " << kLoglik << '\n';
+        ++failures;
+    }
+    if (forecast_horizon(file) > 0 && !forecast_written)
+    {
+        std::cerr << name << ": h is positive but forecast wrote no " << kForecast << '\n';
+        ++failures;
+    }
+
+    return failures == 0 ? 0 : 1;
 }
 
 } // namespace

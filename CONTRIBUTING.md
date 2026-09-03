@@ -123,9 +123,9 @@ effect you intended or a regression, and it is worth being able to say which
 before opening a pull request.
 
 Every model has a generator: `test/make_model_fixture.cpp` writes a model file
-for all fifteen — the VAR models from the block at the top, the seven VECs from
-the block below it, the two DFMs from the one below that — so the comparison
-above covers the whole taxonomy from a clean clone.
+for all seventeen — the VAR models from the block at the top, the seven VECs
+from the block below it, the four DFMs from the one below that — so the
+comparison above covers the whole taxonomy from a clean clone.
 
 What the generator cannot supply is a real sample and a real prior. The numbers
 it invents only have to be admissible and reproducible. A file recorded from an
@@ -152,14 +152,20 @@ that supplying `h` is not enough on its own: `/data/forecast/z` has to be in the
 level layout, with `p + 1` blocks of endogenous lags, not the differenced layout
 `/data/train/z` uses.
 
-A note on what the golden harness does *not* catch, since it has cost real bugs
-twice now. `bayests_golden` exits non-zero only if a fixture throws all the way
-out, and the `BaseModel` front-ends catch every exception and print it to
-stderr. A sampler that fails on one of the three subcommands therefore leaves
-that dataset absent and the test green. When adding a fixture, read the
-fingerprints once and check that every dataset the model should carry is there --
-`absent` next to a `/posterior/forecast` in a fixture whose `h` is positive is a
-failure, not a configuration.
+A note on what the golden harness does and does not catch, since it has cost
+real bugs twice now. The `BaseModel` front-ends catch every exception and print
+it to stderr, so a sampler that fails on one of the three subcommands leaves
+that dataset absent rather than failing the run. `bayests_golden` fails a
+fixture whose whole stage came back empty — no posterior draws, no
+`/posterior/loglik`, or no `/posterior/forecast` where `h` is positive — which
+is what an input the sampler rejected outright looks like, and what used to pass
+green while producing nothing at all.
+
+That is a floor, not a guarantee. A model that wrote some of its datasets and
+not others still passes, because `absent` is the right fingerprint for a dataset
+that belongs to another model and only a per-model table could tell the two
+apart. When adding a fixture, read the fingerprints once and check that every
+dataset the model should carry is there.
 
 Fixtures are generated into the build tree. Nothing writes a `*.h5` into the
 source tree, and nothing should — see `test/CMakeLists.txt` for the generation

@@ -150,6 +150,32 @@ public:
     void log_likelihood(const ModelLocation &location_arg) override;
 };
 
+class DfmTvpGamma : public BaseModel
+{
+private:
+    // Where the model is: file plus the group its tree hangs under
+    ModelLocation location;
+public:
+    DfmTvpGamma();
+    ~DfmTvpGamma() override;
+    void draw_coefficients(const ModelLocation &location_arg) override;
+    void forecast(const ModelLocation &location_arg) override;
+    void log_likelihood(const ModelLocation &location_arg) override;
+};
+
+class DfmTvpStochvol : public BaseModel
+{
+private:
+    // Where the model is: file plus the group its tree hangs under
+    ModelLocation location;
+public:
+    DfmTvpStochvol();
+    ~DfmTvpStochvol() override;
+    void draw_coefficients(const ModelLocation &location_arg) override;
+    void forecast(const ModelLocation &location_arg) override;
+    void log_likelihood(const ModelLocation &location_arg) override;
+};
+
 class VecNormalWishart : public BaseModel
 {
 private:

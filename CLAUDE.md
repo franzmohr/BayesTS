@@ -31,7 +31,7 @@ ctest --test-dir build/bin/<your-preset> -R unit.kalman
 cmake --build build/bin/<your-preset> --target docs    # Doxygen, optional
 ```
 
-All fifteen samplers are covered from a clean clone: `test/make_model_fixture.cpp`
+All seventeen samplers are covered from a clean clone: `test/make_model_fixture.cpp`
 writes a model file for every one of them, and no `*.h5` is checked in. A file
 recorded from a real run — real data, a real prior — is the one thing the
 generator cannot supply, so any number of them can be added as extra golden
@@ -98,14 +98,27 @@ Two rules that break the host silently rather than here:
 
 ### Model taxonomy
 
-Fifteen registered algorithms. Six VARs × {`NormalWishart`, `NormalGamma`,
+Seventeen registered algorithms. Six VARs × {`NormalWishart`, `NormalGamma`,
 `NormalStochvol`, `TvpWishart`, `TvpGamma`, `TvpStochvol`}, the same six as VECs,
-plus `VecKlgs2010`, `DfmNormalGamma` and `DfmNormalStochvol`. `Normal` vs `Tvp`
-names the *coefficients*; the third part names the error precision. Two
-algorithms carry the weight underneath: `kalman_durbin_koopman_2002` (whole-path
-simulation smoother for time-varying coefficients) and `stochvol_ocsn_2007` (the
-ten-component normal mixture). `chan_jeliazkov_2009` draws banded state paths and
-serves the DFM factor path. `stochvol_ksc_1998` is the seven-component mixture of
+plus `VecKlgs2010` and four DFMs — `DfmNormalGamma`, `DfmNormalStochvol`,
+`DfmTvpGamma` and `DfmTvpStochvol`, which is the same 2×2 of coefficients against
+errors the VAR and VEC rows have, minus the Wishart column a factor model cannot
+use. `Normal` vs `Tvp` names the *coefficients* — for a DFM that is the loadings
+and the factor transition, and `Tvp` moves both. The third part names the error
+precision. Two algorithms carry the weight underneath:
+`kalman_durbin_koopman_2002` (whole-path simulation smoother for time-varying
+coefficients) and `stochvol_ocsn_2007` (the ten-component normal mixture).
+`chan_jeliazkov_2009` draws banded state paths and serves the DFM factor path.
+
+**One function draws that path for all four DFMs**, `draw_factor_path()` in
+`src/core/models/dfm_support.h`, and every one of its four per-period arguments
+may arrive as one block or as a stack of one per period. The two that describe
+the transition — the coefficients and their innovation covariance — are shifted
+by a period on the way into the band sampler, which indexes the transition
+producing state column `t` by `t - 1`; the two that describe the measurement are
+not. The prior over the first `p` states takes both transition arguments
+unshifted. Getting any of that wrong estimates a different model rather than
+failing, so read the comment there before touching it. `stochvol_ksc_1998` is the seven-component mixture of
 Kim, Shephard and Chib beside it: the two differ only in the mixture constants
 and share the draw in `stochvol_mixture.h`. No sampler selects it — it is kept as
 the coarser reference the unit test checks the shared draw against, so leave it
@@ -167,7 +180,7 @@ they shift in the last digits with the compiler, the BLAS and the CPU. The
 `fingerprints.yml` workflow runs the same base-vs-head comparison on every PR.
 
 A fingerprint recording is not something to read in full: the suite at `-V` is
-close to 900 KB (154 tests from a clean clone), and a recording of it around
+close to 900 KB (164 tests from a clean clone), and a recording of it around
 90 KB. Redirect, then read the reduction — both scripts do this by design, and
 neither `ctest -V` nor a `test/baselines/` file belongs on a terminal it is not
 being paged through. The same goes for a green `ctest` run: `> /tmp/ctest.log
@@ -180,13 +193,15 @@ Two traps:
   `OMP_NUM_THREADS=1` and `OPENBLAS_NUM_THREADS=1` on the fixture and golden
   tests (the unit tests check exact identities and do not need it); set them by
   hand when running a binary directly.
-- **A green golden test is not proof the sampler worked.** `bayests_golden` exits
-  non-zero only if a fixture throws all the way out, and the `BaseModel`
-  front-ends catch every exception and print to stderr. A failure on one of the
-  three subcommands leaves that dataset absent and the test green. Read the
-  fingerprints and check every dataset the model should carry is there —
-  `absent` next to `/posterior/forecast` in a fixture with positive `h` is a
-  failure, not a configuration.
+- **A green golden test is not full proof the sampler worked.** The `BaseModel`
+  front-ends catch every exception and print to stderr, so a failed subcommand
+  leaves its datasets absent rather than failing the run. `bayests_golden` now
+  fails a fixture whose *stage* produced nothing — no draws, no
+  `/posterior/loglik`, or no `/posterior/forecast` where `h` is positive — which
+  catches an input the sampler rejected outright. It cannot catch a model that
+  wrote some of its datasets and not others: `absent` is the right fingerprint
+  for a dataset another model owns, and only a per-model table could tell those
+  apart. Read the fingerprints when adding a fixture.
 
 ## Recording the change
 

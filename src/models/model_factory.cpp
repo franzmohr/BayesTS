@@ -9,6 +9,8 @@ std::unique_ptr<BaseModel> create_model(const std::string& model_type) {
 	static const std::unordered_map<std::string, std::function<std::unique_ptr<BaseModel>()>> factory = {
 		{"DfmNormalGamma", []() { return std::make_unique<DfmNormalGamma>(); }},
 		{"DfmNormalStochvol", []() { return std::make_unique<DfmNormalStochvol>(); }},
+		{"DfmTvpGamma", []() { return std::make_unique<DfmTvpGamma>(); }},
+		{"DfmTvpStochvol", []() { return std::make_unique<DfmTvpStochvol>(); }},
 		{"VarNormalGamma", []() { return std::make_unique<VarNormalGamma>(); }},
 		{"VarNormalStochvol", []() { return std::make_unique<VarNormalStochvol>(); }},
 		{"VarNormalWishart", []() { return std::make_unique<VarNormalWishart>(); }},

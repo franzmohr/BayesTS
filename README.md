@@ -38,8 +38,8 @@ Requires a C++20 compiler and Fortran (for LAPACK). Built on
 ## Models
 
 The `/model/algorithm` attribute in the model file selects the sampler; it is
-the only thing that decides which one runs. Fifteen are registered — six VARs,
-the same six as VECs, one alternative implementation of a VEC, and two dynamic
+the only thing that decides which one runs. Seventeen are registered — six VARs,
+the same six as VECs, one alternative implementation of a VEC, and four dynamic
 factor models:
 
 | `algorithm` | Coefficients | Error precision | Variable selection |
@@ -59,14 +59,16 @@ factor models:
 | `VecKlgs2010` | `VecNormalWishart` drawn without the SUR system | Wishart | none |
 | `DfmNormalGamma` | Constant, normal prior on the loadings and on the factor transition | Independent gamma, on the idiosyncratic errors and the factor innovations | none |
 | `DfmNormalStochvol` | Constant, normal prior on the loadings and on the factor transition | Stochastic volatility, on the idiosyncratic errors and the factor innovations | none |
+| `DfmTvpGamma` | Random walk, the free loadings and the factor transition both | Independent gamma, on the idiosyncratic errors and the factor innovations | none |
+| `DfmTvpStochvol` | Random walk, the free loadings and the factor transition both | Stochastic volatility, on the idiosyncratic errors and the factor innovations | none |
 
 The twelve VARs and VECs support exogenous regressors, deterministic terms,
 forecasting and a pointwise log likelihood laid out for WAIC and PSIS-LOO. Eight
 of them also take a structural (contemporaneous-coefficient) form: the four
 Wishart models leave the error covariance unrestricted, which leaves `A_0`
 unidentified, so they refuse it — see the structural paragraph at the end of this
-section. `VecKlgs2010` and the two `Dfm*` entries are the exceptions to the rest,
-each in its own way — see below.
+section. `VecKlgs2010` and the four `Dfm*` entries are the exceptions to the
+rest, each in its own way — see below.
 
 `VecKlgs2010` is the one entry that is not a model of its own. It is
 `VecNormalWishart` — the cointegration sampler of Koop, León-González and
@@ -87,7 +89,7 @@ cost. What the compact form gives up is variable selection, which acts on the
 columns of the matrix it declines to build; `validate()` rejects either scheme
 rather than ignoring it.
 
-The two `Dfm*` entries are the models here that are not regressions:
+The four `Dfm*` entries are the models here that are not regressions:
 
 ```
 x_t = Lambda f_t + u_t,                u_t ~ N(0, U),  U diagonal,
@@ -126,6 +128,62 @@ respectively, and `/posterior/u_sigma_inv/coeffs` widens from `k` per draw to
 `k·tt`. The forecast holds both volatilities at their last in-sample value, as
 every stochastic volatility model here does.
 
+`DfmTvpGamma` moves the drift the other way round: the errors stay
+homoskedastic and it is the coefficients that follow random walks — every free
+loading and every element of `[A_1 … A_p]`, so `Lambda_t f_t` in the measurement
+and `A_{j,t}` in the transition. `Tvp` names the coefficients here as it does
+everywhere else, and it names both blocks; a model in which only the loadings
+drifted would be a different one. What it is for is the assumption a factor
+model makes most often and defends least — that a series' exposure to the common
+component held over the whole sample. A constant-loading model has nowhere to
+put a change in exposure except the idiosyncratic variance, which then carries it
+as noise the series is credited with throughout. The identifying block still does
+not drift: it is not drawn, and letting it move would let the rotation and the
+scale of the factors wander over the sample, so a loading path would describe the
+normalisation as much as the exposure.
+
+Both coefficient groups then take what `/priors/a` takes for a VAR whose
+coefficients drift — `shape`/`rate` on the variance of the state innovations
+beside `mu`/`v_inv` on the state before the sample — and `/initial/lambda` and
+`/initial/a` are paths rather than vectors, beside `lambda_sigma_inv`,
+`lambda_init`, `a_sigma_inv` and `a_init`. On the way out,
+`/posterior/lambda/coeffs` widens from `k·n_factors` per draw to
+`k·n_factors·tt`, one vectorised loading matrix per period, and
+`/posterior/a/coeffs` the same way; `lambda/sigma` and `a/sigma` carry the two
+state variances. The forecast holds both at their last in-sample period, as every
+time-varying model here does, while the pointwise log likelihood scores every
+period under its own `Lambda_t`.
+
+Two things in the numerics are worth knowing about. The factor path needed no new
+algorithm — `chan_jeliazkov_2009` already took a measurement matrix and a
+transition per period — but a drifting `Lambda` costs the shortcut it takes when
+the measurement does not move: `Z'U⁻¹Z` is then formed `tt` times rather than
+once, which with many observed series is the dominant cost of the assembly. And
+the Kronecker identity `DfmNormalGamma` leans on for its transition, the
+`n_factors` equations sharing their regressors so that the posterior precision
+collapses to `kron(X X', V⁻¹)`, is a statement about a single coefficient vector
+and does not survive the coefficients becoming a path; the transition path is
+drawn against the SUR design `kron(x_t', I)` built per period.
+
+`DfmTvpStochvol` is the two of those at once, and the widest model here: nothing
+in it is held fixed but the normalisation. It takes `DfmTvpGamma`'s two
+coefficient groups and `DfmNormalStochvol`'s two error groups, adds nothing of
+its own to the file format, and draws nine Gibbs blocks against seven. Both
+halves are there because a model with one of them has to explain the other with
+what it has: a series whose loading fell looks like a series whose idiosyncratic
+variance rose, and a period of common turbulence looks like a transition that
+changed. Carrying both is what lets the data say which.
+
+It is also the one model that hands `chan_jeliazkov_2009` all four of its
+per-period arguments at once — a loading matrix, a measurement covariance, a
+transition and a transition covariance, each its own per period. Two of the four
+describe the transition and go in shifted by a period, because the band sampler
+indexes the transition that *produces* state column `t` by `t - 1` while these
+models index block `t` at period `t`; the other two describe the measurement and
+go in as they are. That convention lives in one place, `draw_factor_path()`, which
+serves all four dynamic factor models: an unshifted argument would estimate a
+model whose transitions lag their own period, which is a different model and not
+a broken one, so nothing would fail.
 Three algorithms carry the implementation weight. The time-varying coefficient
 paths are drawn as a single block with the simulation smoother of Durbin and
 Koopman (2002), so the whole path moves at once rather than period by period.
@@ -133,6 +191,10 @@ Stochastic volatility uses the ten-component normal mixture of Omori et al.
 (2007), which turns the non-linear measurement equation into a conditionally
 linear one. The `*TvpStochvol` pair combines both. The third is the band sampler
 of Chan and Jeliazkov (2009) described above, which draws the DFM factor path.
+The two `DfmTvp*` models are the ones that reach for the first and the third at
+once — the band sampler for the factors, the simulation smoother for the loading
+path of each series and for the transition — and `DfmTvpStochvol` reaches for all
+three.
 
 Each VEC differs from the VAR beside it in one place, the same place every time:
 the first `k * rank` regressors are `beta' w_{t-1}`, so they are not data but a
@@ -247,9 +309,9 @@ written for a simpler model still describes a valid one.
 | `/model/priors/psi` (attribute) | `varsel` for the covariance block on its own, read by the four time-varying models that have one; the `/model` attribute above governs the coefficients |
 | `/priors/u_sigma` | `shape`/`rate` for gamma precisions, `df`/`scale` for Wishart, `mu`/`v_inv`/`sigma`/`offset` for stochastic volatility |
 | `/priors/beta` | A VEC only: `p_tau_inv`, the prior precision of the cointegration space, and for the time-varying three `mu`/`v_inv` over beta before the sample and the state autoregression `rho` |
-| `/priors/lambda`, `/priors/v_sigma` | A DFM only: normal `mu`/`v_inv` over the free loadings, and `shape`/`rate` for the factor innovation precisions |
-| `/initial/…` | Starting values: `a`, `psi`, `u_sigma_inv`, `u_omega_inv`, `h`, the `*_init` states and the `*_lambda`, `*_sigma_inv` blocks the samplers that need them read; `beta` for a VEC; `lambda`, `v_sigma_inv` and, under stochastic volatility, `u_h`/`v_h` for a DFM |
-| `/posterior/…` | Written by the run: `a/coeffs`, `a/lambda`, `a/sigma`, the matching `psi/…`, `u_sigma_inv/coeffs`, `u_omega_inv/coeffs`, `forecast` and `loglik`; `beta/coeffs` for a VEC; `lambda/coeffs`, `factors/coeffs` and `v_sigma_inv/coeffs` for a DFM |
+| `/priors/lambda`, `/priors/v_sigma` | A DFM only: normal `mu`/`v_inv` over the free loadings, and `shape`/`rate` for the factor innovation precisions. Under `DfmTvpGamma` the loading group is a state equation instead, `shape`/`rate` on the innovation variance beside `mu`/`v_inv` on the state before the sample, and `/priors/a` reads the same way |
+| `/initial/…` | Starting values: `a`, `psi`, `u_sigma_inv`, `u_omega_inv`, `h`, the `*_init` states and the `*_lambda`, `*_sigma_inv` blocks the samplers that need them read; `beta` for a VEC; `lambda`, `v_sigma_inv` and, under stochastic volatility, `u_h`/`v_h` for a DFM; `lambda` and `a` are paths under `DfmTvpGamma`, beside `lambda_sigma_inv`, `lambda_init`, `a_sigma_inv` and `a_init` |
+| `/posterior/…` | Written by the run: `a/coeffs`, `a/lambda`, `a/sigma`, the matching `psi/…`, `u_sigma_inv/coeffs`, `u_omega_inv/coeffs`, `forecast` and `loglik`; `beta/coeffs` for a VEC; `lambda/coeffs`, `factors/coeffs` and `v_sigma_inv/coeffs` for a DFM, plus `lambda/sigma` where the loadings drift |
 
 Two conventions are worth knowing before writing a file by hand. The first is
 which way round the matrices are stored, and it is worth stating twice, because
@@ -449,7 +511,9 @@ dependency DLL directories to `PATH` so `ctest` works in a shell that has not
 been set up by hand.
 
 **What these tests do and do not check.** `bayests_golden` prints a fingerprint
-for every posterior dataset and exits non-zero only if a fixture throws, so the
+for every posterior dataset, and fails a fixture that throws or whose run
+produced nothing — no draws, no log likelihood, or no forecast where the horizon
+is positive. It does not compare the numbers against an expectation, so the
 suite is a smoke test across every sampler and code path rather than a numerical
 regression test. Expected fingerprints are deliberately not checked in: they
 shift in the last digits with the compiler, the BLAS implementation and — when
@@ -482,7 +546,7 @@ for the change they precede — a baseline recorded before a *build flag* change
 still diffs cleanly enough to look meaningful, which makes a stale one worse
 than none.
 
-**Coverage.** All fifteen samplers are covered from a clean clone:
+**Coverage.** All seventeen samplers are covered from a clean clone:
 `test/make_model_fixture.cpp` writes a model file for every one of them, and the
 suite depends on no data outside the repository.
 
