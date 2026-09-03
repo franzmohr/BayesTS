@@ -38,9 +38,9 @@ Requires a C++20 compiler and Fortran (for LAPACK). Built on
 ## Models
 
 The `/model/algorithm` attribute in the model file selects the sampler; it is
-the only thing that decides which one runs. Seventeen are registered — six VARs,
-the same six as VECs, one alternative implementation of a VEC, and four dynamic
-factor models:
+the only thing that decides which one runs. Eighteen are registered — six VARs,
+the same six as VECs, one alternative implementation of a VEC, four dynamic
+factor models and one factor augmented VAR:
 
 | `algorithm` | Coefficients | Error precision | Variable selection |
 | --- | --- | --- | --- |
@@ -61,13 +61,14 @@ factor models:
 | `DfmNormalStochvol` | Constant, normal prior on the loadings and on the factor transition | Stochastic volatility, on the idiosyncratic errors and the factor innovations | none |
 | `DfmTvpGamma` | Random walk, the free loadings and the factor transition both | Independent gamma, on the idiosyncratic errors and the factor innovations | none |
 | `DfmTvpStochvol` | Random walk, the free loadings and the factor transition both | Stochastic volatility, on the idiosyncratic errors and the factor innovations | none |
+| `FavarNormalWishart` | Constant, normal prior on the loadings and on the state transition | Wishart on the state innovations; independent gamma on the idiosyncratic errors | none |
 
 The twelve VARs and VECs support exogenous regressors, deterministic terms,
 forecasting and a pointwise log likelihood laid out for WAIC and PSIS-LOO. Eight
 of them also take a structural (contemporaneous-coefficient) form: the four
 Wishart models leave the error covariance unrestricted, which leaves `A_0`
 unidentified, so they refuse it — see the structural paragraph at the end of this
-section. `VecKlgs2010` and the four `Dfm*` entries are the exceptions to the
+section. `VecKlgs2010`, the four `Dfm*` entries and `FavarNormalWishart` are the exceptions to the
 rest, each in its own way — see below.
 
 `VecKlgs2010` is the one entry that is not a model of its own. It is
@@ -184,13 +185,60 @@ go in as they are. That convention lives in one place, `draw_factor_path()`, whi
 serves all four dynamic factor models: an unshifted argument would estimate a
 model whose transitions lag their own period, which is a different model and not
 a broken one, so nothing would fail.
+`FavarNormalWishart` is the dynamic factor model with observed variables in its
+state:
+
+```
+x_t = Lambda_f f_t + Lambda_y y_t + e_t,   e_t ~ N(0, R),  R diagonal,
+s_t = sum_{j=1..p} Phi_j s_{t-j} + v_t,   v_t ~ N(0, Q),   s_t = (f_t', y_t')',
+```
+
+for `k` panel series, `n_factors` unobserved factors and `n_obs_factors` observed
+ones, after Bernanke, Boivin and Eliasz (2005). The observed factors are the
+variables the model is about — a policy rate, output — and the panel is there to
+measure the common component they move with. They sit *in* the state rather than
+beside it because the transition is a VAR over both blocks jointly: the factors
+respond to the policy variable and the policy variable responds back, and that
+coupling is the model. They arrive in `/data/train/f_obs`, `tt` by
+`n_obs_factors`.
+
+Half the state being data is the whole of what is new, and it lands in three
+places. The path draw *conditions* on the observed half instead of drawing it:
+`chan_jeliazkov_2009_conditional` partitions the assembled precision into the
+drawn rows and the observed ones, and `K_FF f = b_F - K_FY y` is the same band
+one block size narrower. That is exact — adding the observed factors as
+measurements with a small error variance is the usual shortcut and is not
+available to a precision-based sampler at all, since observing something exactly
+is infinite precision — and it keeps the information the observed factors' own
+equations carry about the lagged factors, which a sampler that drew the factor
+block alone would throw away.
+
+The second is `Q`. A factor model's idiosyncratic `R` must stay diagonal, which
+is why no `Dfm*` has a Wishart column; `Q` is a VAR's innovation covariance and
+its cross block is the correlation between the factor innovations and the shock
+to the observed variables — the one thing a FAVAR exists to measure. So the third
+part of the name refers to `Q`, and `R` is gamma-diagonal throughout the family.
+
+The third follows from the second. A rotation `F -> C F` is invisible in the
+measurement if the loadings absorb it, and a DFM rules it out with a unit lower
+triangular loading block *and* a diagonal `V` — together they admit only `C = I`.
+A FAVAR has no diagonal `V` to offer, so its leading `n_factors` square loading
+block is the **identity**, and the observed columns of those rows are zero: the
+first `n_factors` panel series are the factors plus idiosyncratic noise and carry
+no free loading at all. The two identifications cost the same `n(n-1)/2`
+restrictions; the FAVAR spends them on the loadings rather than on `V`. Its
+forecast is also the one here wider than `k`: `h * (k + n_obs_factors)`, the
+panel of a horizon followed by the observed factors of the same horizon, which
+are what the model is forecast for and have no other dataset to go in.
+
 Three algorithms carry the implementation weight. The time-varying coefficient
 paths are drawn as a single block with the simulation smoother of Durbin and
 Koopman (2002), so the whole path moves at once rather than period by period.
 Stochastic volatility uses the ten-component normal mixture of Omori et al.
 (2007), which turns the non-linear measurement equation into a conditionally
 linear one. The `*TvpStochvol` pair combines both. The third is the band sampler
-of Chan and Jeliazkov (2009) described above, which draws the DFM factor path.
+of Chan and Jeliazkov (2009) described above, which draws the DFM factor path and,
+through its conditional entry point, the FAVAR's.
 The two `DfmTvp*` models are the ones that reach for the first and the third at
 once — the band sampler for the factors, the simulation smoother for the loading
 path of each series and for the transition — and `DfmTvpStochvol` reaches for all
@@ -300,18 +348,19 @@ written for a simpler model still describes a valid one.
 
 | Location | Contents |
 | --- | --- |
-| `/model` (attributes) | `algorithm`, `k` endogenous variables, `iterations` kept, `burnin` discarded; optional `p`, `m`, `s`, `n` (lags, exogenous variables, their lags, deterministic terms), `h` forecast horizon, `varsel` (`none`, `ssvs`, `bvs`), `structural`, `error`; `rank`, `k_beta`, `n_restricted` for a VEC and `n_factors` for a DFM |
+| `/model` (attributes) | `algorithm`, `k` endogenous variables, `iterations` kept, `burnin` discarded; optional `p`, `m`, `s`, `n` (lags, exogenous variables, their lags, deterministic terms), `h` forecast horizon, `varsel` (`none`, `ssvs`, `bvs`), `structural`, `error`; `rank`, `k_beta`, `n_restricted` for a VEC, `n_factors` for a factor model and `n_obs_factors` for a FAVAR |
 | `/data/train/y`, `/data/train/z` | Endogenous variables and the regressor matrix, `(tt k)` rows by `nparams` columns |
 | `/data/train/w` | A VEC's error correction term, `tt` rows by `k_beta` columns |
 | `/data/train/x` | The regressors in the compact layout, `tt` rows by one column each; read by `VecKlgs2010` in place of `z` |
+| `/data/train/f_obs` | A FAVAR only: the observed factors, `tt` rows by `n_obs_factors` columns. The observed half of the state vector, not regressors |
 | `/data/forecast/z` | Out-of-sample regressors; required when `h` > 0 |
 | `/priors/a`, `/priors/psi` | Normal prior `mu` and `v_inv` for the coefficients and the covariance block, plus `inprior`, `include`, and `tau0`/`tau1` for SSVS |
 | `/model/priors/psi` (attribute) | `varsel` for the covariance block on its own, read by the four time-varying models that have one; the `/model` attribute above governs the coefficients |
 | `/priors/u_sigma` | `shape`/`rate` for gamma precisions, `df`/`scale` for Wishart, `mu`/`v_inv`/`sigma`/`offset` for stochastic volatility |
 | `/priors/beta` | A VEC only: `p_tau_inv`, the prior precision of the cointegration space, and for the time-varying three `mu`/`v_inv` over beta before the sample and the state autoregression `rho` |
-| `/priors/lambda`, `/priors/v_sigma` | A DFM only: normal `mu`/`v_inv` over the free loadings, and `shape`/`rate` for the factor innovation precisions. Under `DfmTvpGamma` the loading group is a state equation instead, `shape`/`rate` on the innovation variance beside `mu`/`v_inv` on the state before the sample, and `/priors/a` reads the same way |
-| `/initial/…` | Starting values: `a`, `psi`, `u_sigma_inv`, `u_omega_inv`, `h`, the `*_init` states and the `*_lambda`, `*_sigma_inv` blocks the samplers that need them read; `beta` for a VEC; `lambda`, `v_sigma_inv` and, under stochastic volatility, `u_h`/`v_h` for a DFM; `lambda` and `a` are paths under `DfmTvpGamma`, beside `lambda_sigma_inv`, `lambda_init`, `a_sigma_inv` and `a_init` |
-| `/posterior/…` | Written by the run: `a/coeffs`, `a/lambda`, `a/sigma`, the matching `psi/…`, `u_sigma_inv/coeffs`, `u_omega_inv/coeffs`, `forecast` and `loglik`; `beta/coeffs` for a VEC; `lambda/coeffs`, `factors/coeffs` and `v_sigma_inv/coeffs` for a DFM, plus `lambda/sigma` where the loadings drift |
+| `/priors/lambda`, `/priors/v_sigma` | A factor model only: normal `mu`/`v_inv` over the free loadings, and `shape`/`rate` for the factor innovation precisions. Under `DfmTvpGamma` the loading group is a state equation instead, `shape`/`rate` on the innovation variance beside `mu`/`v_inv` on the state before the sample, and `/priors/a` reads the same way. Under `FavarNormalWishart` the `v_sigma` group is `df`/`scale` rather than `shape`/`rate`, its state innovation precision being a matrix |
+| `/initial/…` | Starting values: `a`, `psi`, `u_sigma_inv`, `u_omega_inv`, `h`, the `*_init` states and the `*_lambda`, `*_sigma_inv` blocks the samplers that need them read; `beta` for a VEC; `lambda`, `v_sigma_inv` and, under stochastic volatility, `u_h`/`v_h` for a DFM; `lambda` and `a` are paths under `DfmTvpGamma`, beside `lambda_sigma_inv`, `lambda_init`, `a_sigma_inv` and `a_init`; under `FavarNormalWishart` `v_sigma_inv` is an `n_state` square matrix rather than a diagonal |
+| `/posterior/…` | Written by the run: `a/coeffs`, `a/lambda`, `a/sigma`, the matching `psi/…`, `u_sigma_inv/coeffs`, `u_omega_inv/coeffs`, `forecast` and `loglik`; `beta/coeffs` for a VEC; `lambda/coeffs`, `factors/coeffs` and `v_sigma_inv/coeffs` for a factor model, plus `lambda/sigma` where the loadings drift. Under `FavarNormalWishart` `factors/coeffs` holds the unobserved factors alone, `v_sigma_inv/coeffs` is `n_state` squared per draw, and `forecast` is `h * (k + n_obs_factors)` rows rather than `h * k` |
 
 Two conventions are worth knowing before writing a file by hand. The first is
 which way round the matrices are stored, and it is worth stating twice, because
@@ -546,7 +595,7 @@ for the change they precede — a baseline recorded before a *build flag* change
 still diffs cleanly enough to look meaningful, which makes a stale one worse
 than none.
 
-**Coverage.** All seventeen samplers are covered from a clean clone:
+**Coverage.** All eighteen samplers are covered from a clean clone:
 `test/make_model_fixture.cpp` writes a model file for every one of them, and the
 suite depends on no data outside the repository.
 

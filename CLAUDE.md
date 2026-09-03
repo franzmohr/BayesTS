@@ -31,7 +31,7 @@ ctest --test-dir build/bin/<your-preset> -R unit.kalman
 cmake --build build/bin/<your-preset> --target docs    # Doxygen, optional
 ```
 
-All seventeen samplers are covered from a clean clone: `test/make_model_fixture.cpp`
+All eighteen samplers are covered from a clean clone: `test/make_model_fixture.cpp`
 writes a model file for every one of them, and no `*.h5` is checked in. A file
 recorded from a real run — real data, a real prior — is the one thing the
 generator cannot supply, so any number of them can be added as extra golden
@@ -98,24 +98,45 @@ Two rules that break the host silently rather than here:
 
 ### Model taxonomy
 
-Seventeen registered algorithms. Six VARs × {`NormalWishart`, `NormalGamma`,
+Eighteen registered algorithms. Six VARs × {`NormalWishart`, `NormalGamma`,
 `NormalStochvol`, `TvpWishart`, `TvpGamma`, `TvpStochvol`}, the same six as VECs,
-plus `VecKlgs2010` and four DFMs — `DfmNormalGamma`, `DfmNormalStochvol`,
+plus `VecKlgs2010`, four DFMs — `DfmNormalGamma`, `DfmNormalStochvol`,
 `DfmTvpGamma` and `DfmTvpStochvol`, which is the same 2×2 of coefficients against
-errors the VAR and VEC rows have, minus the Wishart column a factor model cannot
-use. `Normal` vs `Tvp` names the *coefficients* — for a DFM that is the loadings
-and the factor transition, and `Tvp` moves both. The third part names the error
-precision. Two algorithms carry the weight underneath:
+errors the VAR and VEC rows have, minus the Wishart column a *dynamic factor
+model* cannot use — and `FavarNormalWishart`. `Normal` vs `Tvp` names the
+*coefficients* — for a factor model that is the loadings and the transition, and
+`Tvp` moves both. The third part names the error precision.
+
+**The FAVAR row has the Wishart column the DFM row lacks, and that is not an
+inconsistency.** A factor model's *idiosyncratic* precision is diagonal by
+assumption — errors that may correlate leave the factors nothing to explain — so
+no member of either row offers a choice about it, and the third part of a
+`Favar*` name refers to the state innovation precision Q instead. Q is a VAR's
+innovation covariance: its observed block is an ordinary one and its cross block
+is the correlation between the factor innovations and the shock to the observed
+variables, which is what a FAVAR is estimated to measure.
+
+**That choice fixes the identification, and the two cannot be picked
+separately.** A rotation `F -> C F` is invisible in the measurement if the
+loadings absorb it. A DFM rules it out with a unit lower triangular loading block
+*and* a diagonal V, which together admit only `C = I`. A FAVAR has no diagonal V
+to offer, so its leading loading block is the **identity** instead — see
+`VarSpec::n_favar_lambda()`, which is paired with `n_lambda()` and agrees with it
+at no dimension. Taking the DFM's rule over leaves a model that runs, produces
+plausible numbers, and has loadings free to wander along a ridge. Two algorithms carry the weight underneath:
 `kalman_durbin_koopman_2002` (whole-path simulation smoother for time-varying
 coefficients) and `stochvol_ocsn_2007` (the ten-component normal mixture).
 `chan_jeliazkov_2009` draws banded state paths and serves the DFM factor path.
 It has a second entry point, `chan_jeliazkov_2009_conditional`, which holds the
 trailing elements of every state column at observed values rather than drawing
-them — what a state vector that is part data needs. The two share the assembly
-and the draw; conditioning sits between them and neither half knows about it.
+them — what a FAVAR's part-data state needs. The two share the assembly and the
+draw; conditioning sits between them and neither half knows about it. It returns
+one column per period and no trailing column to drop, the state past the end of
+the sample being half data and half not.
 
 **One function draws that path for all four DFMs**, `draw_factor_path()` in
-`src/core/models/dfm_support.h`, and every one of its four per-period arguments
+`src/core/models/dfm_support.h` — with `draw_conditional_factor_path()` beside it
+for the FAVAR, on the same contract — and every one of its four per-period arguments
 may arrive as one block or as a stack of one per period. The two that describe
 the transition — the coefficients and their innovation covariance — are shifted
 by a period on the way into the band sampler, which indexes the transition
@@ -184,7 +205,7 @@ they shift in the last digits with the compiler, the BLAS and the CPU. The
 `fingerprints.yml` workflow runs the same base-vs-head comparison on every PR.
 
 A fingerprint recording is not something to read in full: the suite at `-V` is
-close to 900 KB (164 tests from a clean clone), and a recording of it around
+close to 900 KB (169 tests from a clean clone), and a recording of it around
 90 KB. Redirect, then read the reduction — both scripts do this by design, and
 neither `ctest -V` nor a `test/baselines/` file belongs on a terminal it is not
 being paged through. The same goes for a green `ctest` run: `> /tmp/ctest.log

@@ -26,6 +26,93 @@ Dates are ISO. Versions follow the `project(VERSION)` in `CMakeLists.txt`.
 
 ### Added
 
+* **`FavarNormalWishart`**, a factor augmented VAR — the eighteenth registered
+  algorithm, and the first model here whose state vector is part data.
+
+  ```
+  x_t = Lambda_f f_t + Lambda_y y_t + e_t,   e_t ~ N(0, R),  R diagonal,
+  s_t = sum_{j=1..p} Phi_j s_{t-j} + v_t,    v_t ~ N(0, Q),  s_t = (f_t', y_t')',
+  ```
+
+  for `k` panel series, `n_factors` unobserved factors and `n_obs_factors`
+  observed ones, after Bernanke, Boivin and Eliasz (2005). Five Gibbs blocks:
+  the factor path, the loadings, the idiosyncratic precisions, the state
+  innovation precision and the transition.
+
+  *Draws are unchanged* for every existing model. The fingerprint comparison in
+  CONTRIBUTING.md over the whole suite reports `76 unchanged, 0 moved` beside the
+  two new `FavarNormalWishart` fixtures; the shared code this touched —
+  `spec.h`/`spec.cpp`, `data.h`, `read_spec()` and `dfm_support.h` — only gained
+  members and functions, and none of the seventeen existing samplers reads one.
+
+  **What it is.** `DfmNormalGamma` with observed variables added to the state.
+  The observed factors are the variables the model is about — a policy rate,
+  output — and the panel is there to measure the common component they move
+  with. They sit *in* the state rather than beside it because the transition is
+  a VAR over both blocks jointly: the factors respond to the policy variable and
+  the policy variable responds back, and that coupling is the model.
+
+  **The path draw conditions rather than draws.** A dynamic factor model's state
+  is unobserved throughout and is drawn whole; half of this one is data, so
+  `chan_jeliazkov_2009_conditional` partitions the assembled precision into the
+  drawn rows and the observed ones and solves `K_FF f = b_F - K_FY y` — the same
+  band one block size narrower. That is exact. Adding the observed factors to the
+  measurement with a small error variance is the usual shortcut and is not
+  available to a precision based sampler at all, exact observation being infinite
+  precision, and it would also be a different model. Conditioning keeps the
+  information the observed factors' own equations carry about the lagged
+  factors, which a sampler that drew the factor block alone would discard.
+
+  **Why the Wishart, and what it forces.** A factor model's idiosyncratic `R`
+  must stay diagonal — errors free to correlate leave the factors nothing to
+  explain — which is why no `Dfm*` offers a Wishart. `Q` is a different object:
+  a VAR's innovation covariance, whose observed block is an ordinary one and
+  whose cross block is the correlation between the factor innovations and the
+  shock to the observed variables. That cross block is what a FAVAR is estimated
+  to measure, and forcing it to zero would assert the policy shock is orthogonal
+  to every factor innovation. So the third part of a `Favar*` name refers to `Q`,
+  and `R` is gamma-diagonal throughout the family — the one place the naming rule
+  differs from the DFM row.
+
+  That choice fixes the identification and the two cannot be picked separately.
+  A rotation `F -> C F` is invisible in the measurement if the loadings absorb
+  it. A DFM rules it out with a unit lower triangular loading block *and* a
+  diagonal `V`, which together admit only `C = I` by the uniqueness of an LDL
+  factorisation. With `Q` free the second half is gone, so the leading
+  `n_factors` square loading block is the **identity** here rather than a unit
+  triangle, and the observed columns of those rows are zero: the first
+  `n_factors` panel series are the factors plus idiosyncratic noise and carry no
+  free loading at all. The two identifications cost the same `n(n-1)/2`
+  restrictions — a FAVAR spends them on the loadings instead of on `V`. Taking
+  the DFM's rule over instead leaves a model that runs, produces plausible
+  numbers, and has loadings free to wander along a ridge; that was caught in
+  development by a recovery check, whose loading error fell from 0.25 to 0.07
+  once the block was tightened.
+
+  **On disk**, the tree is a DFM's with two changes, both from half the state
+  being data. `/data/train/f_obs` holds the observed factors, `tt` by
+  `n_obs_factors`, beside the panel in `/data/train/y`; `/model/n_obs_factors`
+  names their count and a file that omits it describes a dynamic factor model,
+  which `validate()` says by name rather than estimating. `/priors/v_sigma`
+  carries `df`/`scale` rather than `shape`/`rate`, and `/initial/v_sigma_inv` is
+  an `n_state` square matrix rather than a diagonal — that pair is what a file
+  written against a DFM gets wrong, and both are rejected by shape.
+
+  `/posterior/factors/coeffs` holds the unobserved factors alone: the observed
+  half is the caller's own input, and a copy of it per draw would be the largest
+  thing in the file. `/posterior/forecast` is the one forecast here wider than
+  `k` — `h * (k + n_obs_factors)`, the panel of a horizon followed by the
+  observed factors of the same horizon, which are what the model is forecast for
+  and have no other dataset to go in.
+
+  `VarSpec` gains `n_obs_factors`, `uses_obs_factors()`, `n_state()`,
+  `n_favar_lambda()` and `n_favar_a()`. The last two are paired with
+  `n_lambda()` and `n_factor_a()` the way `n_non_structural_vec()` is paired with
+  `n_non_structural()`, and `n_favar_lambda()` agrees with `n_lambda()` at no
+  dimension at all — the identifications differ. `TrainData` gains `f_obs`, a
+  member of its own rather than a reuse of `x`: the observed factors are not
+  regressors, they appear on the left of the transition as well as the right.
+
 * **`DfmTvpStochvol`**, a dynamic factor model whose loadings, factor transition
   and both error covariances all move with time -- the seventeenth registered
   algorithm, and the widest model here.

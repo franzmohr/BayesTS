@@ -1121,6 +1121,137 @@ void write_dfm_normal_gamma(const ModelFile &file, int h, const arma::mat &x)
     }
 }
 
+/// Dimensions of the factor augmented VAR fixture.
+///
+/// The panel and the factors are the DFM's, so the two fixtures are comparable,
+/// plus two observed factors. Two rather than one for the same reason there are
+/// two unobserved ones: with a single observed factor the state's observed block
+/// is a scalar, and the cross covariance in Q -- the thing this model exists to
+/// estimate -- would be a single number rather than a block.
+constexpr int kFavarNObs = 2;                                  // observed factors
+constexpr int kFavarNState = kDfmN + kFavarNObs;               // 4
+constexpr int kFavarNLambda = (kDfmK - kDfmN) * kFavarNState;  // 16
+constexpr int kFavarNA = kFavarNState * kFavarNState * kDfmP;  // 32
+
+/// A sample with a factor augmented structure in it: two AR(1) factors, two
+/// observed factors that respond to them and are responded to, loadings that
+/// satisfy the identifying restriction, and idiosyncratic noise.
+///
+/// The observed block is generated from the same joint transition the model
+/// assumes rather than independently, so the cross terms are not zero in the
+/// data -- a fixture whose observed factors were independent noise would run the
+/// sampler through every line and leave the one block that distinguishes this
+/// model from a dynamic factor model with nothing to find.
+arma::mat simulate_favar(Lcg &rng, arma::mat &obs)
+{
+    arma::mat state(kFavarNState, kTT, arma::fill::zeros);
+    for (int t = 1; t < kTT; ++t)
+    {
+        for (int j = 0; j < kFavarNState; ++j)
+        {
+            state(j, t) = 0.5 * state(j, t - 1) + rng.normal();
+        }
+        // The coupling: the observed block leans on the previous factors, and
+        // the factors lean back.
+        state(0, t) += 0.25 * state(kDfmN, t - 1);
+        state(kDfmN, t) += 0.30 * state(0, t - 1);
+    }
+
+    // The identifying block is the identity, so the first kDfmN rows carry no
+    // free loading at all; every row after them carries the whole width.
+    arma::mat lambda(kDfmK, kFavarNState, arma::fill::zeros);
+    for (int i = 0; i < kDfmN; ++i)
+    {
+        lambda(i, i) = 1.0;
+    }
+    for (int i = kDfmN; i < kDfmK; ++i)
+    {
+        for (int j = 0; j < kFavarNState; ++j)
+        {
+            lambda(i, j) = 0.5 + 0.1 * static_cast<double>(i + j);
+        }
+    }
+
+    arma::mat x = lambda * state;
+    for (int t = 0; t < kTT; ++t)
+    {
+        for (int i = 0; i < kDfmK; ++i)
+        {
+            x(i, t) += 0.3 * rng.normal();
+        }
+    }
+
+    // The observed half of the state, tt x n_obs -- one period per row, the
+    // layout the file stores and the reader expects.
+    obs = arma::trans(state.rows(kDfmN, kFavarNState - 1));
+    return x;
+}
+
+/// The tree is DfmNormalGamma's with two changes, and both follow from half of
+/// the state being data: `/data/train/f_obs` beside the panel, and a Wishart
+/// `df`/`scale` where the DFM has a gamma `shape`/`rate` on the factor
+/// innovations. The idiosyncratic group is unchanged -- a factor model's
+/// idiosyncratic precision is diagonal in every member of the family.
+void write_favar_normal_wishart(const ModelFile &file, int h, const arma::mat &x,
+                                const arma::mat &obs)
+{
+    write_attribute<std::string>(file, "/model", "algorithm", "FavarNormalWishart");
+    write_attribute<int>(file, "/model", "k", kDfmK);
+    write_attribute<int>(file, "/model", "p", kDfmP);
+    write_attribute<int>(file, "/model", "n_factors", kDfmN);
+    write_attribute<int>(file, "/model", "n_obs_factors", kFavarNObs);
+    write_attribute<int>(file, "/model", "iterations", kIterations);
+    write_attribute<int>(file, "/model", "burnin", kBurnin);
+    write_attribute<std::string>(file, "/model", "varsel", "none");
+    write_attribute<bool>(file, "/model", "structural", false);
+    write_attribute<std::string>(file, "/model", "error", "wishart");
+
+    ensure_group(file, "/data");
+    ensure_group(file, "/data/train");
+    ensure_group(file, "/priors");
+    ensure_group(file, "/priors/lambda");
+    ensure_group(file, "/priors/a");
+    ensure_group(file, "/priors/u_sigma");
+    ensure_group(file, "/priors/v_sigma");
+    ensure_group(file, "/initial");
+
+    // Stored already stacked, one row, the way the other models' response is.
+    write_row(file, "/data/train/y", arma::vectorise(x));
+
+    // The observed factors keep their rectangle: tt x n_obs, one period per row.
+    write_mat(file, "/data/train/f_obs", obs);
+
+    // The free loadings, in the row-major order the sampler draws them -- the
+    // FAVAR count, wider than the DFM's by the observed columns of every row
+    // from n_factors on.
+    write_row(file, "/priors/lambda/mu", arma::vec(kFavarNLambda, arma::fill::zeros));
+    write_mat(file, "/priors/lambda/v_inv",
+              arma::eye<arma::mat>(kFavarNLambda, kFavarNLambda) * 0.01);
+    write_row(file, "/initial/lambda", arma::vec(kFavarNLambda, arma::fill::value(0.5)));
+
+    write_row(file, "/priors/a/mu", arma::vec(kFavarNA, arma::fill::zeros));
+    write_mat(file, "/priors/a/v_inv", arma::eye<arma::mat>(kFavarNA, kFavarNA) * 0.01);
+    write_row(file, "/initial/a", arma::vec(kFavarNA, arma::fill::zeros));
+
+    // Diagonal, and written as the diagonal.
+    write_row(file, "/priors/u_sigma/shape", arma::vec(kDfmK, arma::fill::value(5.0)));
+    write_row(file, "/priors/u_sigma/rate", arma::vec(kDfmK, arma::fill::value(4.0)));
+    write_row(file, "/initial/u_sigma_inv", arma::vec(kDfmK, arma::fill::ones));
+
+    // A matrix, and written as a matrix. This pair is the one a file written
+    // against a dynamic factor model gets wrong.
+    write_int_scalar(file, "/priors/v_sigma/df", kFavarNState + 1);
+    write_mat(file, "/priors/v_sigma/scale", arma::eye<arma::mat>(kFavarNState, kFavarNState));
+    write_mat(file, "/initial/v_sigma_inv", arma::eye<arma::mat>(kFavarNState, kFavarNState));
+
+    // No /data/forecast: the transition is run on from the last states, so the
+    // horizon is the whole of what it needs.
+    if (h > 0)
+    {
+        write_attribute<int>(file, "/model", "h", h);
+    }
+}
+
 /// The same model with the two gamma priors replaced by two stochastic
 /// volatility blocks.
 ///
@@ -1444,10 +1575,11 @@ int main(int argc, char *argv[])
     const bool is_vec = is_vec_model(model);
     const bool is_dfm = model == "DfmNormalGamma" || model == "DfmNormalStochvol" ||
                         model == "DfmTvpGamma" || model == "DfmTvpStochvol";
+    const bool is_favar = model == "FavarNormalWishart";
 
     if (model != "VarNormalWishart" && model != "VarNormalGamma" &&
         model != "VarNormalStochvol" && model != "VarTvpGamma" && model != "VarTvpWishart" &&
-        model != "VarTvpStochvol" && !is_vec && !is_dfm)
+        model != "VarTvpStochvol" && !is_vec && !is_dfm && !is_favar)
     {
         std::cerr << "Unknown model: " << model << '\n';
         return 2;
@@ -1503,6 +1635,20 @@ int main(int argc, char *argv[])
         // One generator for the whole file, so every dataset that draws from it
         // is reproducible as a set rather than individually.
         Lcg rng(20260808ULL);
+
+        if (is_favar)
+        {
+            arma::mat obs;
+            const arma::mat x = simulate_favar(rng, obs);
+            write_favar_normal_wishart(file, h, x, obs);
+
+            std::cout << "wrote " << dest.string() << group_suffix << " (" << model
+                      << ", h=" << h << ", k=" << kDfmK << ", tt=" << kTT
+                      << ", n_factors=" << kDfmN << ", n_obs_factors=" << kFavarNObs
+                      << ", p=" << kDfmP << ", n_lambda=" << kFavarNLambda
+                      << ", n_a=" << kFavarNA << ")\n";
+            return 0;
+        }
 
         if (is_dfm)
         {

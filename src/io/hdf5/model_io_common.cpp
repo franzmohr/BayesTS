@@ -120,6 +120,12 @@ VarSpec read_spec(const ModelFile &file, const char *covar_error)
     // zero there, which is what says "the variables in this model are all
     // observed" rather than "a factor model with no factors".
     spec.n_factors = optional_attribute_int(file, "/model", "n_factors", 0);
+
+    // A factor augmented VAR's observed factors, and absent from every other
+    // file including a dynamic factor model's -- a factor model with none of
+    // them is exactly what a DFM is.
+    spec.n_obs_factors = optional_attribute_int(file, "/model", "n_obs_factors", 0);
+
     spec.varsel = var_selection_from_string(
         optional_attribute_string(file, "/model", "varsel", "none"));
     spec.structural = optional_attribute_bool(file, "/model", "structural", false);

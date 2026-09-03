@@ -11,6 +11,7 @@ std::unique_ptr<BaseModel> create_model(const std::string& model_type) {
 		{"DfmNormalStochvol", []() { return std::make_unique<DfmNormalStochvol>(); }},
 		{"DfmTvpGamma", []() { return std::make_unique<DfmTvpGamma>(); }},
 		{"DfmTvpStochvol", []() { return std::make_unique<DfmTvpStochvol>(); }},
+		{"FavarNormalWishart", []() { return std::make_unique<FavarNormalWishart>(); }},
 		{"VarNormalGamma", []() { return std::make_unique<VarNormalGamma>(); }},
 		{"VarNormalStochvol", []() { return std::make_unique<VarNormalStochvol>(); }},
 		{"VarNormalWishart", []() { return std::make_unique<VarNormalWishart>(); }},

@@ -267,6 +267,19 @@ public:
     void log_likelihood(const ModelLocation &location_arg) override;
 };
 
+class FavarNormalWishart : public BaseModel
+{
+private:
+    // Where the model is: file plus the group its tree hangs under
+    ModelLocation location;
+public:
+    FavarNormalWishart();
+    ~FavarNormalWishart() override;
+    void draw_coefficients(const ModelLocation &location_arg) override;
+    void forecast(const ModelLocation &location_arg) override;
+    void log_likelihood(const ModelLocation &location_arg) override;
+};
+
 // Factory function to create models based on type string
 std::unique_ptr<BaseModel> create_model(const std::string& model_type);
 
