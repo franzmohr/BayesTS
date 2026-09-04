@@ -22,6 +22,12 @@ std::string optional_attribute_string(const ModelFile &file, const std::string &
     return attribute_exists(file, group, name) ? get_attribute_string(file, group, name) : fallback;
 }
 
+double optional_attribute_double(const ModelFile &file, const std::string &group,
+                                 const std::string &name, double fallback)
+{
+    return attribute_exists(file, group, name) ? get_attribute_double(file, group, name) : fallback;
+}
+
 bool optional_attribute_bool(const ModelFile &file, const std::string &group,
                              const std::string &name, bool fallback)
 {
@@ -104,6 +110,11 @@ VarSpec read_spec(const ModelFile &file, const char *covar_error)
     spec.m = optional_attribute_int(file, "/model", "m", 0);
     spec.s = optional_attribute_int(file, "/model", "s", 0);
     spec.h = optional_attribute_int(file, "/model", "h", 0);
+
+    // Absent from every file but a quantile regression model's, and left at the
+    // median there, which is the value at which the asymmetric Laplace is
+    // symmetric and the model is the one every other sampler here already is.
+    spec.quantile = optional_attribute_double(file, "/model", "quantile", 0.5);
 
     // Deterministic terms entering outside the cointegration space, under the one
     // name every model uses for them. A VEC's terms restricted to that space are

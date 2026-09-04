@@ -98,9 +98,11 @@ Two rules that break the host silently rather than here:
 
 ### Model taxonomy
 
-Eighteen registered algorithms. Six VARs × {`NormalWishart`, `NormalGamma`,
+Twenty registered algorithms. Six VARs × {`NormalWishart`, `NormalGamma`,
 `NormalStochvol`, `TvpWishart`, `TvpGamma`, `TvpStochvol`}, the same six as VECs,
-plus `VecKlgs2010`, four DFMs — `DfmNormalGamma`, `DfmNormalStochvol`,
+plus two quantile VARs — `VarNormalAld` and `VarTvpAld`, which add `Ald` to the
+error axis rather than a fourth axis, since the asymmetric Laplace *is* the error
+distribution — plus `VecKlgs2010`, four DFMs — `DfmNormalGamma`, `DfmNormalStochvol`,
 `DfmTvpGamma` and `DfmTvpStochvol`, which is the same 2×2 of coefficients against
 errors the VAR and VEC rows have, minus the Wishart column a *dynamic factor
 model* cannot use — and `FavarNormalWishart`. `Normal` vs `Tvp` names the
@@ -158,7 +160,17 @@ layout, not the differenced one `/data/train/z` uses.
 Combinations the samplers **reject** rather than silently ignore: SSVS with
 stochastic volatility or time-varying parameters; selection on a VEC's loadings;
 `structural` with a Wishart precision or a covariance block; any selection scheme
-on `VecKlgs2010`.
+on `VecKlgs2010`; a covariance block or a non-zero horizon on either `*Ald`
+model, and a quantile outside (0, 1).
+
+The two `Ald` refusals are the ones most likely to look like missing features.
+A covariance block would rotate the equations into each other, and the q-th
+quantile of a combination of equations is not the combination of their q-th
+quantiles — so the file would still be named for a quantile while the numbers
+were not one. A forecast would have to iterate a one-step quantile, and the h
+step quantile is not that either. `validate_ald_spec()` in `src/core/inputs.cpp`
+holds both, so a file carrying either is refused before a chain is spent on it,
+and `forecast()` throws if it is somehow reached.
 
 ## Adding a model
 

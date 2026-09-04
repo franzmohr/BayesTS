@@ -48,8 +48,10 @@ add_executable(bayests_unit_forecast_lags unit_forecast_lags.cpp)
 add_executable(bayests_unit_stochvol unit_stochvol.cpp)
 add_executable(bayests_unit_kalman unit_kalman.cpp)
 add_executable(bayests_unit_chan_jeliazkov unit_chan_jeliazkov.cpp)
+add_executable(bayests_unit_inverse_gaussian unit_inverse_gaussian.cpp)
 
-foreach(_unit bayests_unit_vec_to_var bayests_unit_forecast_lags bayests_unit_stochvol bayests_unit_kalman bayests_unit_chan_jeliazkov)
+foreach(_unit bayests_unit_vec_to_var bayests_unit_forecast_lags bayests_unit_stochvol bayests_unit_kalman bayests_unit_chan_jeliazkov
+              bayests_unit_inverse_gaussian)
     target_link_libraries(${_unit} PRIVATE bayests_algorithms)
     target_link_libraries(${_unit} PRIVATE bayests_warnings)
 
@@ -74,10 +76,12 @@ add_executable(bayests_unit_dfm_normal_stochvol unit_dfm_normal_stochvol.cpp)
 add_executable(bayests_unit_dfm_tvp_gamma unit_dfm_tvp_gamma.cpp)
 add_executable(bayests_unit_dfm_tvp_stochvol unit_dfm_tvp_stochvol.cpp)
 add_executable(bayests_unit_favar_normal_wishart unit_favar_normal_wishart.cpp)
+add_executable(bayests_unit_var_ald unit_var_ald.cpp)
 
 foreach(_core_unit bayests_unit_identification bayests_unit_vec_klgs_2010
                    bayests_unit_dfm_normal_gamma bayests_unit_dfm_normal_stochvol
                    bayests_unit_dfm_tvp_gamma bayests_unit_dfm_tvp_stochvol
+                   bayests_unit_var_ald
                    bayests_unit_favar_normal_wishart)
     target_link_libraries(${_core_unit} PRIVATE bayests_core)
     target_link_libraries(${_core_unit} PRIVATE bayests_warnings)
@@ -185,9 +189,9 @@ endif()
 # The unit tests, which need only the shared libraries on the path: no fixture
 # to set up, and no thread pinning, since an exact identity does not care how
 # many threads computed it.
-foreach(_unit vec_to_var forecast_lags stochvol kalman chan_jeliazkov identification
+foreach(_unit vec_to_var forecast_lags stochvol kalman chan_jeliazkov inverse_gaussian identification
               vec_klgs_2010 dfm_normal_gamma dfm_normal_stochvol dfm_tvp_gamma
-              dfm_tvp_stochvol favar_normal_wishart model_group)
+              dfm_tvp_stochvol favar_normal_wishart var_ald model_group)
     add_test(NAME "unit.${_unit}" COMMAND "bayests_unit_${_unit}")
     set_tests_properties("unit.${_unit}" PROPERTIES
         ENVIRONMENT_MODIFICATION "${_bayests_test_env_mod}")
@@ -286,6 +290,20 @@ bayests_add_model_fixture(VarTvpGamma-bvs-covar  VarTvpGamma bvs  1 0 4)
 bayests_add_model_fixture(VarTvpWishart-plain      VarTvpWishart none 0 0 4)
 bayests_add_model_fixture(VarTvpWishart-bvs        VarTvpWishart bvs  0 0 4)
 bayests_add_model_fixture(VarTvpWishart-nofcst     VarTvpWishart none 0 0 0)
+
+# The quantile models. Six rows rather than the twelve their stochastic
+# volatility counterparts get, because two of the usual axes are closed to them:
+# a covariance block rotates the equations into each other and leaves a residual
+# whose quantile is not the one asked for, and there is no forecast to ask for at
+# all -- the h step quantile is not the quantile of the iterated one step
+# quantiles, so validate() rejects a horizon and every row below passes zero.
+# Both refusals are in validate_ald_spec() in src/core/inputs.cpp.
+bayests_add_model_fixture(VarNormalAld-plain      VarNormalAld none 0 0 0)
+bayests_add_model_fixture(VarNormalAld-bvs        VarNormalAld bvs  0 0 0)
+bayests_add_model_fixture(VarNormalAld-structural VarNormalAld none 0 1 0)
+bayests_add_model_fixture(VarTvpAld-plain         VarTvpAld    none 0 0 0)
+bayests_add_model_fixture(VarTvpAld-bvs           VarTvpAld    bvs  0 0 0)
+bayests_add_model_fixture(VarTvpAld-structural    VarTvpAld    none 0 1 0)
 
 bayests_add_model_fixture(VarTvpStochvol-plain      VarTvpStochvol none 0 0 4)
 bayests_add_model_fixture(VarTvpStochvol-bvs        VarTvpStochvol bvs  0 0 4)

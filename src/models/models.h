@@ -57,6 +57,19 @@ public:
 };
 
 
+class VarNormalAld : public BaseModel
+{
+private:
+    // Where the model is: file plus the group its tree hangs under
+    ModelLocation location;
+public:
+    VarNormalAld();
+    ~VarNormalAld() override;
+    void draw_coefficients(const ModelLocation &location_arg) override;
+    void forecast(const ModelLocation &location_arg) override;
+    void log_likelihood(const ModelLocation &location_arg) override;
+};
+
 class VarNormalStochvol : public BaseModel
 {
 private:
@@ -106,6 +119,19 @@ private:
 public:
     VarTvpWishart();
     ~VarTvpWishart() override;
+    void draw_coefficients(const ModelLocation &location_arg) override;
+    void forecast(const ModelLocation &location_arg) override;
+    void log_likelihood(const ModelLocation &location_arg) override;
+};
+
+class VarTvpAld : public BaseModel
+{
+private:
+    // Where the model is: file plus the group its tree hangs under
+    ModelLocation location;
+public:
+    VarTvpAld();
+    ~VarTvpAld() override;
     void draw_coefficients(const ModelLocation &location_arg) override;
     void forecast(const ModelLocation &location_arg) override;
     void log_likelihood(const ModelLocation &location_arg) override;

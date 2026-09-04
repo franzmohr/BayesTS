@@ -78,6 +78,7 @@ constexpr const char *kOutputs[] = {
     "/posterior/psi/coeffs",
     "/posterior/psi/lambda",
     "/posterior/psi/sigma",
+    "/posterior/u_scale/coeffs",
     "/posterior/u_omega_inv/coeffs",
     "/posterior/u_sigma_inv/coeffs",
     "/posterior/loglik",

@@ -23,6 +23,8 @@ std::string optional_attribute_string(const ModelFile &file, const std::string &
                                       const std::string &name, const std::string &fallback);
 bool optional_attribute_bool(const ModelFile &file, const std::string &group,
                              const std::string &name, bool fallback);
+double optional_attribute_double(const ModelFile &file, const std::string &group,
+                                 const std::string &name, double fallback);
 
 arma::vec read_vec(const ModelFile &file, const std::string &dataset);
 arma::mat read_mat(const ModelFile &file, const std::string &dataset);

@@ -305,6 +305,18 @@ void write_common(const ModelFile &file, const std::string &model, const std::st
     {
         prefix = "wishart";
     }
+    else if (model == "VarNormalAld" || model == "VarTvpAld")
+    {
+        // Written so the file describes itself, though the reader never consults
+        // it: a quantile model has no covariance block, so read_spec is handed a
+        // null expectation and the attribute has nothing to switch on.
+        prefix = "ald";
+
+        // The quantile the model is estimated at. Off the median, so that a
+        // fixture whose skew term had been dropped somewhere would move rather
+        // than staying put -- at 0.5 theta is zero and the omission is invisible.
+        write_attribute<double>(file, "/model", "quantile", 0.25);
+    }
     write_attribute<std::string>(file, "/model", "error",
                                  (covar && prefix != "wishart") ? prefix + "+covar" : prefix);
 
@@ -520,6 +532,51 @@ void write_tvp_coefficients(const ModelFile &file, const std::string &varsel, ar
         write_row(file, "/initial/a_lambda", arma::vec(nparams, arma::fill::ones));
         write_selection(file, "/priors/a", nparams);
     }
+}
+
+
+/// A VAR estimated at a conditional quantile.
+///
+/// The coefficient block is VarNormalStochvol's; what replaces the stochastic
+/// volatility group is a single inverse gamma on the scale of the asymmetric
+/// Laplace, plus the latent scales the mixture is over. Those start at one --
+/// the mean of an Exp(1) -- rather than at zero, because they are a variance the
+/// first coefficient draw is weighted by and a zero would divide by nothing.
+void write_var_normal_ald(const ModelFile &file, const std::string &varsel, const Layout &layout)
+{
+    const arma::uword nparams = static_cast<arma::uword>(layout.nparams);
+
+    write_row(file, "/priors/a/mu", arma::vec(nparams, arma::fill::zeros));
+    write_mat(file, "/priors/a/v_inv", arma::eye<arma::mat>(nparams, nparams));
+    write_row(file, "/initial/a", arma::vec(nparams, arma::fill::zeros));
+
+    ensure_group(file, "/priors/u_scale");
+    write_row(file, "/priors/u_scale/shape", arma::vec(kK, arma::fill::value(3.0)));
+    write_row(file, "/priors/u_scale/rate", arma::vec(kK, arma::fill::value(0.2)));
+
+    write_mat(file, "/initial/w", arma::mat(kTT, kK, arma::fill::ones));
+    write_row(file, "/initial/u_scale", arma::vec(kK, arma::fill::ones));
+
+    if (varsel != "none")
+    {
+        write_row(file, "/initial/a_lambda", arma::vec(nparams, arma::fill::ones));
+        write_selection(file, "/priors/a", nparams);
+    }
+}
+
+/// The same model with the coefficients turned into a path.
+void write_var_tvp_ald(const ModelFile &file, const std::string &varsel, const Layout &layout)
+{
+    const arma::uword nparams = static_cast<arma::uword>(layout.nparams);
+
+    write_tvp_coefficients(file, varsel, nparams);
+
+    ensure_group(file, "/priors/u_scale");
+    write_row(file, "/priors/u_scale/shape", arma::vec(kK, arma::fill::value(3.0)));
+    write_row(file, "/priors/u_scale/rate", arma::vec(kK, arma::fill::value(0.2)));
+
+    write_mat(file, "/initial/w", arma::mat(kTT, kK, arma::fill::ones));
+    write_row(file, "/initial/u_scale", arma::vec(kK, arma::fill::ones));
 }
 
 void write_var_tvp_wishart(const ModelFile &file, const std::string &varsel, const Layout &layout)
@@ -1577,9 +1634,11 @@ int main(int argc, char *argv[])
                         model == "DfmTvpGamma" || model == "DfmTvpStochvol";
     const bool is_favar = model == "FavarNormalWishart";
 
+    const bool is_ald = model == "VarNormalAld" || model == "VarTvpAld";
+
     if (model != "VarNormalWishart" && model != "VarNormalGamma" &&
         model != "VarNormalStochvol" && model != "VarTvpGamma" && model != "VarTvpWishart" &&
-        model != "VarTvpStochvol" && !is_vec && !is_dfm && !is_favar)
+        model != "VarTvpStochvol" && !is_vec && !is_dfm && !is_favar && !is_ald)
     {
         std::cerr << "Unknown model: " << model << '\n';
         return 2;
@@ -1589,6 +1648,15 @@ int main(int argc, char *argv[])
         std::cerr << "A dynamic factor model takes no variable selection, no covariance block "
                      "and no contemporaneous coefficients: see validate_dfm_shape() in "
                      "src/core/inputs.cpp\n";
+        return 2;
+    }
+    if (is_ald && (covar || h != 0))
+    {
+        std::cerr << "A quantile regression model takes no covariance block -- rotating the "
+                     "equations into each other leaves a residual whose quantile is not the one "
+                     "asked for -- and no forecast horizon, because the h step quantile is not "
+                     "the quantile of the iterated one step quantiles: see validate_ald_spec() "
+                     "in src/core/inputs.cpp\n";
         return 2;
     }
     if (varsel != "none" && varsel != "ssvs" && varsel != "bvs")
@@ -1714,6 +1782,14 @@ int main(int argc, char *argv[])
         else if (model == "VarNormalStochvol")
         {
             write_var_normal_stochvol(file, varsel, covar, layout);
+        }
+        else if (model == "VarNormalAld")
+        {
+            write_var_normal_ald(file, varsel, layout);
+        }
+        else if (model == "VarTvpAld")
+        {
+            write_var_tvp_ald(file, varsel, layout);
         }
         else if (model == "VarTvpWishart")
         {

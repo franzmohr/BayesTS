@@ -26,6 +26,87 @@ Dates are ISO. Versions follow the `project(VERSION)` in `CMakeLists.txt`.
 
 ### Added
 
+* **`VarNormalAld` and `VarTvpAld`**, Bayesian quantile VARs -- the nineteenth
+  and twentieth registered algorithms, and the first models here that estimate a
+  conditional *quantile* rather than a conditional mean.
+
+  **Draws are unchanged** for every existing model. Verified with the fingerprint
+  comparison in CONTRIBUTING.md over the whole suite: 78 fixtures recorded before
+  and after, 78 unchanged and none moved. (The raw comparison reports all 78 as
+  moved, because `test/golden_models.cpp` gained one row -- the new
+  `/posterior/u_scale/coeffs`, recorded as `absent` for every model that does not
+  write it. With that row filtered out the two recordings are identical.)
+
+  Minimising the quantile loss at `q` is maximising the likelihood of an
+  asymmetric Laplace distribution, and that distribution is a scale mixture of
+  normals. With `theta = (1 - 2q) / (q(1 - q))` and `tau2 = 2 / (q(1 - q))`,
+
+  ```
+  y_it = x_t' a_i + theta w_it + e_it,   e_it ~ N(0, tau2 s_i w_it),
+  w_it ~ Exp(1 / s_i),
+  ```
+
+  has its `q`-th conditional quantile at `x_t' a_i`. Conditional on the latent
+  scales `w` that is an ordinary weighted normal regression, which is why these
+  are the stochastic volatility samplers with a different rule for where the
+  per-period variance comes from rather than a new kind of model: the coefficient
+  block is `var_normal_stochvol.cpp`'s and `var_tvp_stochvol.cpp`'s unchanged,
+  fed `1 / (tau2 s_i w_it)` instead of `exp(-h_it)` and a response carrying the
+  offset `theta w_it`.
+
+  The quantile is a new `/model` attribute, `quantile`, and a new `double` field
+  on `VarSpec` -- its first non-integer member. One file is one quantile; a grid
+  of them is a list of models, which is how a quantile grid parallelises.
+
+  New: `src/core/algorithms/inverse_gaussian.cpp`, the draw the latent scales
+  need (their conditional is generalised inverse Gaussian at index 1/2, which is
+  the reciprocal of an inverse Gaussian), and `src/core/models/ald_support.h`,
+  which holds the two blocks and the density. `optional_attribute_double()` is
+  new in `src/io/hdf5/model_io_common.h`; there had been no double-valued
+  attribute before.
+
+  **Three things these models do not have, each on purpose.**
+
+  *No covariance block.* `Psi` is a triangular rotation of the errors, and
+  conditional on `w` the equations are independent. Rotating them is exactly what
+  stops the estimand being a quantile: the rotated residual is a combination of
+  equations, and the `q`-th quantile of a combination is not the combination of
+  `q`-th quantiles. `validate()` rejects `covar`.
+
+  *No forecast.* The `h` step quantile is not the quantile of the iterated one
+  step quantiles, so there is no path to simulate that could be read as one.
+  `validate()` rejects a non-zero horizon -- so the file is refused before a chain
+  is spent on it -- and `forecast()` throws with the reason if it is reached
+  anyway. These are the only two models here that do not forecast.
+
+  *No calibrated intervals.* The asymmetric Laplace is a working likelihood, not
+  a claim about the data. The posterior locates the quantile, but its spread
+  needs the sandwich adjustment of Yang, Wang and He (2016), which is not
+  applied. Read the spread as a diagnostic rather than as a credible interval.
+  This is stated in the class comments, the README and here, because it is a
+  property of the estimator that a user cannot see in the output.
+
+  Structural models *are* allowed: contemporaneous terms are regressors like any
+  other, and adding them to an equation leaves its quantile reading intact. BVS
+  is available; SSVS is not, as for the stochastic volatility models.
+
+  Tested by `test/unit_var_ald.cpp` -- the first unit test of a VAR sampler here,
+  because these two are the first whose failure mode is silent. A quantile model
+  that has lost its skew term estimates the median instead and passes every smoke
+  test there is, so the test checks the property that defines the estimand: the
+  share of fitted residuals below zero is `q`. It comes out at 0.2500, 0.5000 and
+  0.8050 for `q` of 0.25, 0.5 and 0.8. `test/unit_inverse_gaussian.cpp` covers the
+  new draw against its first two moments and the reciprocal identity the caller
+  relies on.
+
+  Kozumi, H., & Kobayashi, G. (2011). Gibbs sampling methods for Bayesian
+  quantile regression. *Journal of Statistical Computation and Simulation,
+  81*(11), 1565-1578.
+
+  Yang, Y., Wang, H. J., & He, X. (2016). Posterior inference in Bayesian
+  quantile regression with asymmetric Laplace likelihood. *International
+  Statistical Review, 84*(3), 327-344.
+
 * **`FavarNormalWishart`**, a factor augmented VAR — the eighteenth registered
   algorithm, and the first model here whose state vector is part data.
 

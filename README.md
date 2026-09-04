@@ -38,9 +38,9 @@ Requires a C++20 compiler and Fortran (for LAPACK). Built on
 ## Models
 
 The `/model/algorithm` attribute in the model file selects the sampler; it is
-the only thing that decides which one runs. Eighteen are registered — six VARs,
-the same six as VECs, one alternative implementation of a VEC, four dynamic
-factor models and one factor augmented VAR:
+the only thing that decides which one runs. Twenty are registered — eight VARs,
+six VECs, one alternative implementation of a VEC, four dynamic factor models and
+one factor augmented VAR:
 
 | `algorithm` | Coefficients | Error precision | Variable selection |
 | --- | --- | --- | --- |
@@ -50,6 +50,8 @@ factor models and one factor augmented VAR:
 | `VarTvpWishart` | Random walk | Wishart | BVS |
 | `VarTvpGamma` | Random walk | Independent gamma, optional time-varying covariance block | BVS |
 | `VarTvpStochvol` | Random walk | Stochastic volatility, optional time-varying covariance block | BVS |
+| `VarNormalAld` | Constant, normal prior | Asymmetric Laplace at a chosen quantile; no covariance block | BVS |
+| `VarTvpAld` | Random walk | Asymmetric Laplace at a chosen quantile; no covariance block | BVS |
 | `VecNormalWishart` | Constant, normal prior; cointegration space prior on beta | Wishart | SSVS, BVS |
 | `VecNormalGamma` | Constant, normal prior; cointegration space prior on beta | Independent gamma, optional constant covariance block | SSVS, BVS |
 | `VecNormalStochvol` | Constant, normal prior; cointegration space prior on beta | Stochastic volatility, optional covariance block | BVS |
@@ -63,13 +65,32 @@ factor models and one factor augmented VAR:
 | `DfmTvpStochvol` | Random walk, the free loadings and the factor transition both | Stochastic volatility, on the idiosyncratic errors and the factor innovations | none |
 | `FavarNormalWishart` | Constant, normal prior on the loadings and on the state transition | Wishart on the state innovations; independent gamma on the idiosyncratic errors | none |
 
-The twelve VARs and VECs support exogenous regressors, deterministic terms,
-forecasting and a pointwise log likelihood laid out for WAIC and PSIS-LOO. Eight
-of them also take a structural (contemporaneous-coefficient) form: the four
-Wishart models leave the error covariance unrestricted, which leaves `A_0`
-unidentified, so they refuse it — see the structural paragraph at the end of this
-section. `VecKlgs2010`, the four `Dfm*` entries and `FavarNormalWishart` are the exceptions to the
-rest, each in its own way — see below.
+The fourteen VARs and VECs support exogenous regressors, deterministic terms and
+a pointwise log likelihood laid out for WAIC and PSIS-LOO. All but the two
+`*Ald` entries also forecast; those two refuse, for the reason below. Ten of them
+take a structural (contemporaneous-coefficient) form: the four Wishart models
+leave the error covariance unrestricted, which leaves `A_0` unidentified, so they
+refuse it — see the structural paragraph at the end of this section.
+`VecKlgs2010`, the four `Dfm*` entries and `FavarNormalWishart` are the exceptions
+to the rest, each in its own way — see below.
+
+**The two `*Ald` entries estimate a conditional quantile rather than a
+conditional mean.** Minimising the quantile loss at `q` is maximising the
+likelihood of an asymmetric Laplace distribution, and that distribution is a
+scale mixture of normals — so with a latent scale per observation the model is,
+conditionally, the weighted normal regression every other row here already is.
+The quantile is a `/model` attribute; one file is one quantile, and a grid of
+them is a list of models.
+
+Three things they do not have, each on purpose. There is **no covariance block**:
+`Psi` rotates the equations into each other, and the `q`-th quantile of a
+combination of equations is not the combination of their `q`-th quantiles. There
+is **no forecast**: the `h` step quantile is not the quantile of the iterated one
+step quantiles, so a horizon is refused rather than answered with a path that
+cannot be read as one. And the intervals are **not calibrated** — the asymmetric
+Laplace is a working likelihood rather than a claim about the data, so the
+posterior locates the quantile but its spread needs the adjustment of Yang, Wang
+and He (2016), which is not applied. Read the spread as a diagnostic.
 
 `VecKlgs2010` is the one entry that is not a model of its own. It is
 `VecNormalWishart` — the cointegration sampler of Koop, León-González and

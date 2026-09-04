@@ -2,6 +2,7 @@
 
 add_library(bayests_algorithms
             chan_jeliazkov_2009.cpp chan_jeliazkov_2009.h
+            inverse_gaussian.cpp inverse_gaussian.h
             kalman_durbin_koopman_2002.cpp kalman_durbin_koopman_2002.h
             stochvol_ksc_1998.cpp stochvol_ksc_1998.h
             stochvol_ocsn_2007.cpp stochvol_ocsn_2007.h

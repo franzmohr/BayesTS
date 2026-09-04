@@ -22,10 +22,12 @@ add_library(bayests_core
             models/favar_support.h
             models/favar_normal_wishart.cpp
             models/var_normal_gamma.cpp
+            models/var_normal_ald.cpp
             models/var_normal_stochvol.cpp
             models/var_normal_wishart.cpp
             models/var_tvp_gamma.cpp
             models/var_tvp_wishart.cpp
+            models/var_tvp_ald.cpp
             models/var_tvp_stochvol.cpp
             models/vec_support.h
             models/vec_klgs_2010.cpp
