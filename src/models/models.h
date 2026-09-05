@@ -33,7 +33,20 @@ struct ModelLocation
     }
 };
 
-// Base class for all models
+/// Base class for all models.
+///
+/// **A stage that cannot do what it was asked throws.** These three used to
+/// catch everything and print to stderr, which left the caller unable to tell a
+/// rejected model file from a fitted one: `bayests` exited 0 either way, and
+/// the only trace was the absent datasets. The subcommands in src/ catch
+/// instead, report the location with the reason, and return 1 -- the exit code
+/// README and CLAUDE.md have always documented for a run that started and
+/// failed. On a directory walk the walk continues and the status is still 1.
+///
+/// Having nothing to do is not failing, and does not throw: output that is
+/// already present, and a forecast with no horizon to run -- see the front-ends
+/// for both. A quantile model's forecast() is the same case, since validate()
+/// refuses it a horizon in the first place.
 class BaseModel
 {
 public:

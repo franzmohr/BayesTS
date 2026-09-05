@@ -16,6 +16,7 @@
 #include "reporters/console_reporter.h"
 
 #include <iostream>
+#include <stdexcept>
 
 namespace
 {
@@ -39,27 +40,20 @@ void VarTvpWishart::draw_coefficients(const ModelLocation &location_arg)
     HighFive::File h5 = open_hdf5_file_readwrite(location.file);
     const ModelFile file(h5, location.group);
 
-    try
+    // Check if posterior data already exists
+    if (dataset_has_data(file, "/posterior/u_sigma_inv/coeffs"))
     {
-        // Check if posterior data already exists
-        if (dataset_has_data(file, "/posterior/u_sigma_inv/coeffs"))
-        {
-            std::cout << "Posterior data already exists in file. Skipping simulation." << std::endl;
-            return;
-        }
-
-        const bayests::VarTvpWishartInput input = io::read_input(file);
-
-        bayests::ConsoleReporter reporter;
-        const bayests::VarTvpWishartDraws draws =
-            bayests::VarTvpWishartSampler{}.draw_coefficients(input, reporter);
-
-        io::write_coefficients(file, draws);
+        std::cout << "Posterior data already exists in file. Skipping simulation." << std::endl;
+        return;
     }
-    catch (const std::exception &e)
-    {
-        std::cerr << e.what() << '\n';
-    }
+
+    const bayests::VarTvpWishartInput input = io::read_input(file);
+
+    bayests::ConsoleReporter reporter;
+    const bayests::VarTvpWishartDraws draws =
+        bayests::VarTvpWishartSampler{}.draw_coefficients(input, reporter);
+
+    io::write_coefficients(file, draws);
 }
 
 void VarTvpWishart::forecast(const ModelLocation &location_arg)
@@ -71,44 +65,38 @@ void VarTvpWishart::forecast(const ModelLocation &location_arg)
     HighFive::File h5 = open_hdf5_file_readwrite(location.file);
     const ModelFile file(h5, location.group);
 
-    try
+    if (!dataset_has_data(file, "/posterior/u_sigma_inv/coeffs"))
     {
-        if (!dataset_has_data(file, "/posterior/u_sigma_inv/coeffs"))
-        {
-            std::cerr << "Error processing " << location.describe() << ": Posterior draws of u_sigma_inv are missing." << std::endl;
-            return;
-        }
-
-        // Stop if h (the forecast horizon) does not exist
-        if (!attribute_exists(file, "/model", "h"))
-        {
-            std::cerr << "Error processing " << location.describe() << ": Forecast horizon h is missing." << std::endl;
-            return;
-        }
-
-        // Stop if forecasts are already available in the obeject
-        if (dataset_has_data(file, "/posterior/forecast"))
-        {
-            std::cerr << "Error processing " << location.describe() << ": Forecasts are already available." << std::endl;
-            return;
-        }
-
-        const bayests::VarTvpWishartInput input = io::read_input(file);
-
-        // Both the coefficients and the precision move with time, so the
-        // forecast starts from the last in-sample period of each.
-        const bayests::VarTvpWishartDraws draws = io::read_forecast_coefficients(file, input);
-
-        bayests::NullReporter reporter;
-        const bayests::ForecastDraws fcst =
-            bayests::VarTvpWishartSampler{}.forecast(input, draws, reporter);
-
-        bayests::hdf5_io::write_forecast(file, fcst);
+        throw std::runtime_error("Posterior draws of u_sigma_inv are missing.");
     }
-    catch (const std::exception &e)
+
+    // No horizon, so no forecast was asked for: a skip, not a failure. A file
+    // written with h = 0 carries no attribute at all, which is what every
+    // -nofcst fixture looks like. Five of these front-ends used to print
+    // "Error processing ..." here and the other thirteen returned in silence;
+    // all eighteen are silent now, because none of them has failed.
+    if (!attribute_exists(file, "/model", "h"))
     {
-        std::cerr << e.what() << '\n';
+        return;
     }
+
+    // Stop if forecasts are already available in the object
+    if (dataset_has_data(file, "/posterior/forecast"))
+    {
+        return;
+    }
+
+    const bayests::VarTvpWishartInput input = io::read_input(file);
+
+    // Both the coefficients and the precision move with time, so the
+    // forecast starts from the last in-sample period of each.
+    const bayests::VarTvpWishartDraws draws = io::read_forecast_coefficients(file, input);
+
+    bayests::NullReporter reporter;
+    const bayests::ForecastDraws fcst =
+        bayests::VarTvpWishartSampler{}.forecast(input, draws, reporter);
+
+    bayests::hdf5_io::write_forecast(file, fcst);
 }
 
 void VarTvpWishart::log_likelihood(const ModelLocation &location_arg)
@@ -120,30 +108,22 @@ void VarTvpWishart::log_likelihood(const ModelLocation &location_arg)
     HighFive::File h5 = open_hdf5_file_readwrite(location.file);
     const ModelFile file(h5, location.group);
 
-    try
+    // Stop if the log likelihood is already available
+    if (dataset_has_data(file, "/posterior/loglik"))
     {
-        // Stop of log likelihood is already available
-        if (dataset_has_data(file, "/posterior/loglik"))
-        {
-            return;
-        }
-
-        if (!dataset_has_data(file, "/posterior/u_sigma_inv/coeffs"))
-        {
-            std::cerr << "Error processing " << location.describe() << ": Posterior draws of u_sigma_inv are missing." << std::endl;
-            return;
-        }
-
-        const bayests::VarTvpWishartInput input = io::read_input(file);
-        const bayests::VarTvpWishartDraws draws = io::read_loglik_coefficients(file, input);
-
-        const arma::mat loglik =
-            bayests::VarTvpWishartSampler{}.log_likelihood(input, draws);
-
-        bayests::hdf5_io::write_log_likelihood(file, loglik);
+        return;
     }
-    catch (const std::exception &e)
+
+    if (!dataset_has_data(file, "/posterior/u_sigma_inv/coeffs"))
     {
-        std::cerr << e.what() << '\n';
+        throw std::runtime_error("Posterior draws of u_sigma_inv are missing.");
     }
+
+    const bayests::VarTvpWishartInput input = io::read_input(file);
+    const bayests::VarTvpWishartDraws draws = io::read_loglik_coefficients(file, input);
+
+    const arma::mat loglik =
+        bayests::VarTvpWishartSampler{}.log_likelihood(input, draws);
+
+    bayests::hdf5_io::write_log_likelihood(file, loglik);
 }

@@ -346,7 +346,12 @@ they are the way to add a result to a model that has been sampled once, without
 re-running the sampler.
 
 The program reports its thread counts on startup and exits 1 on a bad path, a
-non-HDF5 file, or an unknown `algorithm`. In directory mode a file that fails is
+non-HDF5 file, an unknown `algorithm`, or a run that started and could not
+finish — a model file the sampler rejects, or a `forecasts` or `loglik` asked
+for before the coefficients have been drawn. Having nothing to do is not
+failing and exits 0: output that is already there, and a forecast on a model
+with no horizon, the two quantile models included. In directory mode a file
+that fails is
 reported on `stderr` and the walk continues to the next one, but the exit status
 is 1 if any file failed — so a script driving a directory of models can tell
 whether everything in it was processed.
@@ -398,10 +403,12 @@ Python or C should expect the dataspace orientation, not R's.
 Variable-selection positions are stored **one-based**, the way R and the file
 format count, and converted on read. The `error` attribute is what turns the
 covariance block on, and the spelling that does it is model-specific:
-`gamma+covar` for the gamma models and `sv+covar` for stochastic volatility. The
-value `VarTvpWishart` and `VecTvpWishart` compare against is `wishart`, but
-neither carries a psi block — their covariance is the Wishart precision alone —
-so on those two the attribute turns nothing on and is there for symmetry.
+`gamma+covar` for the gamma models and `sv+covar` for stochastic volatility. Those
+two are the only values that switch anything on. A model with no psi block —
+the Wishart family, whose covariance is the Wishart precision alone, the two
+quantile models, `VecKlgs2010` and the factor models — has its reader compare
+against no spelling at all, so there the attribute describes the file without
+being read back.
 
 ## Building from source
 
@@ -604,7 +611,7 @@ test/diff_fingerprints.sh test/baselines/before.txt test/baselines/after.txt
 differ between two runs of an unchanged build. `diff_fingerprints.sh` then
 reports which *fixtures* moved, and prints one fixture's lines when given its
 name as a third argument. Prefer it to a plain `diff`: a recording of the full
-suite is around 90 KB and the `-V` run behind it close to 900 KB, so a change to
+suite is around 115 KB and the `-V` run behind it close to 1.1 MB, so a change to
 a shared algorithm produces a line diff longer than anyone reads, while the list
 of fixtures it moved is short and is what says whether the blast radius matches
 the intent.
@@ -616,7 +623,7 @@ for the change they precede — a baseline recorded before a *build flag* change
 still diffs cleanly enough to look meaningful, which makes a stale one worse
 than none.
 
-**Coverage.** All eighteen samplers are covered from a clean clone:
+**Coverage.** All twenty samplers are covered from a clean clone:
 `test/make_model_fixture.cpp` writes a model file for every one of them, and the
 suite depends on no data outside the repository.
 

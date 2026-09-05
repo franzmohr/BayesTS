@@ -1003,6 +1003,46 @@ Dates are ISO. Versions follow the `project(VERSION)` in `CMakeLists.txt`.
 
 ### Changed
 
+* **The sampler and test counts in the three documentation files are brought
+  back to the code.** Documentation and comments only — no sampler, no header
+  and no I/O code was touched, so draws are unchanged by construction. `ctest`
+  is 183/183 and a clean rebuild is warning-free after the change.
+
+  * "All eighteen samplers are covered from a clean clone" predated
+    `VarNormalAld` and `VarTvpAld`; it is twenty, which is what
+    `src/models/model_factory.cpp` registers and what the distinct model column
+    of `test/CMakeLists.txt`'s `bayests_add_model_fixture` calls covers.
+    `CLAUDE.md` had it both ways, "eighteen" in the build section against
+    "Twenty registered algorithms" in the taxonomy. Corrected in `CLAUDE.md`,
+    `CONTRIBUTING.md` and `README.md`.
+  * The suite is 183 tests from a clean clone, not 169: fifteen `unit.*` and
+    eighty-four `fixture.*`/`golden.*` pairs. The sizes quoted beside it had
+    drifted with it — `ctest -V` is about 1.1 MB and a `record_fingerprints.sh`
+    reduction of it about 115 KB (1344 fingerprints, sixteen per fixture), and
+    one golden test's own block is about 12 KB rather than the 7 KB claimed.
+    All measured on one run of the suite.
+
+* **`obeject` and "Stop of log likelihood" in the twelve older `BaseModel`
+  front-ends.** Comment typos, fixed to the wording the `Dfm*` and `Favar*`
+  front-ends already use. Nothing executable changed.
+
+* **Two comments that had drifted from what they describe.** No behaviour and no
+  fixture row changed; `ctest` is 183/183 either side.
+
+  * `test/CMakeLists.txt`'s VEC preamble had come loose from the VEC rows and
+    fused with the DFM comment, ten lines above a block about factor models. It
+    is moved down to where the VEC fixtures actually start and corrected on two
+    points: it claimed `VecNormalWishart` had no generator, which it has had
+    since the Wishart fixtures were added, and it claimed SSVS reaches
+    `VecNormalGamma` alone, when it also reaches `VecNormalWishart` — the two
+    VEC models with constant coefficients and no stochastic volatility, which is
+    what the SSVS note at the head of the matrix already says. Its structural
+    count is four, not five.
+  * `.github/dependabot.yml` named
+    `.github/actions/setup-linux-deps/action.yml` as the place the HighFive tag
+    is pinned. It is `.github/highfive-version`, which that action, the Windows
+    jobs of `ci.yml` and `release.yml`, and the check in `snap.yml` all read.
+
 * **README: the places it had drifted from the code are corrected.**
   Documentation only — no sampler, no header and no I/O code was touched, so
   draws are unchanged by construction. Each was checked against the source named
@@ -1163,6 +1203,96 @@ Dates are ISO. Versions follow the `project(VERSION)` in `CMakeLists.txt`.
   same combinations for the same reason.
 
 ### Fixed
+
+* **`bayests` exited 0 when a run started and failed.** Every `BaseModel`
+  front-end wrapped its body in `catch (const std::exception &e) { std::cerr <<
+  e.what(); }` and returned `void`, so the subcommand above it saw nothing: a
+  model file the sampler rejected, a singular matrix, a missing prior — all
+  exited 0, with the datasets simply absent. README and `CLAUDE.md` have always
+  documented exit 1 for "the run started and something failed", and a script
+  looping over model directories could not tell a rejected file from a fitted
+  one.
+
+  The 58 catch blocks are gone. A stage that cannot do what it was asked throws;
+  the subcommands, which already had a handler that returns 1, catch it and
+  report `Error processing <file>[:<group>]: <reason>` — the location included,
+  which the front-ends' own handler never printed. A directory walk still visits
+  every file and still exits 1 if any of them failed.
+
+  **Having nothing to do is not failing, and still exits 0.** Output that is
+  already present; a forecast on a model whose file carries no horizon; and a
+  quantile model's `forecast()`, since `validate()` refuses it a horizon in the
+  first place and `bayests forecasts` over a directory should not fail because
+  some of the models in it are quantile models. Five front-ends used to print
+  `Error processing ...: Forecast horizon h is missing.` where the other
+  thirteen returned in silence, and `VarTvpWishart` alone announced an existing
+  forecast the same way; all eighteen are quiet about it now, because none of
+  them has failed.
+
+  **Draws are unchanged.** Verified with the fingerprint comparison in
+  CONTRIBUTING.md over the whole suite: 84 fixtures before and after, 84
+  unchanged and 0 moved. Exercised end to end besides — `forecasts` and `loglik`
+  on a file with no draws exit 1 and name the file; a full `posterior`, a second
+  `posterior` over finished output, an `h = 0` model and `forecasts` on a
+  quantile model all exit 0; a directory holding one healthy file and one
+  without draws visits both, fails one and exits 1.
+
+  `test/golden_models.cpp` catches each of the three stages itself, so all three
+  are still attempted and the fingerprints still printed whatever happened — what
+  a fixture wrote before it failed is most of the evidence for why. Its
+  empty-stage check is unchanged and still the thing that fails the test.
+
+* **`n_favar_lambda()` claimed it could never be confused with `n_lambda()`,
+  and it can.** Three comments — `VarSpec::n_favar_lambda()` in
+  `include/bayests/spec.h`, the `lambda` check in `FavarNormalWishartInput::
+  validate()`, and the taxonomy section of `CLAUDE.md` — said the DFM's loading
+  count and the FAVAR's "do not coincide at any dimension". They differ by
+
+  ```
+  n_lambda() - n_favar_lambda() = n(n - 1)/2 - (k - n) n_obs
+  ```
+
+  which is zero on a family rather than nowhere. With one observed factor it
+  vanishes at every `k = n(n + 1)/2` — `(k, n, n_obs)` of `(3, 2, 1)`,
+  `(6, 3, 1)`, `(10, 4, 1)`, `(15, 5, 1)` and up — and elsewhere wherever
+  `(k - n) n_obs` hits `n(n - 1)/2`, as `(4, 3, 3)` and `(7, 4, 2)` do. Checked
+  against the header itself, not derived on paper.
+
+  That matters because the claim was doing work: `validate()` checks
+  `/priors/lambda` by *length*, and the comment told the reader a substitution
+  would be caught. At `k = 3, n = 2, n_obs = 1` — a plausible first FAVAR — a
+  lambda laid out to the DFM's unit lower triangular convention is three
+  elements, exactly what a FAVAR asks for, and is then read row by row as
+  something else. The chain runs to completion on a different model.
+
+  Comments only; no count, no check and no sampler changed, so draws are
+  unchanged by construction. The corrected comments state the difference, the
+  family it vanishes on, and that length is not evidence of convention. The
+  length check itself is unchanged — catching this needs the file to say which
+  convention it was written to, which is a format question, not a comment.
+
+* **`VarTvpWishart` and `VecTvpWishart` set `spec.covar` on a model that has no
+  psi block.** Their readers passed `"wishart"` as `read_spec()`'s `covar_error`
+  argument, so any file carrying `error = "wishart"` — which is what
+  `make_model_fixture.cpp` writes for them, and what a real one carries — came
+  back with `spec.covar == true`. Nothing consumed it: neither input struct
+  defines `use_psi()`, neither sampler reads `n_psi()`, and `validate()` says so
+  in as many words. But the flag means "this model has a covariance block", these
+  two do not, and the next `n_psi()` added anywhere near them would have sized a
+  block off it. Both now pass `nullptr`, which is what the two `*NormalWishart`
+  readers beside them have always done; all five Wishart-family readers and all
+  twelve without a psi block now agree.
+
+  **Draws are unchanged.** Verified with the fingerprint comparison in
+  CONTRIBUTING.md over the whole suite: 84 fixtures recorded before and after on
+  one machine and one build, 84 unchanged and 0 moved.
+
+  `gamma+covar` and `sv+covar` are now the only two values of the `error`
+  attribute that switch anything on. `CLAUDE.md` and README had documented
+  `wishart` as a third, the README noting that on those two models it "turns
+  nothing on and is there for symmetry" — true of the outcome, not of the flag.
+  Both are corrected, as is the comment in `make_model_fixture.cpp` that credited
+  only `VarNormalWishart`'s reader with ignoring the attribute.
 
 * **The seven-component stochastic volatility mixture was attributed to the
   wrong author.** `stochvol_ksc_1998.cpp`, `stochvol_mixture.h` and

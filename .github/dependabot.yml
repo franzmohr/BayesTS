@@ -4,7 +4,8 @@
 # Only the actions are managed here. The C++ dependencies -- Armadillo, HDF5,
 # HighFive -- are found by find_package() from whatever the host provides, so
 # there is no manifest for Dependabot to bump; the pinned HighFive tag lives in
-# .github/actions/setup-linux-deps/action.yml and is moved by hand.
+# .github/highfive-version -- read by the Linux composite action and by the
+# Windows jobs of ci.yml and release.yml -- and is moved by hand.
 
 version: 2
 updates:

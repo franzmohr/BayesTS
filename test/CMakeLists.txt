@@ -312,16 +312,6 @@ bayests_add_model_fixture(VarTvpStochvol-structural VarTvpStochvol none 0 1 4)
 bayests_add_model_fixture(VarTvpStochvol-nofcst     VarTvpStochvol none 0 0 0)
 bayests_add_model_fixture(VarTvpStochvol-bvs-covar  VarTvpStochvol bvs  1 0 4)
 
-# The VECs that have a generator -- every one but VecNormalWishart. Their
-# dimensions differ from the rows above (rank 1, a restricted constant and one
-# lagged difference) and their forecast regressors are in levels; see the VEC
-# block in make_model_fixture.cpp. SSVS reaches VecNormalGamma only, for the same
-# reason it reaches VarNormalGamma only.
-#
-# The structural rows are what cover the level-VAR forecast's contemporaneous
-# split from the VEC side: every VEC forecast converts to a level VAR and hands
-# the path to VarNormalWishartSampler, so these five and the VAR rows above
-# exercise the same code from both ends.
 # The dynamic factor model. Its own dimensions -- six series, two factors, a
 # transition of order two -- written by the DFM block at the bottom of
 # make_model_fixture.cpp. No selection, covar or structural rows: validate()
@@ -352,6 +342,19 @@ bayests_add_model_fixture(DfmTvpStochvol-nofcst DfmTvpStochvol none 0 0 0)
 # panel of a horizon followed by the observed factors of the same horizon.
 bayests_add_model_fixture(FavarNormalWishart-plain  FavarNormalWishart none 0 0 4)
 bayests_add_model_fixture(FavarNormalWishart-nofcst FavarNormalWishart none 0 0 0)
+
+# The VECs. All seven have a generator, VecKlgs2010 and VecNormalWishart
+# included. Their dimensions differ from the VAR rows above (rank 1, a restricted
+# constant and one lagged difference) and their forecast regressors are in
+# levels; see the VEC block in make_model_fixture.cpp. SSVS reaches
+# VecNormalWishart and VecNormalGamma, the two VEC models with constant
+# coefficients and no stochastic volatility, for the reason at the head of this
+# matrix.
+#
+# The structural rows are what cover the level-VAR forecast's contemporaneous
+# split from the VEC side: every VEC forecast converts to a level VAR and hands
+# the path to VarNormalWishartSampler, so those four and the VAR rows above
+# exercise the same code from both ends.
 
 # No selection rows: VecKlgs2010 draws the coefficients without forming the SUR
 # design matrix a scheme would act on, and validate() refuses either one. No

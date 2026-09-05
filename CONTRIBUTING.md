@@ -123,7 +123,7 @@ effect you intended or a regression, and it is worth being able to say which
 before opening a pull request.
 
 Every model has a generator: `test/make_model_fixture.cpp` writes a model file
-for all eighteen — the VAR models from the block at the top, the seven VECs
+for all twenty — the VAR models from the block at the top, the seven VECs
 from the block below it, the four DFMs and the FAVAR from the one below that
 — so the
 comparison above covers the whole taxonomy from a clean clone.
@@ -154,9 +154,10 @@ level layout, with `p + 1` blocks of endogenous lags, not the differenced layout
 `/data/train/z` uses.
 
 A note on what the golden harness does and does not catch, since it has cost
-real bugs twice now. The `BaseModel` front-ends catch every exception and print
-it to stderr, so a sampler that fails on one of the three subcommands leaves
-that dataset absent rather than failing the run. `bayests_golden` fails a
+real bugs twice now. The `BaseModel` front-ends throw on a stage that cannot do
+what it was asked; `bayests_golden` catches each of the three, so that all of
+them are attempted and the fingerprints are printed whatever happened -- what a
+fixture wrote before it failed is most of the evidence for why. It fails a
 fixture whose whole stage came back empty — no posterior draws, no
 `/posterior/loglik`, or no `/posterior/forecast` where `h` is positive — which
 is what an input the sampler rejected outright looks like, and what used to pass

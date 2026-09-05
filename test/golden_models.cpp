@@ -25,9 +25,11 @@
 // Exit codes: 2 for an unusable command line, 1 if a fixture throws or if any of
 // the three entry points produced nothing -- no draws, no log likelihood, or no
 // forecast where the horizon is positive. That last check is what keeps a green
-// run from meaning less than it looks like: the front-ends catch their own
-// exceptions, so before it, a file the sampler rejected outright ran, printed
-// `absent` fourteen times and passed. It is not a check that the model wrote
+// run from meaning less than it looks like: before it, a file the sampler
+// rejected outright ran, printed `absent` fourteen times and passed. The
+// front-ends throw now rather than swallowing, and run() below catches each
+// stage so the other two are still attempted and the fingerprints still
+// printed -- the reason goes to stderr and the empty stage is the failure. It is not a check that the model wrote
 // everything it should: `absent` remains the right fingerprint for a dataset
 // that belongs to another model, and only a per-model table could tell the two
 // apart.
@@ -195,16 +197,30 @@ int run_fixture(const std::filesystem::path &fixture, const std::filesystem::pat
 
     auto model = create_model(model_type);
 
-    // One seed per entry point, so a change in one does not shift the stream
-    // seen by the next and turn a single regression into three.
-    arma::arma_rng::set_seed(kSeed);
-    model->draw_coefficients(location);
+    // The entry points throw on a stage that cannot do what it was asked --
+    // that is how `bayests` reaches exit 1 -- so each is caught here. Caught
+    // rather than allowed to escape, because all three have to be attempted
+    // and the fingerprints printed either way: what a fixture wrote before it
+    // failed is most of the evidence for why. The dataset checks below turn a
+    // stage that produced nothing into the failure, whether it threw or not.
+    auto run = [&](const char *stage, void (BaseModel::*entry)(const ModelLocation &)) {
+        // One seed per entry point, so a change in one does not shift the
+        // stream seen by the next and turn a single regression into three.
+        arma::arma_rng::set_seed(kSeed);
+        try
+        {
+            (model.get()->*entry)(location);
+        }
+        catch (const std::exception &e)
+        {
+            std::cerr << fixture.filename().string() << ": " << stage << " threw: "
+                      << e.what() << std::endl;
+        }
+    };
 
-    arma::arma_rng::set_seed(kSeed);
-    model->log_likelihood(location);
-
-    arma::arma_rng::set_seed(kSeed);
-    model->forecast(location);
+    run("draw_coefficients", &BaseModel::draw_coefficients);
+    run("log_likelihood", &BaseModel::log_likelihood);
+    run("forecast", &BaseModel::forecast);
 
     HighFive::File h5 = open_hdf5_file(staged);
     const ModelFile file(h5, group);
@@ -231,11 +247,11 @@ int run_fixture(const std::filesystem::path &fixture, const std::filesystem::pat
         }
     }
 
-    // The three entry points above catch their own exceptions and print to
-    // stderr -- see the BaseModel front-ends -- so a stage that failed leaves
-    // its datasets absent and the run otherwise looks like a model that simply
-    // does not write them. Absent is a legitimate fingerprint for a dataset
-    // another model owns; it is not a legitimate outcome for a whole stage.
+    // A stage that threw is reported by run() above and then lands here as an
+    // absent dataset, which is also what a stage that returned quietly having
+    // done nothing looks like. Both are caught the same way. Absent is a
+    // legitimate fingerprint for a dataset another model owns; it is not a
+    // legitimate outcome for a whole stage.
     // Checked here rather than against a per-model list of expected datasets:
     // this needs no table, and the failure it catches is a stage that produced
     // nothing at all, which is what a rejected input looks like.

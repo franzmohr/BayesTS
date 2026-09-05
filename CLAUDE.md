@@ -31,7 +31,7 @@ ctest --test-dir build/bin/<your-preset> -R unit.kalman
 cmake --build build/bin/<your-preset> --target docs    # Doxygen, optional
 ```
 
-All eighteen samplers are covered from a clean clone: `test/make_model_fixture.cpp`
+All twenty samplers are covered from a clean clone: `test/make_model_fixture.cpp`
 writes a model file for every one of them, and no `*.h5` is checked in. A file
 recorded from a real run — real data, a real prior — is the one thing the
 generator cannot supply, so any number of them can be added as extra golden
@@ -92,7 +92,11 @@ Two rules that break the host silently rather than here:
   under `--group` for free. Reaching past it via `file.file()` puts the reader
   back at the root and breaks multi-model files.
 - The `error` attribute turns the covariance block on and its spelling is
-  model-specific: `gamma+covar`, `sv+covar`, `wishart`.
+  model-specific: `gamma+covar` for the gamma models, `sv+covar` for
+  stochastic volatility. Those are the only two values that switch anything.
+  The twelve readers of models with no psi block -- the Wishart family, the
+  quantile pair, `VecKlgs2010` and the factor models -- pass `nullptr`, so on
+  those the attribute is descriptive only.
 - Exit codes are load-bearing: 1 means the run started and something failed,
   2 means it never started (unusable command line).
 
@@ -123,9 +127,12 @@ separately.** A rotation `F -> C F` is invisible in the measurement if the
 loadings absorb it. A DFM rules it out with a unit lower triangular loading block
 *and* a diagonal V, which together admit only `C = I`. A FAVAR has no diagonal V
 to offer, so its leading loading block is the **identity** instead — see
-`VarSpec::n_favar_lambda()`, which is paired with `n_lambda()` and agrees with it
-at no dimension. Taking the DFM's rule over leaves a model that runs, produces
-plausible numbers, and has loadings free to wander along a ridge. Two algorithms carry the weight underneath:
+`VarSpec::n_favar_lambda()`, which is paired with `n_lambda()` and must never be
+read off it. Taking the DFM's rule over leaves a model that runs, produces
+plausible numbers, and has loadings free to wander along a ridge — and a length
+check will not stop you, since the two counts differ by `n(n-1)/2 - (k-n)·n_obs`
+and so coincide on a family of dimensions, every `k = n(n+1)/2` with one
+observed factor among them. Two algorithms carry the weight underneath:
 `kalman_durbin_koopman_2002` (whole-path simulation smoother for time-varying
 coefficients) and `stochvol_ocsn_2007` (the ten-component normal mixture).
 `chan_jeliazkov_2009` draws banded state paths and serves the DFM factor path.
@@ -217,12 +224,12 @@ they shift in the last digits with the compiler, the BLAS and the CPU. The
 `fingerprints.yml` workflow runs the same base-vs-head comparison on every PR.
 
 A fingerprint recording is not something to read in full: the suite at `-V` is
-close to 900 KB (169 tests from a clean clone), and a recording of it around
-90 KB. Redirect, then read the reduction — both scripts do this by design, and
+close to 1.1 MB (183 tests from a clean clone), and a recording of it around
+115 KB. Redirect, then read the reduction — both scripts do this by design, and
 neither `ctest -V` nor a `test/baselines/` file belongs on a terminal it is not
 being paged through. The same goes for a green `ctest` run: `> /tmp/ctest.log
 2>&1` and read `tail -3`, then grep the log if anything failed. What one failing
-golden test prints is the ~7 KB of fingerprints its fixture carries.
+golden test prints is the ~12 KB its fixture's run carries.
 
 Two traps:
 
@@ -231,9 +238,10 @@ Two traps:
   tests (the unit tests check exact identities and do not need it); set them by
   hand when running a binary directly.
 - **A green golden test is not full proof the sampler worked.** The `BaseModel`
-  front-ends catch every exception and print to stderr, so a failed subcommand
-  leaves its datasets absent rather than failing the run. `bayests_golden` now
-  fails a fixture whose *stage* produced nothing — no draws, no
+  front-ends now throw on a stage that cannot do what it was asked, and
+  `bayests_golden` catches each of the three so that all of them are attempted
+  and the fingerprints printed either way. It fails a fixture whose *stage*
+  produced nothing — no draws, no
   `/posterior/loglik`, or no `/posterior/forecast` where `h` is positive — which
   catches an input the sampler rejected outright. It cannot catch a model that
   wrote some of its datasets and not others: `absent` is the right fingerprint

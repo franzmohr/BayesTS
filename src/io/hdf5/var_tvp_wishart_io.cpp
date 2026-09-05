@@ -12,7 +12,12 @@ VarTvpWishartInput read_input(const ModelFile &file)
 {
     VarTvpWishartInput input;
 
-    input.spec = read_spec(file, "wishart");
+    // No covariance block in this model, so the error specification says
+    // nothing it needs to know. "wishart" is the spelling these files carry, and
+    // passing it here would set spec.covar on a model that has no psi block --
+    // inert today, since neither use_psi() nor n_psi() is reached from here, but
+    // it is not what the flag means.
+    input.spec = read_spec(file, nullptr);
 
     read_mat_if_present(file, "/data/train/y", input.train.y);
     read_mat_if_present(file, "/data/train/z", input.train.z);

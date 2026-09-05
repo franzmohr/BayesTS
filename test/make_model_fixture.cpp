@@ -293,9 +293,9 @@ void write_common(const ModelFile &file, const std::string &model, const std::st
     write_attribute<bool>(file, "/model", "structural", structural);
 
     // The error specification the reader dispatches on. Neither Wishart model
-    // carries a psi block, so neither has a "+covar" spelling to reach --
-    // VarNormalWishart's reader does not read the attribute at all, and it is
-    // written for a file that can be described on its own.
+    // carries a psi block, so neither has a "+covar" spelling to reach -- and
+    // neither reader consults the attribute at all. It is written so the file
+    // can be described on its own.
     std::string prefix = "gamma";
     if (model == "VarNormalStochvol" || model == "VarTvpStochvol")
     {
