@@ -59,6 +59,8 @@ int main(int argc, char* argv[]) {
         std::cerr << "Available commands: posterior, coefficients, forecasts, loglik\n";
         std::cerr << "Common flags: --group <path>  the group a model's tree hangs under inside\n";
         std::cerr << "                             its file, e.g. /models/3 (default: the root)\n";
+        std::cerr << "              --all-groups   run every model below --group rather than the\n";
+        std::cerr << "                             one it names (default: the whole file)\n";
         return 2;
     }
 

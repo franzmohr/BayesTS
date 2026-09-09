@@ -3,10 +3,10 @@
 
 
 #include "cli_options.h"
+#include "model_locations.h"
 #include "models/models.h"
 #include "io/hdf5/hdf5_and_armadillo.h"
 #include <iostream>
-#include <filesystem>
 #include <string>
 
 // Helper function to process a single model
@@ -69,53 +69,8 @@ int posterior(int argc, char *argv[])
 		return 2;
 	}
 
-	const std::filesystem::path filepath = options.path;
-
-	// Check if path exists
-	if (!std::filesystem::exists(filepath))
-	{
-		std::cerr << "Error: Path does not exist: " << filepath << std::endl;
-		return 1;
-	}
-
-	// Check if path is a directory
-	if (std::filesystem::is_directory(filepath))
-	{
-
-		// A file that fails is reported and the walk continues, but the exit
-		// status has to say that something failed: a caller looping over model
-		// directories cannot see stderr per file.
-		int failures = 0;
-
-		// Loop over all files in the directory and subdirectories recursively
-		for (const auto& entry : std::filesystem::recursive_directory_iterator(filepath))
-		{
-			if (entry.is_regular_file() && is_hdf5_file(entry.path()))
-			{
-				const ModelLocation location{entry.path(), options.group};
-				std::cout << "Processing: " << location.describe() << std::endl;
-				failures += process_single_file_evaluation(location, options.run_coefficients,
-				                                          options.run_forecasts,
-				                                          options.run_loglik);
-			}
-		}
-		return failures == 0 ? 0 : 1;
-	}
-	else if (std::filesystem::is_regular_file(filepath))
-	{
-		// Process single file, but only if it is an hdf5 file
-		if (!is_hdf5_file(filepath))
-		{
-			std::cerr << "Error: Not an hdf5 file: " << filepath << std::endl;
-			return 1;
-		}
-		return process_single_file_evaluation(ModelLocation{filepath, options.group},
-		                                     options.run_coefficients, options.run_forecasts,
-		                                     options.run_loglik);
-	}
-	else
-	{
-		std::cerr << "Error: Path is neither a file nor a directory: " << filepath << std::endl;
-		return 1;
-	}
+	return run_over_models(options, [&options](const ModelLocation &location) {
+		return process_single_file_evaluation(location, options.run_coefficients,
+		                                      options.run_forecasts, options.run_loglik);
+	});
 }

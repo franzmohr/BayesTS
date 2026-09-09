@@ -8,6 +8,7 @@ add_library(bayests_subcommands
     coefficients.cpp
     forecasts.cpp
     loglik.cpp
+    model_locations.cpp
     posterior.cpp
 )
 

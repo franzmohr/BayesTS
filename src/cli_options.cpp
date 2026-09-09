@@ -13,14 +13,17 @@ namespace
 
 void print_usage(const std::string &command, bool accept_step_flags)
 {
-	std::cerr << "Usage: bayests " << command << " <file.h5 | directory> [--group <path>]";
+	std::cerr << "Usage: bayests " << command
+	          << " <file.h5 | directory> [--group <path>] [--all-groups]";
 	if (accept_step_flags)
 	{
 		std::cerr << " [--no-coefficients] [--no-forecasts] [--no-loglik]";
 	}
 	std::cerr << "\n";
 	std::cerr << "  --group <path>  the group each model's tree hangs under, e.g. /models/3.\n"
-	             "                  Defaults to the root of the file.\n";
+	             "                  Defaults to the root of the file.\n"
+	             "  --all-groups    run every model below --group rather than the one it\n"
+	             "                  names. Without --group, every model in the file.\n";
 }
 
 } // namespace
@@ -82,7 +85,13 @@ bool parse_command_options(int argc, char *argv[], const std::string &command,
 			continue;
 		}
 
-		if (accept_step_flags && arg == "--no-coefficients")
+		if (arg == "--all-groups")
+		{
+			// Accepted by all four subcommands: running every model in a file
+			// is as meaningful for `forecasts` as it is for `posterior`.
+			options.all_groups = true;
+		}
+		else if (accept_step_flags && arg == "--no-coefficients")
 		{
 			options.run_coefficients = false;
 		}

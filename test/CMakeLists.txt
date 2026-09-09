@@ -229,6 +229,44 @@ function(bayests_add_model_fixture name model varsel covar structural horizon)
         ENVIRONMENT_MODIFICATION "${_bayests_test_env_mod}")
 endfunction()
 
+# Two models in one file, and a golden run over each of them.
+#
+#   bayests_add_multimodel_fixture <name> <model> <group> <group>
+#
+# The case --all-groups exists for. One fixture writes both models, the second
+# with the generator's `append` so that it joins the first rather than replacing
+# the file, and one golden test per group runs through the group it was written
+# under. What this pins is that two models in one file stay two models: same
+# fingerprints as the single-model rows above, so a prefix leaking between them
+# -- one model reading the other's data, or both writing the root -- moves the
+# numbers rather than passing quietly.
+#
+# The walk that finds these groups without being told their names is
+# unit.model_group's; this is the end of it where a sampler runs.
+function(bayests_add_multimodel_fixture name model group_a group_b)
+    add_test(NAME "fixture.${name}"
+        COMMAND ${CMAKE_COMMAND}
+                -DGEN=$<TARGET_FILE:bayests_make_model_fixture>
+                -DDEST=${BAYESTS_FIXTURE_DIR}/${name}.h5
+                -DMODEL=${model}
+                -DGROUP_A=${group_a}
+                -DGROUP_B=${group_b}
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/make_multimodel_fixture.cmake)
+    set_tests_properties("fixture.${name}" PROPERTIES
+        FIXTURES_SETUP "fx.${name}"
+        ENVIRONMENT_MODIFICATION "${_bayests_test_env_mod}")
+
+    foreach(_group IN ITEMS "${group_a}" "${group_b}")
+        string(REPLACE "/" "_" _suffix "${_group}")
+        add_test(NAME "golden.${name}${_suffix}"
+            COMMAND bayests_golden --group "${_group}" "${BAYESTS_FIXTURE_DIR}/${name}.h5")
+        set_tests_properties("golden.${name}${_suffix}" PROPERTIES
+            FIXTURES_REQUIRED "fx.${name}"
+            ENVIRONMENT "${_bayests_pin_threads}"
+            ENVIRONMENT_MODIFICATION "${_bayests_test_env_mod}")
+    endforeach()
+endfunction()
+
 # The generation matrix. h=4 and k=3 throughout, so a forecast is 4x3 per draw.
 #
 # SSVS appears only for the four models with constant coefficients and no
@@ -272,6 +310,11 @@ bayests_add_model_fixture(VarNormalGamma-bvs-covar  VarNormalGamma     bvs  1 0 
 # be diffed against each other on one machine as well as each against itself
 # across a change.
 bayests_add_model_fixture(VarNormalGamma-grouped    VarNormalGamma     none 0 0 4 /models/3)
+
+# Two of that same model in one file, which is what --all-groups walks. Both
+# rows print the -plain row's fingerprints, so any leak between the two models
+# -- or between a model and the root -- moves numbers that are otherwise fixed.
+bayests_add_multimodel_fixture(VarNormalGamma-multi VarNormalGamma /submodels/US /submodels/JP)
 
 bayests_add_model_fixture(VarNormalStochvol-plain      VarNormalStochvol none 0 0 4)
 bayests_add_model_fixture(VarNormalStochvol-bvs        VarNormalStochvol bvs  0 0 4)

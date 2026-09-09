@@ -26,6 +26,37 @@ Dates are ISO. Versions follow the `project(VERSION)` in `CMakeLists.txt`.
 
 ### Added
 
+* **`--all-groups`**, which runs every model in a file rather than the one
+  `--group` names. With it `--group` becomes the root to search under, so
+  `--all-groups` alone covers the whole file and `--group /submodels
+  --all-groups` covers what is below that group. Accepted by all four
+  subcommands, and it composes with directory mode: each file in the walk is
+  expanded in turn, so one invocation covers a directory of files that each hold
+  several models.
+
+  **Draws are unchanged.** No sampler was touched: this is discovery and
+  iteration in the command line, above the io layer. Verified with the whole
+  fixture suite, and additionally by a new `VarNormalGamma-multi` fixture that
+  writes two models into one file — both print the `VarNormalGamma-plain` row's
+  fingerprints, digit for digit, as `VarNormalGamma-grouped` already did for one
+  model under a group.
+
+  A model is found by having a `model` subgroup with an `algorithm` attribute —
+  what `get_algorithm_type()` reads — and the search stops there rather than
+  descending into its `data`, `priors` and `posterior`. Results are sorted, so
+  the processing order and the order failures are reported in do not depend on
+  HDF5's link order.
+
+  Without the flag nothing changes: one model per file, `--group` naming it, and
+  a `--group` that names nothing still an error rather than an empty walk. A
+  well-formed root that holds no model is not a failure — it is reported and
+  exits 0, the rule already in force for a directory with no HDF5 files in it.
+
+  What this is for: a caller that keeps many models in one file — the sub-models
+  of a GVAR, say — no longer needs one invocation per model. Note that results
+  are written in place over unlinked datasets, which HDF5 does not reclaim, so a
+  file that is re-run often enough is worth an occasional `h5repack`.
+
 * **`VarNormalAld` and `VarTvpAld`**, Bayesian quantile VARs -- the nineteenth
   and twentieth registered algorithms, and the first models here that estimate a
   conditional *quantile* rather than a conditional mean.

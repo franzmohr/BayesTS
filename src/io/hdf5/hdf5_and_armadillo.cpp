@@ -110,6 +110,82 @@ void require_group(const HighFive::File &file, const std::string &group)
 	}
 }
 
+namespace
+{
+
+/// Whether `group` is a model: a group holding a `model` subgroup with an
+/// `algorithm` attribute on it. Reading the attribute is what makes this
+/// answer the question the caller is really asking -- can the model factory be
+/// handed this group -- rather than the weaker "something here is called
+/// model".
+bool is_model_group(const HighFive::File &file, const std::string &group)
+{
+	const std::string model_group = group + "/model";
+
+	if (!file.exist(model_group) ||
+	    file.getObjectType(model_group) != HighFive::ObjectType::Group)
+	{
+		return false;
+	}
+
+	return file.getGroup(model_group).hasAttribute("algorithm");
+}
+
+void collect_model_groups(const HighFive::File &file, const std::string &group,
+                          std::vector<std::string> &found)
+{
+	if (is_model_group(file, group))
+	{
+		// Stop here. Descending would walk /data, /priors and /posterior of
+		// every model looking for models that cannot be in them.
+		found.push_back(group);
+		return;
+	}
+
+	// group is "" for the root of the file, where getGroup wants a name.
+	const HighFive::Group handle = file.getGroup(group.empty() ? "/" : group);
+
+	for (const std::string &name : handle.listObjectNames())
+	{
+		const std::string child = group + "/" + name;
+		if (file.getObjectType(child) == HighFive::ObjectType::Group)
+		{
+			collect_model_groups(file, child, found);
+		}
+	}
+}
+
+} // namespace
+
+std::vector<std::string> list_model_groups(const HighFive::File &file, const std::string &root)
+{
+	const std::string normalized = normalize_hdf5_group(root);
+
+	// A root that is not a group at all is a command line to fix, and saying so
+	// is more use than returning nothing and calling it an empty file.
+	require_group(file, normalized);
+
+	std::vector<std::string> found;
+
+	try
+	{
+		collect_model_groups(file, normalized, found);
+	}
+	catch (const HighFive::Exception &e)
+	{
+		throw std::runtime_error("Failed to list the models under '" +
+		                         (normalized.empty() ? std::string("/") : normalized) +
+		                         "': " + std::string(e.what()));
+	}
+
+	// listObjectNames() returns HDF5's order, which is not the caller's and not
+	// guaranteed across platforms. Sorting makes the processing order, the
+	// progress lines and the order failures come out in the same on every run.
+	std::sort(found.begin(), found.end());
+
+	return found;
+}
+
 // Get algorithm type
 std::string get_algorithm_type(const ModelFile &file)
 {

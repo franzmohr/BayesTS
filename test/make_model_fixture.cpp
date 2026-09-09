@@ -1595,11 +1595,11 @@ bool is_vec_model(const std::string &model)
 
 int main(int argc, char *argv[])
 {
-    if (argc != 7 && argc != 8)
+    if (argc != 7 && argc != 8 && argc != 9)
     {
         std::cerr << "Usage: " << argv[0]
                   << " <dest.h5> <model> <none|ssvs|bvs> <covar 0|1> <structural 0|1> <h>"
-                     " [group]\n";
+                     " [group] [append]\n";
         return 2;
     }
 
@@ -1610,10 +1610,21 @@ int main(int argc, char *argv[])
     const bool structural = std::string(argv[5]) != "0";
     const int h = std::stoi(argv[6]);
 
+    // Add this model to a file that already holds one, rather than starting a
+    // new file -- the only way to build the several-models-in-one-file case
+    // --all-groups exists for. Every model still needs its own group, since two
+    // at the root would be the same model written twice.
+    const bool append = argc == 9 && std::string(argv[8]) == "append";
+    if (argc == 9 && !append)
+    {
+        std::cerr << "Error: the ninth argument, if given, must be 'append'\n";
+        return 2;
+    }
+
     // The group the model is written under, normalized the same way the reader
     // normalizes --group, so the two agree on what "/models/3/" means.
     std::string group;
-    if (argc == 8)
+    if (argc >= 8)
     {
         try
         {
@@ -1687,9 +1698,20 @@ int main(int argc, char *argv[])
         {
             std::filesystem::create_directories(dest.parent_path());
         }
-        std::filesystem::remove(dest);
+        if (append && group.empty())
+        {
+            std::cerr << "Error: appending needs a group to write the model under\n";
+            return 2;
+        }
 
-        HighFive::File h5(dest.string(), HighFive::File::Create);
+        const bool add_to_existing = append && std::filesystem::exists(dest);
+        if (!add_to_existing)
+        {
+            std::filesystem::remove(dest);
+        }
+
+        HighFive::File h5(dest.string(), add_to_existing ? HighFive::File::ReadWrite
+                                                         : HighFive::File::Create);
 
         // Everything below names absolute paths -- "/model", "/data/train/y" --
         // and this is what puts the group in front of them. Empty group, same

@@ -323,6 +323,22 @@ side by side. In directory mode the same group is looked for in every file.
 Both spellings of the flag are accepted: `--group /models/3` and
 `--group=/models/3`.
 
+Every command also takes `--all-groups`, which reads `--group` as the root to
+search under rather than as the model itself and runs every model below it —
+the whole file when no `--group` was given. A model is a group with a `model`
+subgroup carrying an `algorithm` attribute, and the search stops at one rather
+than descending into its `data`, `priors` and `posterior`. Groups are processed
+in sorted order, and in directory mode each file is expanded this way in turn,
+so one command covers a directory of files that each hold several models.
+
+A model run this way is the same model: its numbers are what the same file
+holding it alone would produce, since every path still resolves through its own
+group. What changes is how many of them one invocation covers.
+
+`--all-groups` over a well-formed group that holds no model is not a failure —
+it says so and exits 0, the same as a directory with no HDF5 files in it. A
+`--group` that names nothing in the file is still the error it always was.
+
 `posterior` additionally runs all three steps by default, and any of them can be
 switched off with `--no-coefficients`, `--no-forecasts` and `--no-loglik`.
 `coefficients`, `forecasts` and `loglik` take no step flags.
@@ -337,8 +353,17 @@ bayests posterior model.h5 --no-forecasts --no-loglik
 # The model under /models/3 of a file that holds several
 bayests posterior models.h5 --group /models/3
 
+# Every model in that file, in one invocation
+bayests posterior models.h5 --all-groups
+
+# Every model below /submodels of it, leaving anything else in the file alone
+bayests posterior models.h5 --group /submodels --all-groups
+
 # Every model file below models/, forecasts only
 bayests forecasts models/
+
+# Every model of every file below models/, however many each of them holds
+bayests forecasts models/ --all-groups
 ```
 
 `forecasts` and `loglik` read coefficient draws that are already in the file, so
@@ -350,10 +375,10 @@ non-HDF5 file, an unknown `algorithm`, or a run that started and could not
 finish — a model file the sampler rejects, or a `forecasts` or `loglik` asked
 for before the coefficients have been drawn. Having nothing to do is not
 failing and exits 0: output that is already there, and a forecast on a model
-with no horizon, the two quantile models included. In directory mode a file
-that fails is
+with no horizon, the two quantile models included. Where more than one model is
+being run — a directory, `--all-groups`, or both — a model that fails is
 reported on `stderr` and the walk continues to the next one, but the exit status
-is 1 if any file failed — so a script driving a directory of models can tell
+is 1 if any of them failed, so a script driving a directory of models can tell
 whether everything in it was processed.
 
 A command line that cannot be acted on at all — no arguments, a first argument
@@ -363,6 +388,11 @@ worth keeping apart in a script: 1 means the run started and something in it
 failed, 2 means it never started. A `--group` that is well formed but names
 nothing in the file is the first kind, not the second: the command line was
 actionable, the file just did not hold that model.
+
+Results are written back in place, and a dataset that is already there is
+unlinked before the new one is written. HDF5 does not reclaim that space, so a
+file grows a little every time it is re-run — barely worth noticing on a file
+holding one model, worth a periodic `h5repack` on one holding a hundred.
 
 ### The model file
 

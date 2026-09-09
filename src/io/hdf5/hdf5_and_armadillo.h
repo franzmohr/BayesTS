@@ -6,6 +6,7 @@
 
 #include <filesystem>
 #include <string>
+#include <vector>
 #include <highfive/H5File.hpp>
 #include <highfive/H5Attribute.hpp>
 #include "bayests/arma.h"
@@ -113,6 +114,23 @@ private:
 /// not there fails once, saying so, rather than as whichever dataset the reader
 /// reached for first.
 void require_group(const HighFive::File &file, const std::string &group);
+
+/// The groups at or below `root` that hold a model, normalized and sorted,
+/// `root` itself included if it is one. Empty if there is no model under it.
+///
+/// A model is a group with a `model` subgroup carrying an `algorithm`
+/// attribute -- the same thing get_algorithm_type() reads, so a group this
+/// returns is one the model factory can be asked about.
+///
+/// The search does not descend into a model. A model's /data, /priors and
+/// /posterior are its own subtree, not a place further models could be, and
+/// stopping there is what keeps this from walking every dataset in a file that
+/// holds a hundred of them.
+///
+/// Throws, through require_group(), if `root` is not a group in the file: a
+/// misspelled --group is worth failing on, and is not the same thing as a
+/// well-formed root with no models under it.
+std::vector<std::string> list_model_groups(const HighFive::File &file, const std::string &root);
 
 // Get algorithm type from the model's /model group
 std::string get_algorithm_type(const ModelFile &file);

@@ -61,7 +61,12 @@ Five layers, and which one code belongs in is decided by what it may touch:
 | `src/reporters/` | `console_reporter.cpp`, the CLI's `Reporter` | The one place the library's progress becomes `stdout` |
 
 `src/*.cpp` above those is the command line itself — `bayests.cpp`, the option
-parsing, and one file per subcommand.
+parsing, one file per subcommand, and `model_locations.cpp`, which turns a
+command line into the models it names and runs each of them. The four
+subcommands share that walk rather than each carrying a copy: a file or a
+directory tree on the outside, and on the inside either the one group `--group`
+names or, under `--all-groups`, every model below it. A subcommand supplies only
+what to do with one model.
 
 **Treat a new dependency across those lines as a design change, not a build fix.**
 The layering exists so the same sampler objects serve both this command line and

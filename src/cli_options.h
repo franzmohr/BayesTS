@@ -19,6 +19,12 @@ struct CommandOptions
     /// caller with a directory of files written the same way wants.
     std::string group;
 
+    /// Read `group` as the root to search under rather than as the model
+    /// itself, and run every model below it -- the whole file when no --group
+    /// was given. Off by default, so a command line without it names exactly
+    /// one model per file, which is what every existing caller relies on.
+    bool all_groups = false;
+
     // posterior's three steps. The subcommands that run a single step take no
     // flags for these and leave them alone.
     bool run_coefficients = true;

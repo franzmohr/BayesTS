@@ -25,6 +25,7 @@
 #include <filesystem>
 #include <iostream>
 #include <string>
+#include <vector>
 
 namespace
 {
@@ -164,6 +165,112 @@ void test_root_unchanged(HighFive::File &h5)
     check(dataset_has_data(h5, "/data/forecast/z"), "a bare file still reads the root");
 }
 
+/// A group that list_model_groups() has to recognise: a /model subgroup with an
+/// algorithm attribute on it, which is what get_algorithm_type() reads.
+void write_model_marker(HighFive::File &h5, const std::string &group)
+{
+    const ModelFile model(h5, group);
+    HighFive::Group model_group = model.createGroup("/model");
+    model_group.createAttribute<std::string>("algorithm", std::string("VarNormalWishart"));
+
+    // A model's own subtree, which the search must never mistake for more
+    // models -- and must not descend into looking for them.
+    write_dataset_double(model, "/priors/u_sigma/df", 3.0);
+    model.createGroup("/posterior");
+}
+
+std::string joined(const std::vector<std::string> &groups)
+{
+    std::string result;
+    for (const std::string &group : groups)
+    {
+        result += (result.empty() ? "" : ",") + (group.empty() ? std::string("<root>") : group);
+    }
+    return result;
+}
+
+/// Which groups of a file hold a model. This is what --all-groups walks, so a
+/// group missed here is a model silently not sampled, and a group returned that
+/// is not one is a run that fails on a file the caller never asked about.
+void test_model_discovery()
+{
+    const std::filesystem::path scratch =
+        std::filesystem::temp_directory_path() / "bayests_unit_model_group";
+    const std::filesystem::path dest = scratch / "several.h5";
+    std::filesystem::remove(dest);
+
+    {
+        HighFive::File h5(dest.string(), HighFive::File::Create);
+
+        // Three models, written out of order so that the sort is doing work.
+        write_model_marker(h5, "/submodels/US/001");
+        write_model_marker(h5, "/submodels/CA/001");
+        write_model_marker(h5, "/submodels/US/002");
+
+        // Not a model: the group a GVAR's shared data would sit in, plus a
+        // group called "model" that carries no algorithm.
+        const ModelFile root(h5);
+        write_dataset_double(root, "/global/index", 1.0);
+        h5.createGroup("/decoy/model");
+    }
+
+    HighFive::File h5 = open_hdf5_file(dest);
+
+    check_equal(joined(list_model_groups(h5, "")),
+                "/submodels/CA/001,/submodels/US/001,/submodels/US/002",
+                "every model in the file, sorted");
+    check_equal(joined(list_model_groups(h5, "/submodels/US")),
+                "/submodels/US/001,/submodels/US/002",
+                "a root restricts the walk to what is below it");
+    check_equal(joined(list_model_groups(h5, "/submodels/US/001")), "/submodels/US/001",
+                "a root that is itself a model is the only result");
+    check_equal(joined(list_model_groups(h5, "/global")), "",
+                "a group with no model under it comes back empty");
+    check_equal(joined(list_model_groups(h5, "/decoy")), "",
+                "a 'model' group with no algorithm attribute is not a model");
+
+    // The search stops at a model, so nothing from inside one is ever returned.
+    for (const std::string &group : list_model_groups(h5, ""))
+    {
+        check(group.find("/priors") == std::string::npos &&
+                  group.find("/posterior") == std::string::npos &&
+                  group.find("/model") == std::string::npos,
+              "'" + group + "' is a model, not something inside one");
+    }
+
+    // A root that is not a group at all is a command line to fix, and is worth
+    // failing on rather than reporting as a file with no models in it.
+    bool threw = false;
+    try
+    {
+        list_model_groups(h5, "/does/not/exist");
+    }
+    catch (const std::exception &)
+    {
+        threw = true;
+    }
+    check(threw, "a root that is not in the file is refused");
+}
+
+/// A model at the root is found as the root, which is what keeps --all-groups
+/// working on every single-model file already written.
+void test_model_discovery_at_root()
+{
+    const std::filesystem::path scratch =
+        std::filesystem::temp_directory_path() / "bayests_unit_model_group";
+    const std::filesystem::path dest = scratch / "single.h5";
+    std::filesystem::remove(dest);
+
+    {
+        HighFive::File h5(dest.string(), HighFive::File::Create);
+        write_model_marker(h5, "");
+    }
+
+    HighFive::File h5 = open_hdf5_file(dest);
+    check_equal(joined(list_model_groups(h5, "")), "<root>",
+                "a model at the root is found as the root");
+}
+
 } // namespace
 
 int main()
@@ -183,6 +290,9 @@ int main()
         test_resolution(h5);
         test_round_trip(h5);
         test_root_unchanged(h5);
+
+        test_model_discovery();
+        test_model_discovery_at_root();
     }
     catch (const std::exception &e)
     {
