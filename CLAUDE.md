@@ -88,9 +88,16 @@ Two rules that break the host silently rather than here:
 
 ### Conventions at the file boundary
 
-- Draws run along the **rows on disk** (what R and `coda` expect of an `mcmc`
-  object) and are transposed to one draw per column inside the samplers. Flipping
-  the layout is `src/io/hdf5/`'s job.
+- Which way round a stored matrix is depends on who is asking, so state it both
+  ways or not at all. In **HDF5 dataspace terms** every dataset is one row per
+  quantity and one column per draw — h5py reports a 12-parameter, 80-draw
+  `/posterior/a/coeffs` as `(12, 80)`. **R's readers reverse the dimension
+  order**, R being column-major where HDF5 is row-major, so an R session sees
+  the transpose: draws in rows, which is what `coda` expects of an `mcmc`
+  object and why `start`/`end`/`thin` are written alongside. Inside the
+  samplers a draw is one column. Flipping the layout is `src/io/hdf5/`'s job.
+  Saying only "draws in rows" is the R view stated as if it were the file's,
+  and it misleads anyone reading from Python or C.
 - Variable-selection positions are stored **one-based** and converted on read.
 - I/O takes a `ModelFile` (file + group), not a `HighFive::File`. Keep naming
   absolute paths (`"/data/train/y"`, `"/posterior/a/coeffs"`) and the model works

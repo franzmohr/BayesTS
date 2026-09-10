@@ -51,8 +51,10 @@ structs underneath get reshaped several times on the way there.
    `src/io/hdf5/CMakeLists.txt`.** `read_input`, `read_coefficients` and
    `write_coefficients` in `bayests::hdf5_io::<model>`. It exists only to fill
    the structs from step 1 and to flip the layout at the boundary — draws in
-   columns inside the sampler, draws in rows on disk — which is why it comes
-   after the structs are final rather than being drafted alongside them.
+   columns inside the sampler, one column per draw and one row per quantity in
+   HDF5 dataspace terms on disk, which R's readers then show transposed as the
+   draws-in-rows layout `coda` wants — which is why it comes after the structs
+   are final rather than being drafted alongside them.
 
    These take a `ModelFile`, not a `HighFive::File`: a file plus the group the
    model hangs under, which resolves every path handed to it. Keep naming the

@@ -1112,9 +1112,11 @@ Dates are ISO. Versions follow the `project(VERSION)` in `CMakeLists.txt`.
     fingerprints", which it does not hold and which the Tests section says is
     never checked in.
 
-* **README: the model-file orientation is now stated for both kinds of reader,
-  and the algorithm count is fifteen.** Documentation only — no sampler, no
-  header and no I/O code was touched, so draws are unchanged by construction.
+* **The model-file orientation is now stated for both kinds of reader,
+  everywhere it appears.** `README.md`, `CLAUDE.md` and `CONTRIBUTING.md` all
+  carried the R-centric wording; all three now give both orientations.
+  Documentation only — no sampler, no header and no I/O code was touched, so
+  draws are unchanged by construction.
 
   The old wording, "draws run along the **rows** on disk", is true of what an R
   session sees and false of what the file holds. In HDF5's own dataspace terms
@@ -1127,8 +1129,9 @@ Dates are ISO. Versions follow the `project(VERSION)` in `CMakeLists.txt`.
   the already-transposed `write_draws` argument back to quantity-by-draws
   before writing, and against fixtures read from both `h5py` and `hdf5r`.
 
-  The count sentence still said fourteen, and enumerated one dynamic factor
-  model, from before `DfmNormalStochvol` was added above.
+  The README's algorithm count was stale in the same pass and was corrected
+  with it: the sentence said fourteen, and enumerated one dynamic factor model,
+  from before `DfmNormalStochvol` was added above.
 
 * **`chan_jeliazkov_2009` accepts a constant `z`.** It was the one argument of
   the four that had to arrive as a stack of one block per period; `sigma_u`,
