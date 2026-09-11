@@ -1238,6 +1238,33 @@ Dates are ISO. Versions follow the `project(VERSION)` in `CMakeLists.txt`.
 
 ### Fixed
 
+* **A time-varying VEC centred the cointegration space of the first period over
+  `beta_0` rather than over `rho beta_0`.** The simulation smoother's sixth
+  argument is the prior mean of the state the *first* observation loads on, and
+  it does not put the transition matrix through it; all three of
+  `VecTvpWishart`, `VecTvpGamma` and `VecTvpStochvol` passed `/initial/beta_init`
+  there unchanged. That is the random walk's answer and is exactly right at
+  `rho = 1`. Below one the smoother was centring `beta_1` over `beta_0` while
+  the Gibbs block for `beta_0` a few lines further down was centring it over
+  `rho beta_0` -- two different models, one per block.
+
+  **Draws change**, for those three models and only where `rho` is below one --
+  which is the default, 0.999. Everything else in the file is untouched: of the
+  85 fixtures, the 15 time-varying VEC rows move and the other 70 print their
+  previous fingerprints digit for digit. The move is small at a `rho` near one,
+  a tenth of a percent on the summary statistics of `VecTvpWishart-plain` at the
+  fixtures' `rho = 0.99`, and it is not a rounding error: it is one period of
+  the state equation that was being skipped.
+
+  The new numbers are the right ones because `/initial/beta_init` and
+  `/priors/beta/mu` are documented, and read by every other block, as the
+  cointegration space of the period *before* the sample. Carrying it into the
+  sample is one application of the transition.
+
+  Found while adding the uniform prior that lets `rho` be drawn rather than
+  pinned just below one, and the reason that could not be added on top of this:
+  a `rho` that moves makes the discrepancy as large as the draw wanders.
+
 * **`bayests` exited 0 when a run started and failed.** Every `BaseModel`
   front-end wrapped its body in `catch (const std::exception &e) { std::cerr <<
   e.what(); }` and returned `void`, so the subcommand above it saw nothing: a
