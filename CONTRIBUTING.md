@@ -175,6 +175,27 @@ Fixtures are generated into the build tree. Nothing writes a `*.h5` into the
 source tree, and nothing should — see `test/CMakeLists.txt` for the generation
 matrix and add to it when a new branch needs covering.
 
+## Running the Linux CI locally
+
+The workflows run on Ubuntu and this project is developed on Windows, so the
+Linux jobs are the ones that cannot be tried before pushing. A Docker image
+carrying the runner's toolchain -- gfortran, an upstream CMake, Armadillo and
+HDF5 from vcpkg -- closes that gap: it mounts the checkout read-only, mirrors it
+inside the container, and runs the steps of `ci.yml`, `docs.yml` and
+`fingerprints.yml` against the working tree, uncommitted changes included.
+
+```bash
+docker run --rm -v "${PWD}:/src:ro" -v "${PWD}/build/docker-out:/out" bayests-ci ci Release
+```
+
+Its build context is deliberately not in this repository -- nothing it builds
+comes from a checkout, which is what lets one image serve more than one project
+-- so a clone does not provide it; on the author's machine it is
+`D:\docker-images\cpp-ci-docker`, and its README records the handful of places
+it is not the runner. The one that matters here: a fingerprint recorded in the
+container is comparable to another recorded in the container and to nothing
+else, the same rule that applies to any two machines.
+
 ## Recording the change
 
 Whatever that diff told you, write it down in `CHANGELOG.md` under *Unreleased*.
