@@ -68,7 +68,9 @@ ConstantCointSpacePrior read_coint_space_prior_constant(const ModelFile &file, c
 /// prior above, holding different datasets -- a cointegration space that moves is
 /// a state equation rather than a shrinkage towards a central location, so there
 /// is nothing shared to read. `rho` is optional; TvpCointSpacePrior says what it
-/// defaults to and why.
+/// defaults to and why. `rho_min` and `rho_max` are optional as a pair and turn
+/// rho from a fixed hyperparameter into a drawn one, with `rho` then the value
+/// the chain starts at.
 TvpCointSpacePrior read_coint_space_prior_tvp(const ModelFile &file, const std::string &group);
 
 /// The (shape, rate) pair every gamma prior is stored as.

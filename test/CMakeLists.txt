@@ -49,9 +49,10 @@ add_executable(bayests_unit_stochvol unit_stochvol.cpp)
 add_executable(bayests_unit_kalman unit_kalman.cpp)
 add_executable(bayests_unit_chan_jeliazkov unit_chan_jeliazkov.cpp)
 add_executable(bayests_unit_inverse_gaussian unit_inverse_gaussian.cpp)
+add_executable(bayests_unit_truncated_normal unit_truncated_normal.cpp)
 
 foreach(_unit bayests_unit_vec_to_var bayests_unit_forecast_lags bayests_unit_stochvol bayests_unit_kalman bayests_unit_chan_jeliazkov
-              bayests_unit_inverse_gaussian)
+              bayests_unit_inverse_gaussian bayests_unit_truncated_normal)
     target_link_libraries(${_unit} PRIVATE bayests_algorithms)
     target_link_libraries(${_unit} PRIVATE bayests_warnings)
 
@@ -189,7 +190,8 @@ endif()
 # The unit tests, which need only the shared libraries on the path: no fixture
 # to set up, and no thread pinning, since an exact identity does not care how
 # many threads computed it.
-foreach(_unit vec_to_var forecast_lags stochvol kalman chan_jeliazkov inverse_gaussian identification
+foreach(_unit vec_to_var forecast_lags stochvol kalman chan_jeliazkov inverse_gaussian
+              truncated_normal identification
               vec_klgs_2010 dfm_normal_gamma dfm_normal_stochvol dfm_tvp_gamma
               dfm_tvp_stochvol favar_normal_wishart var_ald model_group)
     add_test(NAME "unit.${_unit}" COMMAND "bayests_unit_${_unit}")
@@ -200,18 +202,28 @@ endforeach()
 # One generated model file plus the golden run over it.
 #
 #   bayests_make_model_fixture <dest.h5> <model> <none|ssvs|bvs> <covar 0|1>
-#                              <structural 0|1> <h> [group]
+#                              <structural 0|1> <h> [group] [--flag...]
 #
-# An optional seventh argument is the group the model is written under and read
-# back through; without one the model's tree hangs at the root of the file, which
-# is where a file holding a single model puts it.
+# Anything past the six required arguments is passed through: a bare word is the
+# group the model is written under and read back through -- without one the
+# model's tree hangs at the root of the file, which is where a file holding a
+# single model puts it -- and a word starting with two dashes is a flag the
+# generator reads, so a fixture can ask for one without naming a group.
 function(bayests_add_model_fixture name model varsel covar structural horizon)
-    set(_group "${ARGV6}")
+    set(_group "")
+    set(_flags "")
+    foreach(_extra IN LISTS ARGN)
+        if(_extra MATCHES "^--")
+            list(APPEND _flags "${_extra}")
+        else()
+            set(_group "${_extra}")
+        endif()
+    endforeach()
 
     add_test(NAME "fixture.${name}"
         COMMAND bayests_make_model_fixture
                 "${BAYESTS_FIXTURE_DIR}/${name}.h5"
-                "${model}" "${varsel}" "${covar}" "${structural}" "${horizon}" ${_group})
+                "${model}" "${varsel}" "${covar}" "${structural}" "${horizon}" ${_group} ${_flags})
     set_tests_properties("fixture.${name}" PROPERTIES
         FIXTURES_SETUP "fx.${name}"
         ENVIRONMENT_MODIFICATION "${_bayests_test_env_mod}")
@@ -429,10 +441,18 @@ bayests_add_model_fixture(VecNormalStochvol-structural VecNormalStochvol none 0 
 bayests_add_model_fixture(VecNormalStochvol-nofcst    VecNormalStochvol none 0 0 0)
 bayests_add_model_fixture(VecNormalStochvol-bvs-covar VecNormalStochvol bvs  1 0 4)
 
+# The `-rho` rows are the three models with the autoregression of the
+# cointegration state equation drawn rather than held at the value the file
+# names. One row each and no more: it is the same block in all three, and what
+# a second variant would cover is the interaction with selection or a covariance
+# block, which the state equation does not touch. The plain rows above stay
+# fixed-rho, which is the path every file written before the prior existed takes.
+#
 # No covar row: like VarTvpWishart, this model carries no psi block.
 bayests_add_model_fixture(VecTvpWishart-plain  VecTvpWishart none 0 0 4)
 bayests_add_model_fixture(VecTvpWishart-bvs    VecTvpWishart bvs  0 0 4)
 bayests_add_model_fixture(VecTvpWishart-nofcst VecTvpWishart none 0 0 0)
+bayests_add_model_fixture(VecTvpWishart-rho    VecTvpWishart none 0 0 4 --coint-rho)
 
 bayests_add_model_fixture(VecTvpGamma-plain     VecTvpGamma none 0 0 4)
 bayests_add_model_fixture(VecTvpGamma-bvs       VecTvpGamma bvs  0 0 4)
@@ -440,6 +460,7 @@ bayests_add_model_fixture(VecTvpGamma-covar     VecTvpGamma none 1 0 4)
 bayests_add_model_fixture(VecTvpGamma-structural VecTvpGamma none 0 1 4)
 bayests_add_model_fixture(VecTvpGamma-nofcst    VecTvpGamma none 0 0 0)
 bayests_add_model_fixture(VecTvpGamma-bvs-covar VecTvpGamma bvs  1 0 4)
+bayests_add_model_fixture(VecTvpGamma-rho       VecTvpGamma none 0 0 4 --coint-rho)
 
 bayests_add_model_fixture(VecTvpStochvol-plain     VecTvpStochvol none 0 0 4)
 bayests_add_model_fixture(VecTvpStochvol-bvs       VecTvpStochvol bvs  0 0 4)
@@ -447,6 +468,7 @@ bayests_add_model_fixture(VecTvpStochvol-covar     VecTvpStochvol none 1 0 4)
 bayests_add_model_fixture(VecTvpStochvol-structural VecTvpStochvol none 0 1 4)
 bayests_add_model_fixture(VecTvpStochvol-nofcst    VecTvpStochvol none 0 0 0)
 bayests_add_model_fixture(VecTvpStochvol-bvs-covar VecTvpStochvol bvs  1 0 4)
+bayests_add_model_fixture(VecTvpStochvol-rho       VecTvpStochvol none 0 0 4 --coint-rho)
 
 #####################################################################
 # Recorded model files

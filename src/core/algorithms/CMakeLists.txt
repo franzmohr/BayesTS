@@ -6,6 +6,7 @@ add_library(bayests_algorithms
             kalman_durbin_koopman_2002.cpp kalman_durbin_koopman_2002.h
             stochvol_ksc_1998.cpp stochvol_ksc_1998.h
             stochvol_ocsn_2007.cpp stochvol_ocsn_2007.h
+            truncated_normal.cpp truncated_normal.h
             wishart.cpp wishart.h
             bvs.cpp bvs.h
             ssvs.cpp ssvs.h

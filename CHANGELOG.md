@@ -26,6 +26,49 @@ Dates are ISO. Versions follow the `project(VERSION)` in `CMakeLists.txt`.
 
 ### Added
 
+* **A prior on `rho`**, the autoregression of the cointegration state equation,
+  so that the three time-varying VECs -- `VecTvpWishart`, `VecTvpGamma` and
+  `VecTvpStochvol` -- estimate it rather than hold it at whatever the file says.
+  This is the block Koop, Leon-Gonzalez and Strachan (2011) add to their sampler
+  and the one piece of their model that was missing here.
+
+  Write `/priors/beta/rho_min` and `/priors/beta/rho_max` to turn it on. The two
+  are the support of a uniform prior and must be given together; `/priors/beta/rho`
+  is then the value the chain starts at rather than the value it keeps, and it
+  has to lie inside that support. The draws land in `/posterior/beta/rho`, one
+  per iteration. A file that names neither bound runs exactly as it did.
+
+  **Draws are unchanged** for every file that does not put a prior on rho, which
+  is every file written before this. Verified over the whole fixture suite: with
+  the state equation fix below reverted, all 85 existing fixtures print their
+  previous fingerprints digit for digit, this block being unreachable without
+  the two bounds. Three new fixtures -- `VecTvpWishart-rho`, `VecTvpGamma-rho`
+  and `VecTvpStochvol-rho` -- cover the new block, one per model. The fix below
+  does move the three models' draws, and says so.
+
+  The block is a Gibbs step and not the Metropolis-within-Gibbs one the paper
+  needs, and the difference is in the model rather than in the algorithm. With
+  the state innovation variance fixed at the identity the path contributes a
+  normal likelihood in rho, and a uniform prior makes the conditional that
+  normal truncated to the prior's interval -- an exact draw. What makes it
+  non-standard in the paper is their initial condition: their beta at the start
+  of the sample is drawn from the state equation's own stationary distribution
+  `N(0, I / (1 - rho^2))`, which puts rho where no conjugacy survives. BayesTS
+  gives beta before the sample a normal prior of its own, read from
+  `/priors/beta/mu` and `/priors/beta/v_inv` and free of rho, so it drops out of
+  the conditional. Anyone comparing the two samplers should know that this is
+  the piece that differs: the prior over the cointegration space at the start of
+  the sample, not the draw of rho itself.
+
+  The truncated normal it draws from is new, in
+  `src/core/algorithms/truncated_normal.cpp`, and covered by
+  `unit.truncated_normal`. It is rejection sampling from three envelopes rather
+  than an inverse of the truncated CDF, because the interval here is routinely
+  both narrow and far out in a tail -- a prior support a thousandth of a unit
+  wide, against a conditional mean that can sit tens of standard deviations
+  outside it -- which is where the quantile route returns the nearer endpoint
+  every time and looks like a chain stuck at a boundary.
+
 * **`--all-groups`**, which runs every model in a file rather than the one
   `--group` names. With it `--group` becomes the root to search under, so
   `--all-groups` alone covers the whole file and `--group /submodels

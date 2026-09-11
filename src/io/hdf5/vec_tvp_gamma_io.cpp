@@ -159,6 +159,14 @@ void write_coefficients(const ModelFile &file, const VecTvpGammaDraws &draws)
     if (draws.has_beta())
     {
         write_draws(file, "/posterior/beta/coeffs", draws.beta);
+
+        // Only where the file put a prior on it. Held fixed, it is a
+        // hyperparameter the file already carries at /priors/beta/rho, and
+        // writing a row of the same number back would read as a posterior.
+        if (draws.has_rho())
+        {
+            write_draws(file, "/posterior/beta/rho", draws.rho);
+        }
     }
 
     if (draws.has_psi())

@@ -69,6 +69,10 @@ constexpr const char *kOutputs[] = {
     "/posterior/a/lambda",
     "/posterior/a/sigma",
     "/posterior/beta/coeffs",
+    // Written only by a time-varying VEC whose file put a prior on the
+    // autoregression of the cointegration state equation, so absent on most
+    // fixtures and on every model with a constant cointegration space.
+    "/posterior/beta/rho",
     // The dynamic factor model's own three. `lambda/coeffs` is the loading
     // matrix and shares no path with the `a/lambda` above it, which is a vector
     // of inclusion indicators; `factors/coeffs` is the drawn state path, which

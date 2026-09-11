@@ -92,6 +92,15 @@ constexpr int kVecNParams = kVecNAlpha + kVecNGamma; // 12
 // dataset were never read.
 constexpr double kVecRho = 0.99;
 
+// The support of the uniform prior on rho, written only by the `--coint-rho`
+// fixtures. Neither end is the one Koop, Leon-Gonzalez and Strachan use --
+// theirs is (0.999, 1), narrow enough that the truncation does all the work and
+// a wrong conditional would still land inside it. This one is wide enough for
+// the draw to move, and kVecRho above sits inside it, which is what the
+// starting-value check in validate_tvp_coint_rho() demands.
+constexpr double kVecRhoMin = 0.9;
+constexpr double kVecRhoMax = 0.999;
+
 /// A 64-bit LCG, so the fixtures do not depend on the host's <random>
 /// implementation the way std::mt19937 plus a distribution would.
 class Lcg
@@ -896,6 +905,16 @@ void write_vec_tvp_coint(const ModelFile &file)
     write_dataset_double(file, "/priors/beta/rho", kVecRho);
 }
 
+/// The support of the uniform prior on rho, which is what turns rho from a fixed
+/// hyperparameter into a drawn one. Written beside the block above rather than
+/// inside it, so that the same three models are covered both ways: the fixtures
+/// that leave this out still run the fixed-rho path every existing file takes.
+void write_vec_tvp_coint_rho_prior(const ModelFile &file)
+{
+    write_dataset_double(file, "/priors/beta/rho_min", kVecRhoMin);
+    write_dataset_double(file, "/priors/beta/rho_max", kVecRhoMax);
+}
+
 /// The time-varying coefficient block, which is the VAR's: a path, the precision
 /// of its innovations and the state it starts from. Selection is the VEC's,
 /// though, so it is written here rather than by write_tvp_coefficients().
@@ -1595,11 +1614,11 @@ bool is_vec_model(const std::string &model)
 
 int main(int argc, char *argv[])
 {
-    if (argc != 7 && argc != 8 && argc != 9)
+    if (argc < 7)
     {
         std::cerr << "Usage: " << argv[0]
                   << " <dest.h5> <model> <none|ssvs|bvs> <covar 0|1> <structural 0|1> <h>"
-                     " [group] [append]\n";
+                     " [group] [append] [--coint-rho]\n";
         return 2;
     }
 
@@ -1610,25 +1629,52 @@ int main(int argc, char *argv[])
     const bool structural = std::string(argv[5]) != "0";
     const int h = std::stoi(argv[6]);
 
-    // Add this model to a file that already holds one, rather than starting a
-    // new file -- the only way to build the several-models-in-one-file case
-    // --all-groups exists for. Every model still needs its own group, since two
-    // at the root would be the same model written twice.
-    const bool append = argc == 9 && std::string(argv[8]) == "append";
-    if (argc == 9 && !append)
+    // What follows the six required arguments, in the order the two bare words
+    // have always come in: the group, then `append`. A word starting with two
+    // dashes is a flag instead and may sit anywhere among them, so a fixture
+    // that wants one does not have to name a group it does not use.
+    std::string group_argument;
+    bool append = false;
+    bool coint_rho = false;
+    bool bare_group_seen = false;
+
+    for (int i = 7; i < argc; i++)
     {
-        std::cerr << "Error: the ninth argument, if given, must be 'append'\n";
-        return 2;
+        const std::string token = argv[i];
+
+        if (token == "--coint-rho")
+        {
+            coint_rho = true;
+        }
+        else if (token == "append")
+        {
+            // Add this model to a file that already holds one, rather than
+            // starting a new file -- the only way to build the
+            // several-models-in-one-file case --all-groups exists for. Every
+            // model still needs its own group, since two at the root would be
+            // the same model written twice.
+            append = true;
+        }
+        else if (!bare_group_seen && !token.empty() && token.rfind("--", 0) != 0)
+        {
+            group_argument = token;
+            bare_group_seen = true;
+        }
+        else
+        {
+            std::cerr << "Error: unexpected argument '" << token << "'\n";
+            return 2;
+        }
     }
 
     // The group the model is written under, normalized the same way the reader
     // normalizes --group, so the two agree on what "/models/3/" means.
     std::string group;
-    if (argc >= 8)
+    if (bare_group_seen)
     {
         try
         {
-            group = normalize_hdf5_group(argv[7]);
+            group = normalize_hdf5_group(group_argument);
         }
         catch (const std::exception &e)
         {
@@ -1673,6 +1719,13 @@ int main(int argc, char *argv[])
     if (varsel != "none" && varsel != "ssvs" && varsel != "bvs")
     {
         std::cerr << "Unknown variable selection scheme: " << varsel << '\n';
+        return 2;
+    }
+    if (coint_rho && model != "VecTvpWishart" && model != "VecTvpGamma" &&
+        model != "VecTvpStochvol")
+    {
+        std::cerr << "Only a VEC whose cointegration space moves has an autoregression to put a "
+                     "prior on: expected one of VecTvpWishart, VecTvpGamma, VecTvpStochvol\n";
         return 2;
     }
 
@@ -1781,10 +1834,15 @@ int main(int argc, char *argv[])
                              x_train);
             write_vec_model(file, model, varsel, covar, nparams);
 
+            if (coint_rho)
+            {
+                write_vec_tvp_coint_rho_prior(file);
+            }
+
             std::cout << "wrote " << dest.string() << group_suffix << " (" << model << ", varsel=" << varsel
                       << ", covar=" << covar << ", structural=" << structural << ", h=" << h
                       << ", k=" << kK << ", tt=" << kTT << ", rank=" << kVecRank
-                      << ", nparams=" << nparams << ")\n";
+                      << ", nparams=" << nparams << ", coint_rho=" << coint_rho << ")\n";
             return 0;
         }
 

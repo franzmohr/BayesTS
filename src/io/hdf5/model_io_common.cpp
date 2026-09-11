@@ -182,6 +182,28 @@ TvpCointSpacePrior read_coint_space_prior_tvp(const ModelFile &file, const std::
         prior.rho = get_dataset_double(file, group + "/rho");
     }
 
+    // The support of the uniform prior on rho, and with it the switch that
+    // turns rho's draw on. Both ends or neither: one alone would leave the
+    // sampler to invent the other, and which end is missing changes the model
+    // rather than a detail of it.
+    const bool has_min = file.exist(group + "/rho_min");
+    const bool has_max = file.exist(group + "/rho_max");
+
+    if (has_min != has_max)
+    {
+        throw std::invalid_argument(
+            "the prior support of rho needs both ends: " + group + "/rho" +
+            (has_min ? "_max" : "_min") + " is missing. Leave both out to hold rho fixed at " +
+            group + "/rho");
+    }
+
+    if (has_min)
+    {
+        prior.rho_prior.draw = true;
+        prior.rho_prior.min = get_dataset_double(file, group + "/rho_min");
+        prior.rho_prior.max = get_dataset_double(file, group + "/rho_max");
+    }
+
     return prior;
 }
 
