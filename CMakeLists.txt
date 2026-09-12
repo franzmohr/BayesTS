@@ -44,7 +44,7 @@ unset(_bayests_bin_real)
 
 
 project(BayesTS
-    VERSION 1.0.0
+    VERSION 0.1.0
     LANGUAGES C CXX Fortran
     DESCRIPTION "Bayesian Time Series Library"
 )

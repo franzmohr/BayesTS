@@ -24,14 +24,15 @@ Dates are ISO. Versions follow the `project(VERSION)` in `CMakeLists.txt`.
 
 ## Unreleased
 
-## 1.0.0 — 2026-09-12
+## 0.1.0 — 2026-09-12
 
 First tagged release, and the version the JSS manuscript describes. The
-number says the interface is now stable rather than that the library is
-finished: the twenty registered algorithms, the model-file layout, the four
-commands and the public headers in `include/bayests/` are what downstream
-code may rely on from here, and a change to any of them is a breaking change
-with the version bump that implies.
+leading zero is deliberate: twenty algorithms, the model-file layout, the
+four commands and the public headers in `include/bayests/` are all in place
+and tested, but the interface is not yet being promised as stable, and a
+later release may change it without the ceremony a 1.x would owe. A 1.0.0
+is what that promise will be spelled as, once the model set has stopped
+moving and the manuscript describing it has been through review.
 
 Everything below was developed before that line was drawn.
 
