@@ -252,7 +252,7 @@ forecast is also the one here wider than `k`: `h * (k + n_obs_factors)`, the
 panel of a horizon followed by the observed factors of the same horizon, which
 are what the model is forecast for and have no other dataset to go in.
 
-Three algorithms carry the implementation weight. The time-varying coefficient
+Four algorithms carry the implementation weight. The time-varying coefficient
 paths are drawn as a single block with the simulation smoother of Durbin and
 Koopman (2002), so the whole path moves at once rather than period by period.
 Stochastic volatility uses the ten-component normal mixture of Omori et al.
@@ -264,6 +264,14 @@ The two `DfmTvp*` models are the ones that reach for the first and the third at
 once — the band sampler for the factors, the simulation smoother for the loading
 path of each series and for the transition — and `DfmTvpStochvol` reaches for all
 three.
+
+The fourth is `truncated_normal`, which the time-varying VECs need for `rho`
+when a file puts a prior on it. It draws by rejection from one of three
+envelopes rather than by inverting the truncated CDF, and the reason is the
+shape of the interval this model asks for: `(0.999, 1)` is both narrow and far
+out in a tail, which is exactly where the inversion returns the nearer endpoint
+in floating point every time and produces a chain that looks stuck at a
+boundary rather than one that has lost precision.
 
 Each VEC differs from the VAR beside it in one place, the same place every time:
 the first `k * rank` regressors are `beta' w_{t-1}`, so they are not data but a
@@ -653,6 +661,27 @@ for the change they precede — a baseline recorded before a *build flag* change
 still diffs cleanly enough to look meaningful, which makes a stale one worse
 than none.
 
+**The Linux CI jobs, locally.** The workflows run on Ubuntu and this project is
+developed on Windows, which leaves the Linux jobs as the ones that cannot be
+tried before pushing — and they are where a header one compiler includes
+transitively and the other does not, or a `Debug` build that only fails when it
+links a release dependency, tends to be found. `docker/` is those jobs as an
+image:
+
+```bash
+docker build -f docker/Dockerfile -t bayests-ci .
+docker run --rm -v "$PWD:/src:ro" -v "$PWD/build/docker-out:/out" bayests-ci ci Release
+```
+
+`ci`, `docs`, `fingerprints [ref]` and `shell` are the entry points, mirroring
+`ci.yml`, `docs.yml` and `fingerprints.yml`. The checkout goes in read-only and
+is mirrored before anything is configured, so a Linux build never meets a
+Windows checkout's `build/` tree. Uncommitted changes are included, which is
+the point — it answers *will what I have now survive CI*, which the workflow
+cannot be asked until it is pushed. A fingerprint recorded in the container is
+comparable to another recorded in the container and to nothing else, the same
+rule that governs any two machines. See [docker/README.md](docker/README.md).
+
 **Coverage.** All twenty samplers are covered from a clean clone:
 `test/make_model_fixture.cpp` writes a model file for every one of them, and the
 suite depends on no data outside the repository.
@@ -1018,6 +1047,23 @@ Contributions are accepted under the BSD 3-Clause terms below. New source files
 need the `SPDX-License-Identifier: BSD-3-Clause` header that every existing one
 carries.
 
+## Citing BayesTS
+
+[CITATION.cff](CITATION.cff) is the machine-readable version, and is what
+GitHub's "Cite this repository" box reads. Cite the version you actually ran —
+the samplers are under development and the numbers a release produces are a
+property of that release:
+
+> Mohr, F. X. (2026). *BayesTS: Bayesian time series estimation in C++*.
+> Version 0.1.0. <https://github.com/franzmohr/BayesTS>
+
+<!-- Once the v0.1.0 GitHub release is archived by Zenodo, add the version DOI
+     here and prefer it to the URL above; keep CITATION.cff in step. -->
+
+Please also cite the method a sampler implements rather than this library
+alone: the algorithm references are in [References](#references) below and in
+the header of each sampler.
+
 ## License
 
 BayesTS is released under the [BSD 3-Clause License](LICENSE). Every source file
@@ -1083,6 +1129,10 @@ which ones they are.
 
 ## References
 
+Bernanke, B. S., Boivin, J., & Eliasz, P. (2005). Measuring the effects of
+monetary policy: A factor-augmented vector autoregressive (FAVAR) approach.
+*The Quarterly Journal of Economics*, 120(1), 387-422.
+
 Chan, J. C. C., & Jeliazkov, I. (2009). Efficient simulation and integrated
 likelihood estimation in state space models. *International Journal of
 Mathematical Modelling and Numerical Optimisation*, 1(1-2), 101-120.
@@ -1091,7 +1141,7 @@ Chan, J., Koop, G., Poirier, D. J., & Tobias, J. L. (2019). *Bayesian
 Econometric Methods* (2nd ed.). Cambridge University Press.
 
 Durbin, J., & Koopman, S. J. (2002). A simple and efficient simulation smoother
-for state space time series analysis. *Biometrika*, 89(3), 603-615.
+for state space time series analysis. *Biometrika*, 89(3), 603-616.
 
 Kim, S., Shephard, N., & Chib, S. (1998). Stochastic volatility: Likelihood
 inference and comparison with ARCH models. *The Review of Economic Studies*,
@@ -1102,6 +1152,23 @@ Koop, G., León-González, R., & Strachan, R. W. (2010). Efficient posterior
 simulation for cointegrated models with priors on the cointegration space.
 *Econometric Reviews*, 29(2), 224-242.
 
+Koop, G., León-González, R., & Strachan, R. W. (2011). Bayesian inference in a
+time varying cointegration model. *Journal of Econometrics*, 165(2), 210-220.
+The state equation the three `VecTvp*` samplers give `beta`, and the uniform
+prior on `rho` they draw it under.
+
+Kozumi, H., & Kobayashi, G. (2011). Gibbs sampling methods for Bayesian
+quantile regression. *Journal of Statistical Computation and Simulation*,
+81(11), 1565-1578. The scale mixture the two `*Ald` samplers draw from.
+
 Omori, Y., Chib, S., Shephard, N., & Nakajima, J. (2007). Stochastic volatility
 with leverage: Fast and efficient likelihood inference. *Journal of
 Econometrics*, 140(2), 425-449.
+
+Yang, Y., Wang, H. J., & He, X. (2016). Posterior inference in Bayesian
+quantile regression with asymmetric Laplace likelihood. *International
+Statistical Review*, 84(3), 327-344. The interval adjustment the `*Ald`
+samplers do **not** apply; see the note above.
+
+Yu, K., & Moyeed, R. A. (2001). Bayesian quantile regression. *Statistics &
+Probability Letters*, 54(4), 437-447.
