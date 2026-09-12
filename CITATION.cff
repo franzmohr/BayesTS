@@ -1,0 +1,33 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (c) 2026 Franz X. Mohr
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "BayesTS: Bayesian time series estimation in C++"
+abstract: >-
+  A C++ library of Gibbs samplers for Bayesian multivariate time series
+  models, driven either from the command line or from an embedded host such
+  as an R package. Twenty algorithms span vector autoregressions, quantile
+  VARs, vector error correction models, dynamic factor models and a factor
+  augmented VAR. The numerical core performs no input or output and holds no
+  global state beyond the random number generator, and one HDF5 model file
+  holds the data, priors, starting values and results of one model.
+type: software
+authors:
+  - family-names: Mohr
+    given-names: Franz X.
+version: 1.0.0
+date-released: "2026-09-12"
+license: BSD-3-Clause
+repository-code: "https://github.com/franzmohr/BayesTS"
+keywords:
+  - Bayesian VAR
+  - vector autoregression
+  - vector error correction
+  - dynamic factor model
+  - FAVAR
+  - quantile regression
+  - Gibbs sampling
+  - stochastic volatility
+  - time-varying parameters
+  - C++
+  - HDF5

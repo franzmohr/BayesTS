@@ -1,0 +1,34 @@
+{
+    "title": "BayesTS: Bayesian time series estimation in C++",
+    "description": "<p>A C++ library of Gibbs samplers for Bayesian multivariate time series models, driven either from the command line or from an embedded host such as an R package.</p><p>Twenty algorithms are registered across four model families: vector autoregressions with constant or time-varying coefficients and a Wishart, independent gamma or stochastic volatility error precision; two quantile VARs under an asymmetric Laplace likelihood; the same six specifications as vector error correction models, beside a compact-regressor implementation of the constant-coefficient VEC; four dynamic factor models; and a factor augmented VAR.</p><p>The numerical core performs no input or output, prints nothing and holds no global state beyond the random number generator, so the same sampler objects serve a command-line program and a host that must keep control of its own random number stream and console. One HDF5 model file holds the data, priors, starting values and results of one model, so a run is fully described by the file it is given.</p>",
+    "upload_type": "software",
+    "license": "BSD-3-Clause",
+    "access_right": "open",
+    "creators": [
+        {
+            "name": "Mohr, Franz X."
+        }
+    ],
+    "keywords": [
+        "Bayesian VAR",
+        "vector autoregression",
+        "vector error correction",
+        "dynamic factor model",
+        "FAVAR",
+        "quantile regression",
+        "Gibbs sampling",
+        "stochastic volatility",
+        "time-varying parameters",
+        "Markov chain Monte Carlo",
+        "C++",
+        "HDF5",
+        "econometrics"
+    ],
+    "related_identifiers": [
+        {
+            "identifier": "https://github.com/franzmohr/BayesTS",
+            "relation": "isSupplementTo",
+            "scheme": "url"
+        }
+    ]
+}

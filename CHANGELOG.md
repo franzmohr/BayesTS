@@ -24,6 +24,17 @@ Dates are ISO. Versions follow the `project(VERSION)` in `CMakeLists.txt`.
 
 ## Unreleased
 
+## 1.0.0 — 2026-09-12
+
+First tagged release, and the version the JSS manuscript describes. The
+number says the interface is now stable rather than that the library is
+finished: the twenty registered algorithms, the model-file layout, the four
+commands and the public headers in `include/bayests/` are what downstream
+code may rely on from here, and a change to any of them is a breaking change
+with the version bump that implies.
+
+Everything below was developed before that line was drawn.
+
 ### Added
 
 * **A prior on `rho`**, the autoregression of the cointegration state equation,
