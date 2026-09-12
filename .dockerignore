@@ -1,0 +1,16 @@
+# Build context for docker/Dockerfile, which copies exactly two files out of the
+# repository -- .github/highfive-version and docker/ci.sh. The sources it builds
+# arrive at run time through a bind mount, not through the context, so anything
+# large here is pure transfer cost.
+#
+# The generated fixtures alone are well over a hundred megabytes, and build/ on a
+# developer machine is larger still. With these excluded the context is about ten
+# kilobytes.
+build/
+out/
+install/
+cmake-build-*/
+.git/
+*.h5
+test/baselines/
+CMakeUserPresets.json

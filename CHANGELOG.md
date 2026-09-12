@@ -1075,6 +1075,27 @@ Dates are ISO. Versions follow the `project(VERSION)` in `CMakeLists.txt`.
   truncated one to 3.6e-15, and checks the draw itself against the dense
   conditional's mean and standard deviation over 20000 draws.
 
+* **The Linux CI jobs as a Docker image**, in `docker/`. One image carries the
+  same toolchain and dependency set the Ubuntu runner uses -- gfortran, an
+  upstream CMake, Ninja, and Armadillo and HDF5 from vcpkg's
+  `x64-linux-dynamic` triplet, with HighFive at the ref `.github/highfive-version`
+  pins -- and `docker/ci.sh` runs the steps of `ci.yml`, `docs.yml` and
+  `fingerprints.yml` against it. The point is the platform gap: this project is
+  developed on Windows, so the Linux jobs were previously unrunnable before
+  pushing.
+
+  The checkout is mounted read-only and mirrored inside the container, so a
+  Linux configure never meets the Windows build tree, and what gets built is the
+  working tree with its uncommitted changes. Nothing about the library changes:
+  this is a second way to run what the workflows already run, and the workflows
+  themselves are untouched. **Draws are unchanged** -- no source file was
+  edited.
+
+  `docker/README.md` records where it is deliberately not the runner, of which
+  the one that matters is that a fingerprint recorded in the container is
+  comparable to another recorded in the container and to nothing else, the same
+  rule that applies to any two machines.
+
 ### Changed
 
 * **The sampler and test counts in the three documentation files are brought
