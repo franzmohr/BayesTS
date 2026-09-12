@@ -281,7 +281,7 @@ between `alpha` and `beta` by the normalisation of Koop, Leon-Gonzalez and
 Strachan (2010); the time-varying three draw it as a state path with the same
 smoother the coefficients use, and rebuild the regressors period by period. All
 six forecast in levels, by rewriting the draws as the level VAR they imply —
-which means their `/data/forecast/z` is in the level layout, not the differenced
+which means their `/data/forecast/x` is in the level layout, not the differenced
 one `/data/train/z` uses.
 
 SSVS is available only for the constant-coefficient models with a gamma or
@@ -417,7 +417,7 @@ written for a simpler model still describes a valid one.
 | `/data/train/w` | A VEC's error correction term, `tt` rows by `k_beta` columns |
 | `/data/train/x` | The regressors in the compact layout, `tt` rows by one column each; read by `VecKlgs2010` in place of `z` |
 | `/data/train/f_obs` | A FAVAR only: the observed factors, `tt` rows by `n_obs_factors` columns. The observed half of the state vector, not regressors |
-| `/data/forecast/z` | Out-of-sample regressors; required when `h` > 0 |
+| `/data/forecast/x` | Out-of-sample regressors in the compact layout, `h` rows by one column per regressor; required when `h` > 0. A file written before this layout carries `/data/forecast/z` instead — the same regressors kroneckered up with `I_k` — and is still read, the reader compacting it on the way in |
 | `/priors/a`, `/priors/psi` | Normal prior `mu` and `v_inv` for the coefficients and the covariance block, plus `inprior`, `include`, and `tau0`/`tau1` for SSVS |
 | `/model/priors/psi` (attribute) | `varsel` for the covariance block on its own, read by the four time-varying models that have one; the `/model` attribute above governs the coefficients |
 | `/priors/u_sigma` | `shape`/`rate` for gamma precisions, `df`/`scale` for Wishart, `mu`/`v_inv`/`sigma`/`offset` for stochastic volatility |

@@ -173,7 +173,7 @@ in place and do not wire a second copy of the mixture next to it.
 Each VEC differs from the VAR beside it in one place: the first `k * rank`
 regressors are `beta' w_{t-1}`, a function of the current draw rather than data,
 so a Gibbs block for beta is added. All six forecast in levels by rewriting the
-draws as the level VAR they imply — their `/data/forecast/z` is in the level
+draws as the level VAR they imply — their `/data/forecast/x` is in the level
 layout, not the differenced one `/data/train/z` uses.
 
 Combinations the samplers **reject** rather than silently ignore: SSVS with

@@ -16,7 +16,7 @@ VarNormalGammaInput read_input(const ModelFile &file)
 
     read_mat_if_present(file, "/data/train/y", input.train.y);
     read_mat_if_present(file, "/data/train/z", input.train.z);
-    read_mat_if_present(file, "/data/forecast/z", input.forecast.z);
+    read_forecast_regressors(file, input.spec.k, input.forecast.x);
 
     if (input.use_a())
     {

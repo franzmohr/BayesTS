@@ -152,17 +152,17 @@ void test_root_unchanged(HighFive::File &h5)
     const arma::mat values = {{7.0, 8.0}};
 
     const ModelFile root(h5);
-    write_armadillo_matrix_to_hdf5(root, "/data/forecast/z", values, false);
+    write_armadillo_matrix_to_hdf5(root, "/data/forecast/x", values, false);
 
-    check(h5.exist("/data/forecast/z"), "an ungrouped write lands at the root");
+    check(h5.exist("/data/forecast/x"), "an ungrouped write lands at the root");
 
-    const arma::mat read_back = hdf5_dataset_to_armadillo_matrix_double(root, "/data/forecast/z");
+    const arma::mat read_back = hdf5_dataset_to_armadillo_matrix_double(root, "/data/forecast/x");
     check(arma::approx_equal(read_back, values, "absdiff", 0.0),
           "an ungrouped matrix reads back unchanged");
 
     // The implicit conversion, which is what keeps every caller that has no
     // group to name compiling and reading the root.
-    check(dataset_has_data(h5, "/data/forecast/z"), "a bare file still reads the root");
+    check(dataset_has_data(h5, "/data/forecast/x"), "a bare file still reads the root");
 }
 
 /// A group that list_model_groups() has to recognise: a /model subgroup with an

@@ -24,9 +24,45 @@ Dates are ISO. Versions follow the `project(VERSION)` in `CMakeLists.txt`.
 
 ## Unreleased
 
-Nothing yet: `main` is at the 0.1.0 tag. New entries go here, under an
-`### Added`, `### Changed` or `### Fixed` heading, and move down into a
-version section when one is cut.
+### Changed
+
+- **The out-of-sample regressors are the compact layout.** `ForecastData::x` is
+  `h` rows by `VarSpec::n_x()` columns, one period per row, where
+  `ForecastData::z` was `h * k` rows by `k * n_x` columns — the same numbers
+  kroneckered up with `I_k`. `/data/forecast/x` is the dataset that carries it.
+
+  A forecast applies one `k x n_x` coefficient matrix to one regressor column
+  per period, so the SUR spelling held no information the compact one does not,
+  at `k^2` the memory and `k` times the multiplications — all of the extra ones
+  against a structural zero. The six samplers that iterate a path now reshape a
+  draw's coefficients once per draw instead of multiplying a wide `z` once per
+  horizon. It is `k` that decides how much that is worth: for a three-variable
+  VAR nothing anyone would measure, for the 174-variable global VAR that
+  prompted it, half a gigabyte of regressors down to 17 KB over twelve periods.
+
+  `VarNormalGamma` and `VarTvpGamma` gained the width check the other four
+  forecasts already had. `arma::reshape()` zero-pads or truncates instead of
+  throwing, so regressors that do not divide into `k` rows would have produced a
+  plausible path from the wrong coefficients where the SUR product used to fail
+  on the mismatch.
+
+  *Draws change by a rounding error.* The arithmetic is the same sum with the
+  structural zeros left out, but BLAS blocks a 184-term reduction differently
+  from a 32,016-term one. All 88 fixtures were compared with
+  `record_fingerprints.sh`: 52 moved, every one of them in `/posterior/forecast`
+  and nowhere else, with a worst relative difference of 9.4e-16 — about four
+  ulps. Coefficients, log likelihood, precisions and `beta` are bit-identical
+  throughout.
+
+  **Model files written before this still forecast.** A file carrying
+  `/data/forecast/z` and no `/data/forecast/x` is compacted on the way in by
+  `read_forecast_regressors()`, which is exact — it subscripts the kron rather
+  than averaging it — and refuses a `z` whose dimensions are not multiples of
+  `k` rather than inventing regressors from one. `unit.forecast_regressors_io`
+  covers both spellings, the precedence when a file has both, and that refusal.
+
+New entries go here, under an `### Added`, `### Changed` or `### Fixed`
+heading, and move down into a version section when one is cut.
 
 ## 0.1.0 — 2026-09-12
 

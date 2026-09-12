@@ -34,6 +34,21 @@ arma::mat read_mat(const ModelFile &file, const std::string &dataset);
 bool read_vec_if_present(const ModelFile &file, const std::string &dataset, arma::vec &out);
 bool read_mat_if_present(const ModelFile &file, const std::string &dataset, arma::mat &out);
 
+/// The out-of-sample regressors, in the compact layout ForecastData::x is
+/// written in: one row per horizon, one column per regressor.
+///
+/// Reads `/data/forecast/x` when it is there. A file written before that layout
+/// carries `/data/forecast/z` instead -- the same regressors kroneckered up with
+/// I_k, at k times the rows and k times the columns -- and is compacted back on
+/// the way in, so a model file recorded by an earlier version still forecasts.
+/// `k` is what decides which of the two a `z` is, so it has to come from the
+/// spec rather than from the dataset's own shape.
+///
+/// Leaves `out` alone when neither is there, which is what a model file with no
+/// forecast requested looks like; require_forecast_regressors() is what turns
+/// that into an error for a model that needed them.
+bool read_forecast_regressors(const ModelFile &file, int k, arma::mat &out);
+
 /// A time-varying starting value. A state path is stored as one long row, so
 /// reading it back means saying how wide a period is; the sampler is handed
 /// the rectangle, `rows` by `periods`.

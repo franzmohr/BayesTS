@@ -69,6 +69,50 @@ bool read_mat_if_present(const ModelFile &file, const std::string &dataset, arma
     return true;
 }
 
+bool read_forecast_regressors(const ModelFile &file, int k, arma::mat &out)
+{
+    if (read_mat_if_present(file, "/data/forecast/x", out))
+    {
+        return true;
+    }
+
+    arma::mat sur;
+    if (!read_mat_if_present(file, "/data/forecast/z", sur))
+    {
+        return false;
+    }
+
+    if (k <= 0)
+    {
+        throw std::invalid_argument(
+            "/data/forecast/z is the SUR layout and can only be read against a positive k, got " +
+            std::to_string(k));
+    }
+    const arma::uword width = static_cast<arma::uword>(k);
+    if (sur.n_rows % width != 0 || sur.n_cols % width != 0)
+    {
+        throw std::invalid_argument(
+            "/data/forecast/z is the SUR layout, so both of its dimensions have to be multiples "
+            "of k = " + std::to_string(k) + ", got " + std::to_string(sur.n_rows) + " by " +
+            std::to_string(sur.n_cols));
+    }
+
+    // z is kron(x, I_k), so the block at row i and column j is x(i, j) * I_k and
+    // x(i, j) is the one element of it that every block has in the same place.
+    // Taking the corner rather than, say, a block mean is deliberate: a file
+    // whose z is not a kron of anything is a file this cannot rescue, and
+    // averaging would turn it into plausible numbers instead of wrong ones.
+    out.set_size(sur.n_rows / width, sur.n_cols / width);
+    for (arma::uword i = 0; i < out.n_rows; i++)
+    {
+        for (arma::uword j = 0; j < out.n_cols; j++)
+        {
+            out(i, j) = sur(i * width, j * width);
+        }
+    }
+    return true;
+}
+
 arma::mat read_path(const ModelFile &file, const std::string &dataset, arma::uword rows,
                     arma::uword periods)
 {

@@ -13,10 +13,15 @@
 /// returns the wrong path.
 ///
 /// The check is a race between two computations of the same thing. One drives
-/// z the way a sampler does -- fill the lag columns from the path so far,
+/// x the way a sampler does -- fill the lag columns from the path so far,
 /// multiply by the coefficients -- and the other applies the recursion
 /// y_t = sum_j A_j y_{t-j} directly. Errors are left out of both, so the two must
 /// agree to rounding.
+///
+/// The regressors are the compact layout, one period per row: the coefficients
+/// of a draw are the k x kp matrix [A_1 ... A_p] and a period is one column
+/// against it. reshape() of the stored vector has to recover exactly that, so
+/// this pins the coefficient layout as well as the lag order.
 ///
 /// Lag blocks run most recent first: column block j carries y_{t-j}. That is
 /// verified against the recorded fixtures rather than assumed -- in
@@ -47,19 +52,18 @@ void check_close(const char *what, const double got, const double want)
     }
 }
 
-/// The regressor matrix a caller hands to a forecast: h*k rows by k*p columns,
-/// row block i holding kron(x_i', I_k) for the lags of horizon i. Only the cells
-/// that are actual observations are filled -- lag j of horizon i is a real
-/// observation when j > i -- because the rest is what update_forecast_lags()
-/// exists to write.
+/// The regressor matrix a caller hands to a forecast: h rows by k*p columns, row
+/// i holding the lags of horizon i most recent first. Only the cells that are
+/// actual observations are filled -- lag j of horizon i is a real observation
+/// when j > i -- because the rest is what update_forecast_lags() exists to
+/// write.
 ///
 /// `history` is y_T, y_{T-1}, ... most recent first, so lag j of horizon i is
 /// history[j - i - 1].
 arma::mat build_forecast_regressors(const std::vector<arma::vec> &history, const int k,
                                     const int p, const int h)
 {
-    const arma::mat diag_k = arma::eye<arma::mat>(k, k);
-    arma::mat z = arma::zeros<arma::mat>(h * k, k * k * p);
+    arma::mat x = arma::zeros<arma::mat>(h, k * p);
 
     for (int i = 0; i < h; i++)
     {
@@ -67,30 +71,30 @@ arma::mat build_forecast_regressors(const std::vector<arma::vec> &history, const
         {
             if (j > i)
             {
-                z.submat(i * k, (j - 1) * k * k, (i + 1) * k - 1, j * k * k - 1) =
-                    arma::kron(arma::trans(history[static_cast<std::size_t>(j - i - 1)]), diag_k);
+                x.submat(i, (j - 1) * k, i, j * k - 1) =
+                    arma::trans(history[static_cast<std::size_t>(j - i - 1)]);
             }
         }
     }
 
-    return z;
+    return x;
 }
 
-/// Drives z the way a sampler's forecast loop does, and returns the path.
-arma::vec simulate_through_regressors(const arma::vec &a, arma::mat z,
+/// Drives x the way a sampler's forecast loop does, and returns the path.
+arma::vec simulate_through_regressors(const arma::vec &a, arma::mat x,
                                      const std::vector<arma::vec> &history, const int k,
                                      const int p, const int h)
 {
-    const arma::mat diag_k = arma::eye<arma::mat>(k, k);
+    const arma::mat a_mat = arma::reshape(a, k, x.n_cols);
     arma::mat fcst = arma::zeros<arma::mat>(h * k, 1);
 
     for (int i = 0; i < h; i++)
     {
         if (i > 0 && p > 0)
         {
-            update_forecast_lags(z, fcst, 0, i, k, p, diag_k);
+            update_forecast_lags(x, fcst, 0, i, k, p);
         }
-        fcst.submat(i * k, 0, (i + 1) * k - 1, 0) = z.rows(i * k, (i + 1) * k - 1) * a;
+        fcst.submat(i * k, 0, (i + 1) * k - 1, 0) = a_mat * arma::trans(x.row(i));
     }
 
     (void)history;
@@ -143,19 +147,19 @@ void run_case(const char *label, const int k, const int p, const int h)
         history.push_back(arma::randn<arma::vec>(k));
     }
 
-    const arma::mat z = build_forecast_regressors(history, k, p, h);
-    const arma::vec through_z = simulate_through_regressors(a, z, history, k, p, h);
+    const arma::mat x = build_forecast_regressors(history, k, p, h);
+    const arma::vec through_x = simulate_through_regressors(a, x, history, k, p, h);
     const arma::vec direct = simulate_directly(A, history, k, h);
 
     for (int i = 0; i < h * k; i++)
     {
         // Reported per horizon rather than per element: which horizon first
         // disagrees is what says whether the lags are reversed or merely stale.
-        if (std::abs(through_z(i) - direct(i)) >= 1e-12)
+        if (std::abs(through_x(i) - direct(i)) >= 1e-12)
         {
             std::printf("  horizon %d, element %d\n", i / k + 1, i % k);
         }
-        check_close("path agrees", through_z(i), direct(i));
+        check_close("path agrees", through_x(i), direct(i));
     }
 }
 

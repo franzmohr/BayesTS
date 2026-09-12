@@ -219,6 +219,11 @@ struct Layout
 {
     int n_lag = kK * kK * kP;      // 9
     int n_non_structural = kK * (kK * kP + kM * (kS + 1) + kN); // 12, lags + intercepts
+    // The same two counts in the compact layout the forecast regressors use:
+    // one column per regressor rather than k of them. /data/train/z is still
+    // the SUR form, so both spellings are needed in the one fixture.
+    int n_x_lag = kK * kP;                             // 3
+    int n_x = kK * kP + kM * (kS + 1) + kN;            // 4
     int n_structural = 0;
     int nparams = 0;
     int n_psi = kK * (kK - 1) / 2; // 3
@@ -265,23 +270,20 @@ arma::mat build_train_regressors(const arma::mat &series, const Layout &layout, 
     return z;
 }
 
-/// (h * k) x n_non_structural. Only the first lag block and the intercepts are
+/// h x n_x, one period per row. Only the first lag block and the intercepts are
 /// filled in; the sampler overwrites the rest as the path unfolds. The
 /// structural columns are deliberately absent -- the forecast code splits them
 /// off the posterior draws instead.
 arma::mat build_forecast_regressors(const arma::mat &series, const Layout &layout, int h)
 {
-    const arma::mat diag_k = arma::eye<arma::mat>(kK, kK);
-    arma::mat z(h * kK, layout.n_non_structural, arma::fill::zeros);
+    arma::mat x(h, layout.n_x, arma::fill::zeros);
 
-    for (int i = 0; i < h; ++i)
-    {
-        z.submat(i * kK, layout.n_lag, (i + 1) * kK - 1, layout.n_non_structural - 1) = diag_k;
-    }
-    z.submat(0, 0, kK - 1, layout.n_lag - 1) =
-        arma::kron(arma::trans(series.col(kTT + kP - 1)), diag_k);
+    // The intercept, which the SUR spelling of this carried as a k x k identity
+    // per horizon and which is one number per period here.
+    x.cols(layout.n_x_lag, layout.n_x - 1).ones();
+    x.submat(0, 0, 0, layout.n_x_lag - 1) = arma::trans(series.col(kTT + kP - 1));
 
-    return z;
+    return x;
 }
 
 void write_common(const ModelFile &file, const std::string &model, const std::string &varsel,
@@ -345,7 +347,7 @@ void write_common(const ModelFile &file, const std::string &model, const std::st
     if (h > 0)
     {
         ensure_group(file, "/data/forecast");
-        write_mat(file, "/data/forecast/z", build_forecast_regressors(series, layout, h));
+        write_mat(file, "/data/forecast/x", build_forecast_regressors(series, layout, h));
         write_attribute<int>(file, "/model", "h", h);
     }
 }
@@ -760,38 +762,35 @@ arma::mat build_vec_train_regressors(const arma::mat &levels, const arma::mat &w
     return z;
 }
 
-/// (h * k) x k(k p + n_restricted), in the *level* layout every VEC forecast
-/// expects: p blocks of endogenous lags, then the constant, which was restricted
-/// to the cointegration space and becomes an ordinary regressor of the level
-/// VAR. Nothing here is in differences, and none of it can be derived from
-/// /data/train/z -- which is the demand on the caller the samplers document.
+/// h x (k p + n_restricted), one period per row, in the *level* layout every VEC
+/// forecast expects: p blocks of endogenous lags, then the constant, which was
+/// restricted to the cointegration space and becomes an ordinary regressor of
+/// the level VAR. Nothing here is in differences, and none of it can be derived
+/// from /data/train/z -- which is the demand on the caller the samplers
+/// document.
 ///
 /// update_forecast_lags() overwrites the block for lag j at horizon i only once
 /// i >= j, so with two lags both blocks have to be seeded at horizon 0 and the
 /// second one again at horizon 1.
 arma::mat build_vec_forecast_regressors(const arma::mat &levels, int h)
 {
-    const arma::mat diag_k = arma::eye<arma::mat>(kK, kK);
-    const int lag_cols = kK * kK * kVecP;
-    const int ncols = lag_cols + kK * kVecNRestricted;
-    arma::mat z(h * kK, ncols, arma::fill::zeros);
+    const int lag_cols = kK * kVecP;
+    const int ncols = lag_cols + kVecNRestricted;
+    arma::mat x(h, ncols, arma::fill::zeros);
 
-    for (int i = 0; i < h; ++i)
-    {
-        z.submat(i * kK, lag_cols, (i + 1) * kK - 1, ncols - 1) = diag_k;
-    }
+    x.cols(lag_cols, ncols - 1).ones();
 
-    const arma::mat y_last = arma::kron(arma::trans(levels.col(kTT + kVecP - 1)), diag_k);
-    const arma::mat y_before = arma::kron(arma::trans(levels.col(kTT + kVecP - 2)), diag_k);
+    const arma::rowvec y_last = arma::trans(levels.col(kTT + kVecP - 1));
+    const arma::rowvec y_before = arma::trans(levels.col(kTT + kVecP - 2));
 
-    z.submat(0, 0, kK - 1, kK * kK - 1) = y_last;
-    z.submat(0, kK * kK, kK - 1, 2 * kK * kK - 1) = y_before;
+    x.submat(0, 0, 0, kK - 1) = y_last;
+    x.submat(0, kK, 0, 2 * kK - 1) = y_before;
     if (h > 1)
     {
-        z.submat(kK, kK * kK, 2 * kK - 1, 2 * kK * kK - 1) = y_last;
+        x.submat(1, kK, 1, 2 * kK - 1) = y_last;
     }
 
-    return z;
+    return x;
 }
 
 /// The error specification attribute, which is what every reader dispatches on.
@@ -849,7 +848,7 @@ void write_vec_common(const ModelFile &file, const std::string &model, const std
     if (h > 0)
     {
         ensure_group(file, "/data/forecast");
-        write_mat(file, "/data/forecast/z", build_vec_forecast_regressors(levels, h));
+        write_mat(file, "/data/forecast/x", build_vec_forecast_regressors(levels, h));
         write_attribute<int>(file, "/model", "h", h);
     }
 }

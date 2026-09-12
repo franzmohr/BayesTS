@@ -151,7 +151,7 @@ fixture yet has a forecast horizon for `VecNormalWishart`. The path it would
 exercise -- rewriting the draws as a level VAR and forecasting from those -- is
 covered by the other six VECs, which all reach the same code, so what is
 missing is that model's own conversion rather than the shared recursion. Note
-that supplying `h` is not enough on its own: `/data/forecast/z` has to be in the
+that supplying `h` is not enough on its own: `/data/forecast/x` has to be in the
 level layout, with `p + 1` blocks of endogenous lags, not the differenced layout
 `/data/train/z` uses.
 

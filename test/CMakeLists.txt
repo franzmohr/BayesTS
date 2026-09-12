@@ -105,6 +105,18 @@ if(OpenMP_CXX_FOUND)
     target_link_libraries(bayests_unit_model_group PRIVATE OpenMP::OpenMP_CXX)
 endif()
 
+# On the io layer for the same reason: which of the two forecast-regressor
+# layouts a file carries, and that the older one still reads, is a property of
+# the reader rather than of any sampler.
+add_executable(bayests_unit_forecast_regressors_io unit_forecast_regressors_io.cpp)
+
+target_link_libraries(bayests_unit_forecast_regressors_io PRIVATE bayests_hdf5_helper)
+target_link_libraries(bayests_unit_forecast_regressors_io PRIVATE bayests_warnings)
+
+if(OpenMP_CXX_FOUND)
+    target_link_libraries(bayests_unit_forecast_regressors_io PRIVATE OpenMP::OpenMP_CXX)
+endif()
+
 #####################################################################
 # Tests
 #
@@ -190,8 +202,8 @@ endif()
 # The unit tests, which need only the shared libraries on the path: no fixture
 # to set up, and no thread pinning, since an exact identity does not care how
 # many threads computed it.
-foreach(_unit vec_to_var forecast_lags stochvol kalman chan_jeliazkov inverse_gaussian
-              truncated_normal identification
+foreach(_unit vec_to_var forecast_lags forecast_regressors_io stochvol kalman chan_jeliazkov
+              inverse_gaussian truncated_normal identification
               vec_klgs_2010 dfm_normal_gamma dfm_normal_stochvol dfm_tvp_gamma
               dfm_tvp_stochvol favar_normal_wishart var_ald model_group)
     add_test(NAME "unit.${_unit}" COMMAND "bayests_unit_${_unit}")
