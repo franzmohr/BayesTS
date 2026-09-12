@@ -1055,10 +1055,14 @@ the samplers are under development and the numbers a release produces are a
 property of that release:
 
 > Mohr, F. X. (2026). *BayesTS: Bayesian time series estimation in C++*.
-> Version 0.1.0. <https://github.com/franzmohr/BayesTS>
+> Version 0.1.0. Zenodo. <https://doi.org/10.5281/zenodo.22722532>
 
-<!-- Once the v0.1.0 GitHub release is archived by Zenodo, add the version DOI
-     here and prefer it to the URL above; keep CITATION.cff in step. -->
+Every release is archived, and each gets its own DOI. The one above is the
+**version** DOI and is what a paper should cite, because it resolves to the
+exact code a result came from. The **concept** DOI
+[10.5281/zenodo.22722531](https://doi.org/10.5281/zenodo.22722531) always
+resolves to the newest release instead, which is what to link when you mean
+the project rather than a run.
 
 Please also cite the method a sampler implements rather than this library
 alone: the algorithm references are in [References](#references) below and in
