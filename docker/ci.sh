@@ -136,8 +136,20 @@ job_ci() {
 
         group "Package"
         cmake --build "$build_dir" --target package
-        find "$build_dir" -maxdepth 1 \
-            \( -name '*.tar.gz' -o -name '*.zip' -o -name '*.sha256' \) \
+        # Copied by name rather than globbed by extension. A named volume keeps
+        # the build tree between runs, so after a version bump the previous
+        # version's archives are still sitting beside the new ones; a glob over
+        # the extension alone carries those out too, restamped with this run's
+        # time, and /out ends up describing two builds as though they were one.
+        # CPackConfig.cmake holds the base name CPack just used -- written by
+        # the configure, so it cannot disagree with the files on disk the way a
+        # version parsed out of CMakeLists.txt could.
+        local pkg_name
+        pkg_name=$(sed -n 's/^set(CPACK_PACKAGE_FILE_NAME "\(.*\)")$/\1/p' \
+                       "$build_dir/CPackConfig.cmake")
+        [ -n "$pkg_name" ] \
+            || die "no CPACK_PACKAGE_FILE_NAME in $build_dir/CPackConfig.cmake"
+        find "$build_dir" -maxdepth 1 -name "$pkg_name.*" \
             -exec cp -v {} "$OUT/" \;
     fi
 

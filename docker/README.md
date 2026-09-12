@@ -38,6 +38,12 @@ context at about ten kilobytes; without it the generated fixtures alone would
 send well over a hundred megabytes. Rebuild when `.github/highfive-version`
 changes, or when the workflow's dependency set does.
 
+**And rebuild after editing `ci.sh`.** It is copied into the image, not read
+from the mounted checkout — the sources come through `/src`, the script does
+not — so a change to it does nothing until the image is built again. That
+rebuild is seconds rather than minutes: the `COPY` sits after vcpkg, so every
+expensive layer is a cache hit.
+
 ## Run a job
 
 From the repository root. The checkout goes in read-only, and anything worth

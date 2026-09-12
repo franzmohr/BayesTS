@@ -61,6 +61,27 @@ Dates are ISO. Versions follow the `project(VERSION)` in `CMakeLists.txt`.
   `k` rather than inventing regressors from one. `unit.forecast_regressors_io`
   covers both spellings, the precedence when a file has both, and that refusal.
 
+### Fixed
+
+- **The local Docker harness copies out the packages it just built**, and not
+  whatever else is lying in the build tree. `docker/ci.sh` globbed
+  `*.tar.gz`, `*.zip` and `*.sha256` out of the Release build directory; with
+  the `bayests-ci-work` named volume that directory survives between runs, so
+  after the 0.0.1 → 0.1.0 bump the previous version's archives were still
+  sitting there and were copied into `/out` again, restamped with the new run's
+  time. A directory presented as the output of one build described two.
+
+  The copy now names `CPACK_PACKAGE_FILE_NAME`, read back out of the
+  `CPackConfig.cmake` the configure wrote — the same string CPack names the
+  files with, so it cannot disagree with what is on disk the way a version
+  parsed out of `CMakeLists.txt` could. Nothing about the build, the tests or
+  the packages themselves changes; no sampler is touched and no draws move.
+
+  `docker/README.md` now also says that `ci.sh` is copied into the image rather
+  than read from the mounted checkout, so editing it does nothing until
+  `docker build` runs again. That rebuild is seconds — the `COPY` is after the
+  vcpkg layer.
+
 New entries go here, under an `### Added`, `### Changed` or `### Fixed`
 heading, and move down into a version section when one is cut.
 
