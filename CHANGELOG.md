@@ -24,6 +24,10 @@ Dates are ISO. Versions follow the `project(VERSION)` in `CMakeLists.txt`.
 
 ## Unreleased
 
+Nothing yet: `main` is at the 0.1.0 tag. New entries go here, under an
+`### Added`, `### Changed` or `### Fixed` heading, and move down into a
+version section when one is cut.
+
 ## 0.1.0 — 2026-09-12
 
 First tagged release, and the version the JSS manuscript describes. The
@@ -37,6 +41,24 @@ moving and the manuscript describing it has been through review.
 Everything below was developed before that line was drawn.
 
 ### Added
+
+* **Release metadata: `CITATION.cff` and `.zenodo.json`.** Documentation only,
+  so draws are unchanged by construction.
+
+  Both exist so that an archived copy of this repository is attributed to a
+  person rather than to a string. Without them Zenodo builds its record from
+  what it can infer from GitHub, which gets the author from the account name
+  and the description from the repository blurb; `CITATION.cff` does the same
+  job for GitHub's own "Cite this repository" box. They carry the title, the
+  BSD-3-Clause licence, the keyword set and the author's ORCID, which was
+  checked against both its ISO 7064 check digit and the public registry before
+  it was written down. Both files are parsed as part of the commit that adds
+  them, because a malformed one fails silently at archive time rather than
+  loudly here.
+
+  `.zenodo.json` deliberately carries no version field: Zenodo takes that from
+  the tag, and a version in two places is a version that will disagree with
+  itself.
 
 * **A prior on `rho`**, the autoregression of the cointegration state equation,
   so that the three time-varying VECs -- `VecTvpWishart`, `VecTvpGamma` and
