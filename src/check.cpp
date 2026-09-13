@@ -147,7 +147,12 @@ void print_report(const std::string &algorithm, const ModelCheck &check)
 	          << (spec.h > 0 ? "h = " + std::to_string(spec.h) : std::string("none asked for"))
 	          << "\n";
 	std::cout << "  chain: " << spec.iterations << " draws kept after " << spec.burnin
-	          << " burn-in\n";
+	          << " burn-in";
+	if (spec.thin > 1)
+	{
+		std::cout << ", one in " << spec.thin << ", so " << spec.draws() << " run";
+	}
+	std::cout << "\n";
 	std::cout << "  seed: "
 	          << (check.seed ? std::to_string(*check.seed)
 	                         : std::string("none, so the draws follow the generator's state when the "

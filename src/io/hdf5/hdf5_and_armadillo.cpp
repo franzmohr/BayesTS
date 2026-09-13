@@ -452,9 +452,16 @@ void write_armadillo_matrix_to_hdf5(const ModelFile &file, const std::string &da
 		dataset.write(data);
 
 		if (add_mcpar) {
-			dataset.createAttribute("start", 1);
-			dataset.createAttribute("end", cols);
-			dataset.createAttribute("thin", 1);
+			// coda's mcpar, counted in iterations after the burn-in: the draws kept
+			// are thin, 2 thin, ..., cols * thin, since a thinned chain keeps the
+			// last of each block of thin. At thin = 1 that is 1 to cols, which is
+			// what these always said.
+			const int thin = attribute_exists(file, "/model", "thin")
+			                     ? get_attribute_int(file, "/model", "thin")
+			                     : 1;
+			dataset.createAttribute("start", thin);
+			dataset.createAttribute("end", cols * static_cast<size_t>(thin));
+			dataset.createAttribute("thin", thin);
 		}
 	}
 	catch (const HighFive::Exception &e) {

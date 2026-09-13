@@ -436,7 +436,7 @@ written for a simpler model still describes a valid one.
 
 | Location | Contents |
 | --- | --- |
-| `/model` (attributes) | `algorithm`, `k` endogenous variables, `iterations` kept, `burnin` discarded; optional `p`, `m`, `s`, `n` (lags, exogenous variables, their lags, deterministic terms), `h` forecast horizon, `varsel` (`none`, `ssvs`, `bvs`), `structural`, `error`, `seed` (a non-negative whole number that fixes the run's draws); `rank`, `k_beta`, `n_restricted` for a VEC, `n_factors` for a factor model and `n_obs_factors` for a FAVAR |
+| `/model` (attributes) | `algorithm`, `k` endogenous variables, `iterations` kept, `burnin` discarded; optional `thin` (keep one draw in `thin` after the burn-in, default 1), `p`, `m`, `s`, `n` (lags, exogenous variables, their lags, deterministic terms), `h` forecast horizon, `varsel` (`none`, `ssvs`, `bvs`), `structural`, `error`, `seed` (a non-negative whole number that fixes the run's draws); `rank`, `k_beta`, `n_restricted` for a VEC, `n_factors` for a factor model and `n_obs_factors` for a FAVAR |
 | `/data/train/y`, `/data/train/z` | Endogenous variables and the regressor matrix, `(tt k)` rows by `nparams` columns |
 | `/data/train/w` | A VEC's error correction term, `tt` rows by `k_beta` columns |
 | `/data/train/x` | The regressors in the compact layout, `tt` rows by one column each; read by `VecKlgs2010` in place of `z` |

@@ -152,6 +152,7 @@ VarSpec read_spec(const ModelFile &file, const char *covar_error)
     spec.k = get_attribute_int(file, "/model", "k");
     spec.iterations = get_attribute_int(file, "/model", "iterations");
     spec.burnin = get_attribute_int(file, "/model", "burnin");
+    spec.thin = optional_attribute_int(file, "/model", "thin", 1);
     spec.p = optional_attribute_int(file, "/model", "p", 0);
     spec.m = optional_attribute_int(file, "/model", "m", 0);
     spec.s = optional_attribute_int(file, "/model", "s", 0);
@@ -340,7 +341,7 @@ bool is_model_attribute(const std::string &name)
     // the edit that teaches a reader to read it: `bayests check` warns about
     // every /model attribute this does not list.
     static const std::set<std::string> names = {
-        "algorithm", "k",         "iterations", "burnin",       "p",
+        "algorithm", "k",         "iterations", "burnin",       "thin",       "p",
         "m",         "s",         "h",          "quantile",     "n",
         "rank",      "k_beta",    "n_restricted", "n_factors",  "n_obs_factors",
         "varsel",    "structural", "error",     "seed",

@@ -471,6 +471,29 @@ class Checker:
                     f"{command} on a negative seed: expected exit 1 naming /model/seed, got "
                     f"{result.returncode}\n{result.stdout}{result.stderr}")
 
+    def scenario_thin(self, d):
+        # references/model-file.md and results.md: /model/thin keeps one draw in
+        # thin, every result still holds `iterations`, and the mcmc attributes
+        # count iterations after the burn-in.
+        ns = self.run_python(d, inside_with(self.code(*VAR, 0), 'f["/model"].attrs["thin"] = 3'))
+        self.check_clean(d, "var.h5")
+        checked = self.bayests(d, "check", "var.h5")
+        if "one in 3" not in checked.stdout:
+            raise AssertionError(f"check did not report the thinning\n{checked.stdout}")
+        self.posterior(d, "var.h5")
+        k, nparams, tt, h, it = (ns[v] for v in ("k", "nparams", "tt", "h", "iterations"))
+        expect_shapes(d / "var.h5", {
+            "/posterior/a/coeffs": (nparams, it),
+            "/posterior/forecast": (h * k, it),
+            "/posterior/loglik": (tt, it),
+        })
+        with h5py.File(d / "var.h5", "r") as f:
+            attrs = {name: int(value) for name, value in f["/posterior/a/coeffs"].attrs.items()}
+        if (attrs.get("start"), attrs.get("end"), attrs.get("thin")) != (3, 3 * it, 3):
+            raise AssertionError(
+                f"/posterior/a/coeffs carries {attrs}; results.md documents start 3, "
+                f"end {3 * it}, thin 3")
+
     # -- the run -------------------------------------------------------------
 
     def run(self):

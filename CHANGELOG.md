@@ -26,6 +26,37 @@ Dates are ISO. Versions follow the `project(VERSION)` in `CMakeLists.txt`.
 
 ### Added
 
+- **`/model/thin`, which keeps one draw in `thin` after the burn-in.** Every
+  result is sized by the draws kept, and a time-varying model's coefficient path
+  alone is `nparams * tt` numbers per draw. So the only way to run a slowly
+  mixing chain longer used to be a file that grows with it. With `thin`, the
+  chain runs `burnin + iterations * thin` draws and keeps `iterations`: the last
+  of each block of `thin`, so the chain ends on a kept draw. `bayests check`
+  prints the thinning, and a `thin` below 1, or a chain too long to count in an
+  `int`, is refused before it starts.
+
+  The `start`, `end` and `thin` attributes on `/posterior` datasets now say what
+  was kept: `thin`, `iterations * thin` and `thin`, in iterations after the
+  burn-in. Without thinning they are the 1, `iterations` and 1 they always were.
+
+  **This is a core change.** `VarSpec` gains `thin`, `keeps()` and
+  `kept_index()`, and all twenty samplers keep their draws through the two calls
+  instead of testing `draw >= burnin` themselves. `thin` defaults to 1, so a
+  vendoring package compiles unchanged and draws unchanged. It has to propagate
+  the change to offer thinning at all.
+
+  **Draws are unchanged** for every file without `thin`. At `thin = 1`,
+  `keeps(draw)` is `draw >= burnin` and `kept_index(draw)` is `draw - burnin`, so
+  the generator is consumed in the same order. Verified with
+  `record_fingerprints.sh` before and after, on the same machine and build
+  configuration: all 91 fixtures unchanged, none moved. The new `unit.thin`
+  asserts the identity that makes thinning safe. A chain with `thin = t` equals,
+  column for column, every `t`-th draw of the unthinned chain run from the same
+  seed with `t` times the kept draws, for `VarNormalAld` and `VarTvpAld`. It also
+  checks the arithmetic at `thin = 1` and both refusals. `agents.recipes` gains a
+  `thin` scenario for the shapes, the `check` line and the `mcmc` attributes. All
+  292 tests pass.
+
 - **`/model/seed`, which makes a model's draws a property of its file.** A run
   was only as reproducible as the generator's state when the model's turn came.
   A command naming one model started from Armadillo's default state and so

@@ -30,7 +30,10 @@ draw rather than `k*k`, and `k*tt` where it moves with time.
 ## The `mcmc` attributes
 
 Datasets under `/posterior/<block>/` carry `start`, `end` and `thin` attributes,
-so an R session can hand them straight to `coda` as an `mcmc` object.
+so an R session can hand them straight to `coda` as an `mcmc` object. They count
+iterations after the burn-in: `start` is `/model/thin`, `end` is
+`iterations * thin`, and `thin` is `/model/thin` again — so without thinning they
+run from 1 to `iterations`.
 
 `/posterior/forecast` and `/posterior/loglik` do **not** carry them.
 
