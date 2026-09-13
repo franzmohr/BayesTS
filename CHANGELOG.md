@@ -310,6 +310,18 @@ Dates are ISO. Versions follow the `project(VERSION)` in `CMakeLists.txt`.
 
 ### Fixed
 
+- **`model-file.md` describes the files the stochastic volatility and
+  time-varying DFMs read.** Its tables gave `/priors/v_sigma` only the gamma
+  layout, though `DfmNormalStochvol` and `DfmTvpStochvol` read a full stochastic
+  volatility group there at the width of the factors. They left the shapes of
+  `u_h` and `v_h` blank and never named `u_h_init` or `v_h_init`, which both
+  models read. They credited the loadings' random walk starting values to
+  `DfmTvpGamma` alone, without shapes, though `DfmTvpStochvol` reads them too,
+  and gave the loadings only as a flat row where the time-varying DFMs read a
+  `(tt, n_lambda)` path. Every row now names the models that read it and the
+  shape the fixtures carry, and the FAVAR's loading count is stated beside the
+  DFM's. Documentation only.
+
 - **The documentation lists `/posterior/u_scale/coeffs`.** Both `*Ald` models
   write the asymmetric Laplace scale there, `(k, iterations)`, and `loglik`
   reads it back, but neither `results.md` nor the README's list of posterior
