@@ -294,6 +294,100 @@ Dates are ISO. Versions follow the `project(VERSION)` in `CMakeLists.txt`.
 
 ### Fixed
 
+- **The time-varying gamma models draw their covariance block under the current
+  error variances.** `VarTvpGamma` and `VecTvpGamma` inverted the *starting*
+  error precision once, before the chain, and drew every psi path under that
+  inverse. The precision itself was redrawn each iteration but never reached
+  psi, while the selection step on the same block scored its candidates against
+  the current one. A comment beside it declined to refresh the inverse because
+  doing so "would move the posterior". Each psi draw now uses the diagonal of the
+  current error precision, which is what its full conditional is conditioned on.
+
+  *Draws change* for both models with a covariance block (`error = gamma+covar`),
+  with or without selection. Of the 91 fixtures these four moved:
+  `VarTvpGamma-covar`, `VarTvpGamma-bvs-covar`, `VecTvpGamma-covar` and
+  `VecTvpGamma-bvs-covar`. That comparison covers this entry and the next four
+  together; each fixture that moved is accounted for by one of them.
+
+- **VarNormalAld's variable selection let an excluded coefficient back in on the
+  prior alone.** Its likelihood callback multiplied each candidate by the mask a
+  second time, with the indicators the sweep was still updating. The candidate
+  that switched an excluded coefficient on was therefore zeroed, and its return
+  was decided by the prior inclusion probability without the data. The other 13
+  samplers with BVS score candidates against the unmasked regressors, and this
+  one now does too.
+
+  `unit.bvs` estimates a median regression with one regressor the data depend on
+  and one they do not, under a prior inclusion probability of 0.5. The code this
+  replaces included the irrelevant regressor in 78.5% of draws, and the test
+  fails against it. The sampler now includes it in 9.3%, and the relevant one in
+  all of them.
+
+  *Draws change* for `VarNormalAld` with `varsel = bvs` (`VarNormalAld-bvs`).
+  `VarTvpAld` scored against the unmasked regressors already and is unchanged.
+
+- **VarNormalStochvol no longer fails on an observation far out in the tails.**
+  It carried its own copy of the ten-component mixture draw, with both faults
+  `stochvol_mixture.h` describes. The component probabilities were formed as
+  densities, which all underflow to zero for an observation far from every
+  component. The indicator index was never clamped, so the NaN row that left
+  indexed one past the end of the table. A fixture with a single value of 1e30
+  in `y` exited with "Mat::elem(): index out of bounds"; a host that defines
+  `ARMA_NO_DEBUG` read past the table instead. The model now calls
+  `stochvol_ocsn_2007` and `draw_stochvol_state`, as the other four stochastic
+  volatility samplers do. The shared code forms the probabilities in logs, clamps
+  the index, and draws each path with a banded Cholesky rather than a dense
+  `tt x tt` factorisation. `unit.var_normal_stochvol` runs the outlier and checks
+  that the chain finishes with finite precisions.
+
+  *Draws change* for every `VarNormalStochvol` configuration (its six fixtures).
+  The model is the same one: the same mixture, the same conditionals, and the
+  same order of blocks. The random numbers are consumed differently, and
+  indicators that underflowed before are now drawn.
+
+- **Prior values no model can mean are refused, where they used to run.**
+  `validate()` checked shapes and not values. A negative gamma rate passed
+  `bayests check` and a chain with exit code 0, and produced plausible numbers,
+  since the posterior rate stays positive while the data outweigh it. An
+  inclusion probability of 1.5 held every coefficient it covered at zero for the
+  whole chain, because `log(1 - 1.5)` is a NaN and a NaN excludes. A run and
+  `bayests check` now refuse, naming the element:
+  - a gamma `shape` or `rate` that is negative or not finite; zero is allowed, as
+    an improper prior the sample makes proper;
+  - a log-volatility `offset`, SSVS `tau0`/`tau1`, or initial log-volatility
+    innovation variance that is not greater than zero;
+  - an `inprior` outside `[0, 1]`;
+  - an asymmetric normal prior precision or Wishart scale, to the tolerance
+    `p_tau_inv` is already held to, for the reason it is;
+  - a non-diagonal starting precision that the sampler redraws only the diagonal
+    of. That is `u_sigma_inv` of `VarNormalGamma` and `VecNormalGamma`,
+    `u_omega_inv` of the time-varying gamma models, and the random walks'
+    `a_sigma_inv`, `psi_sigma_inv` and `lambda_sigma_inv`. Its off-diagonal
+    elements used to stay in the chain from the first draw to the last.
+
+  `unit.input_values` checks each refusal against an input otherwise accepted.
+  `agents/` states the rules.
+
+  *Draws are unchanged*: the other 80 fixtures are byte-identical, and every
+  `check.*` test and `agents.recipes` passes, so no file the project writes is
+  refused.
+
+- **A VAR forecast refuses regressors without exactly one row per horizon, and
+  `bayests check` agrees with it.** Five of the six VAR forecasts never checked
+  the height of `/data/forecast/x`. With a row short they read and wrote past its
+  end: "Mat::submat(): indices out of bounds" in a checked build, and memory
+  corruption under `ARMA_NO_DEBUG`. `VarNormalWishart`'s forecast, which every
+  VEC's goes through, required exactly `h` rows. `bayests check` required at
+  least `h`, so a file with an extra row passed the check and failed the
+  forecast. All six now call `require_forecast_horizons()` in `model_support.h`,
+  and the check requires exactly `h`. `unit.input_values` covers a row short and
+  a row over.
+
+  *Draws are unchanged* (the same comparison as above).
+
+  bvartools and dfmtools vendor the core, so the changes these five entries make
+  under `src/core/` have to reach them as well.
+
 - **BVS draws its inclusion indicators from their posterior.** `bvs_sweep()`
   set an indicator to one when `l1 - l0` exceeded the log of a uniform, which is
   inclusion with probability `min(1, exp(l1 - l0))` rather than

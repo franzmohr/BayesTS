@@ -196,6 +196,7 @@ ForecastDraws VarNormalWishartSampler::forecast(const VarNormalWishartInput &inp
     arma::mat x = input.forecast.x;
 
     require_forecast_regressors(input.spec, x);
+    core::require_forecast_horizons(x, h);
 
     // The coefficient draws are only consulted when there are regressors to
     // apply them to or a contemporaneous matrix to split off; without either,
@@ -228,11 +229,6 @@ ForecastDraws VarNormalWishartSampler::forecast(const VarNormalWishartInput &inp
             " equations is " + std::to_string(x.n_cols * static_cast<arma::uword>(k)) +
             " coefficients, and a has " + std::to_string(a.n_rows) +
             " rows after the structural split");
-    }
-    if (use_a && static_cast<int>(x.n_rows) != h)
-    {
-        throw std::invalid_argument("forecast regressors must have " + std::to_string(h) +
-                                    " rows, one per horizon, got " + std::to_string(x.n_rows));
     }
 
     const arma::uword draws = coefficients.iterations();

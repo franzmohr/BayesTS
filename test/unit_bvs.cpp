@@ -23,6 +23,7 @@
 /// VECs share the block line for line with the VAR beside them.
 
 #include "bayests/reporter.h"
+#include "bayests/var_normal_ald.h"
 #include "bayests/var_normal_gamma.h"
 #include "bayests/var_normal_stochvol.h"
 #include "core/algorithms/bvs.h"
@@ -237,6 +238,65 @@ void covariance_block_selection_sees_the_data()
     check("VarNormalStochvol excludes one they do not", sv_out < 0.8);
 }
 
+/// Posterior mean inclusion of each of VarNormalAld's two slope coefficients,
+/// one of which the data depend on and one of which they do not.
+///
+/// The quantile model's selection step used to mask its candidates a second
+/// time, with the indicators the sweep was still updating, so a coefficient that
+/// was out could only come back in on the prior. For a regressor the data do not
+/// want that inflates inclusion towards the prior: out, it returns with
+/// probability one half; in, the data put it out again.
+arma::vec ald_inclusion()
+{
+    const int tt = 200;
+
+    arma::mat z(tt, 3);
+    z.col(0).ones();
+    z.col(1) = arma::randn<arma::vec>(tt);
+    z.col(2) = arma::randn<arma::vec>(tt);
+
+    bayests::VarNormalAldInput input;
+    input.spec.k = 1;
+    input.spec.n = 3;
+    input.spec.iterations = 1500;
+    input.spec.burnin = 500;
+    input.spec.quantile = 0.5;
+    input.spec.varsel = bayests::VarSelection::bvs;
+
+    input.train.y = 2.0 * z.col(1) + arma::randn<arma::vec>(tt);
+    input.train.z = z;
+
+    input.a_prior.mu = arma::zeros<arma::vec>(3);
+    input.a_prior.v_inv = arma::eye<arma::mat>(3, 3);
+    input.a_varsel_prior.inprior = arma::vec(3, arma::fill::value(0.5));
+    input.a_varsel_prior.include = arma::uvec{1, 2};
+
+    input.u_scale_prior.shape = arma::vec(1, arma::fill::value(3.0));
+    input.u_scale_prior.rate = arma::vec(1, arma::fill::value(0.2));
+
+    input.initial.a = arma::zeros<arma::vec>(3);
+    input.initial.a_lambda = arma::ones<arma::vec>(3);
+    input.initial.w = arma::ones<arma::mat>(tt, 1);
+    input.initial.u_scale = arma::ones<arma::vec>(1);
+
+    bayests::NullReporter reporter;
+    const bayests::VarNormalAldDraws draws =
+        bayests::VarNormalAldSampler{}.draw_coefficients(input, reporter);
+    return arma::mean(draws.a_lambda.rows(1, 2), 1);
+}
+
+void quantile_selection_sees_the_data()
+{
+    std::printf("selection in the quantile model\n");
+
+    const arma::vec inclusion = ald_inclusion();
+    std::printf("    VarNormalAld  relevant %.3f, irrelevant %.3f (prior 0.5)\n", inclusion(0),
+                inclusion(1));
+
+    check("VarNormalAld includes the regressor the data depend on", inclusion(0) > 0.9);
+    check("VarNormalAld excludes the one they do not", inclusion(1) < 0.2);
+}
+
 } // namespace
 
 int main()
@@ -247,6 +307,7 @@ int main()
     a_flat_likelihood_returns_the_prior();
     the_indicators_have_their_joint_posterior();
     covariance_block_selection_sees_the_data();
+    quantile_selection_sees_the_data();
 
     std::printf("%s\n", failures == 0 ? "all checks passed" : "SOME CHECKS FAILED");
     return failures == 0 ? 0 : 1;

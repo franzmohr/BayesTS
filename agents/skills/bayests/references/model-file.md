@@ -89,7 +89,7 @@ rather than given, so `/data/train/y` is all the data there is.
 
 | Dataset | Dataspace shape | Contents |
 | --- | --- | --- |
-| `x` | `(n_x, h)` | Out-of-sample regressors in the compact layout, `(h, n_x)` on paper. **Required when `h > 0`** |
+| `x` | `(n_x, h)` | Out-of-sample regressors in the compact layout, `(h, n_x)` on paper. **Required when `h > 0`**, with exactly `h` horizons: a run and `bayests check` refuse any other number |
 | `z` | `(k*n_x, h*k)` | The older SUR spelling of the same thing, `kron(x, I_k)`. Still read, and compacted on the way in |
 
 A factor model needs neither: the horizon alone drives its forecast.
@@ -126,6 +126,22 @@ through the rounding a computed matrix carries and stops one that is not the
 matrix meant: the samplers read parts of these through one triangle and parts
 through the whole matrix, so an asymmetric one would run as neither. `p_tau` must
 also have its eigenvalues in `[0, 1]`.
+
+Values are checked as well as shapes, by a run and by `bayests check`:
+
+- Every `v_inv` and every Wishart `scale` must be symmetric, to the same
+  tolerance.
+- A gamma `shape` or `rate` must be finite and at least zero. Zero is an
+  improper prior the sample makes proper; a negative value is refused.
+- A log-volatility `offset`, SSVS `tau0` and `tau1`, and the initial variance of
+  a log-volatility's innovations must be finite and greater than zero.
+- `inprior` must lie in `[0, 1]`.
+- A starting precision the sampler redraws only the diagonal of must be
+  diagonal: `u_sigma_inv` of `VarNormalGamma` and `VecNormalGamma`, `u_omega_inv`
+  of the time-varying gamma models, `a_sigma_inv` and `psi_sigma_inv` of the
+  time-varying VARs and VECs, and `lambda_sigma_inv` and `a_sigma_inv` of the
+  time-varying DFMs. Anything off the diagonal would otherwise stay in the chain
+  from the first draw to the last, or be ignored without a word.
 
 ## `/initial`
 

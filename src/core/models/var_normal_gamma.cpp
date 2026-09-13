@@ -320,6 +320,7 @@ ForecastDraws VarNormalGammaSampler::forecast(const VarNormalGammaInput &input,
     arma::mat x = input.forecast.x;
 
     require_forecast_regressors(input.spec, x);
+    core::require_forecast_horizons(x, h);
 
     // The coefficient draws are only consulted when there are regressors to
     // apply them to or a contemporaneous matrix to split off; without either,
