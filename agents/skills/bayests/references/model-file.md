@@ -118,6 +118,15 @@ equation. It must lie in `(0, 1]`; 1 is the random walk. Giving **both**
 and `rho` is then the value the chain starts at and must lie inside the support.
 One end without the other is refused rather than guessed at.
 
+The matrices under `/priors/beta` must be symmetric: `p_tau_inv` on the
+constant VECs, and `v_inv` and `p_tau` on the time-varying ones. A matrix is
+refused, by a run and by `bayests check`, when its largest difference from its
+transpose is more than `1e-8` times its largest absolute element. That lets
+through the rounding a computed matrix carries and stops one that is not the
+matrix meant: the samplers read parts of these through one triangle and parts
+through the whole matrix, so an asymmetric one would run as neither. `p_tau` must
+also have its eigenvalues in `[0, 1]`.
+
 ## `/initial`
 
 Starting values, at the widths the priors imply.

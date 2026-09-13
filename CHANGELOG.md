@@ -269,6 +269,58 @@ Dates are ISO. Versions follow the `project(VERSION)` in `CMakeLists.txt`.
 
 ### Fixed
 
+- **A cointegration prior matrix that is not symmetric is refused.** A constant
+  VEC checked only that `/priors/beta/p_tau_inv` was `k_beta` square, so a
+  square but asymmetric one ran under `bayests posterior` and exited 0 without a
+  word. It was found in a Dees et al. (2007) GVEC reproduction. The samplers read
+  the matrix as if it were symmetric, and not consistently. kron(., P_tau^-1)
+  enters the posterior precision of beta, whose draw factorises the upper
+  triangle only. beta' P_tau^-1 beta enters the prior precision of the loadings
+  through the whole matrix. So such a file stood for a prior that was neither
+  the matrix nor its transpose, and not the same prior in the two blocks.
+  bvartools' `add_priors()` already refuses such a matrix. A file written any
+  other way, from h5py or by hand in R, reached BayesTS unchecked.
+
+  `validate()` now refuses it in all four constant VECs (`VecNormalWishart`,
+  `VecNormalGamma`, `VecNormalStochvol`, `VecKlgs2010`), and so does
+  `bayests check`. The time-varying VECs get the same check on
+  `/priors/beta/v_inv`, the prior precision of the state before the sample,
+  which had the same gap: its draw factorises v_inv + rho^2 P'P through the upper
+  triangle and multiplies the prior mean by the whole of v_inv.
+
+  `/priors/beta/p_tau` was already required to be symmetric. It now goes through
+  the same check, so all three matrices share one tolerance. A matrix counts as
+  symmetric when its largest |m(i,j) - m(j,i)| is at most `1e-8` times its
+  largest absolute element. The tolerance is relative because rounding scales
+  with the entries, and loose because rounding is either nothing, as for an outer
+  product or bvartools' (P + P') / 2, or about condition number times machine
+  epsilon, as for a matrix inverted through a general LU. It passes every matrix
+  bvartools' `isSymmetric()` accepts up to 670 rows, and an actual mistake is off
+  by orders of magnitude more. For `p_tau` this replaces an absolute bound of
+  `1e-10` times the larger of one and its largest element. For every matrix with
+  eigenvalues in [0, 1], the only ones accepted, the new bound is looser when
+  that element is at least 0.01 and tighter below.
+
+  The error message names the matrix and gives the asymmetry and the largest
+  element it was measured against. The new `unit.coint_prior_symmetry` checks
+  each of the three matrices on every VEC that reads it: exactly symmetric,
+  a few ulps off and 1e-10 off are accepted; 1e-6 off and 0.1 off are refused
+  with that message. Checked end to end as well: a `VecNormalWishart` file given
+  an asymmetric `p_tau_inv` runs and exits 0 under the binary built before this
+  change, and exits 1 under `check` and `posterior` after it, while a copy off
+  by 1e-12 still runs.
+
+  **This is a core change.** It touches `src/core/inputs.cpp` alone, and the
+  vendoring packages need to propagate it to refuse such files too.
+
+  **Draws are unchanged** for every file the check accepts, which includes every
+  file that is symmetric up to rounding: it only adds a refusal and does not
+  touch what reaches the samplers. Verified with `record_fingerprints.sh` before
+  and after, on the same machine and build: all 91 fixtures unchanged, none
+  moved. All 293 registered tests pass. `agents.recipes` is not registered in
+  this build, which has no Python with h5py. `agents/` now states the
+  requirement and the tolerance under `/priors`.
+
 - **A file that is not HDF5 is refused in one line.** Opening one used to print
   the HDF5 library's error stack, a dozen lines of internals such as
   "minor: Not an HDF5 file", on stderr ahead of BayesTS's own message. That message
