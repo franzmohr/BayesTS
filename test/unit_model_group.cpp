@@ -271,6 +271,37 @@ void test_model_discovery_at_root()
                 "a model at the root is found as the root");
 }
 
+/// A model does not hide the models below it. The search used to stop at the
+/// first model it met, so a file with one at its root and more under a group ran
+/// the root model alone under --all-groups and said nothing about the rest.
+void test_models_below_a_model()
+{
+    const std::filesystem::path scratch =
+        std::filesystem::temp_directory_path() / "bayests_unit_model_group";
+    const std::filesystem::path dest = scratch / "below.h5";
+    std::filesystem::remove(dest);
+
+    {
+        HighFive::File h5(dest.string(), HighFive::File::Create);
+        write_model_marker(h5, "");
+        write_model_marker(h5, "/regions/US");
+        write_model_marker(h5, "/regions/EU");
+        write_model_marker(h5, "/regions/EU/cities/Paris");
+
+        // Inside the root model's own data, where no model can be: the search
+        // must not descend into a model's own tree to find it.
+        write_model_marker(h5, "/data/decoy");
+    }
+
+    HighFive::File h5 = open_hdf5_file(dest);
+    check_equal(joined(list_model_groups(h5, "")),
+                "<root>,/regions/EU,/regions/EU/cities/Paris,/regions/US",
+                "a model at the root and every model below it, and nothing in its own tree");
+    check_equal(joined(list_model_groups(h5, "/regions/EU")),
+                "/regions/EU,/regions/EU/cities/Paris",
+                "a root that is a model returns it and the models below it");
+}
+
 } // namespace
 
 int main()
@@ -293,6 +324,7 @@ int main()
 
         test_model_discovery();
         test_model_discovery_at_root();
+        test_models_below_a_model();
     }
     catch (const std::exception &e)
     {

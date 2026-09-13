@@ -310,6 +310,18 @@ Dates are ISO. Versions follow the `project(VERSION)` in `CMakeLists.txt`.
 
 ### Fixed
 
+- **`--all-groups` finds every model in a file that also has one at its root.**
+  The search stopped at the first group holding a model, so a file with a
+  model at its root and more under `/models` ran the root model alone, printed
+  nothing about the others and exited 0; the same models were found when the
+  search started at `/models`. It now skips only a model's own `model`, `data`,
+  `priors`, `initial` and `posterior` and searches every other group below it.
+  Files whose models all sit beside each other under groups find the same
+  models as before. `unit.model_group` covers a root model with models below
+  it, and the README and `pipeline.md` state the rule. Draws are unchanged: the
+  samplers are not touched, and the fingerprint comparison over all 91
+  fixtures shows none moved.
+
 - **`model-file.md` describes the files the stochastic volatility and
   time-varying DFMs read.** Its tables gave `/priors/v_sigma` only the gamma
   layout, though `DfmNormalStochvol` and `DfmTvpStochvol` read a full stochastic

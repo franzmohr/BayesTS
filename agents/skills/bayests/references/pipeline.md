@@ -115,7 +115,7 @@ under a group:
 | Flag | Meaning |
 | --- | --- |
 | `--group <path>` | The group each model's tree hangs under, e.g. `/models/3`. Default: the root of the file |
-| `--all-groups` | Read `--group` as the root to search under and run **every** model below it. Default: the whole file |
+| `--all-groups` | Read `--group` as the root to search under and run **every** model below it. Default: the whole file. A model is a group whose `model` subgroup carries an `algorithm` attribute; the search skips a model's own `model`, `data`, `priors`, `initial` and `posterior` and searches every other group, so a model at the root does not hide the ones under `/models` |
 
 One group applies to the whole invocation: a directory walk looks for the same
 group in every file it visits, which is what a caller with a directory of files
