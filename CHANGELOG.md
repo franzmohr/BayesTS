@@ -310,6 +310,15 @@ Dates are ISO. Versions follow the `project(VERSION)` in `CMakeLists.txt`.
 
 ### Fixed
 
+- **The documentation lists `/posterior/u_scale/coeffs`.** Both `*Ald` models
+  write the asymmetric Laplace scale there, `(k, iterations)`, and `loglik`
+  reads it back, but neither `results.md` nor the README's list of posterior
+  datasets named it. `results.md` now has a row for it, and its
+  `u_omega_inv` row says that for the quantile models the `k*tt` draws are the
+  precision of the normal mixture, `1 / (tau^2 w_t u_scale)` with
+  `tau^2 = 2 / (q (1 - q))`, which moves with
+  the latent scales rather than with a volatility. Documentation only.
+
 - **The generated VEC fixtures no longer carry a dataset their model never
   reads, and a `check.*` test now fails on any warning.** The fixture generator
   wrote both `/data/train/z` and `/data/train/x` into every VEC file, so
