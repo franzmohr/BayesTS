@@ -343,8 +343,10 @@ Both spellings of the flag are accepted: `--group /models/3` and
 Every command also takes `--all-groups`, which reads `--group` as the root to
 search under rather than as the model itself and runs every model below it —
 the whole file when no `--group` was given. A model is a group with a `model`
-subgroup carrying an `algorithm` attribute, and the search stops at one rather
-than descending into its `data`, `priors` and `posterior`. Groups are processed
+subgroup carrying an `algorithm` attribute. The search does not descend into a
+model's own `model`, `data`, `priors`, `initial` and `posterior`, but it does
+search every other group below one, so a file with a model at its root and more
+under `/models` runs all of them. Groups are processed
 in sorted order, and in directory mode each file is expanded this way in turn,
 so one command covers a directory of files that each hold several models.
 

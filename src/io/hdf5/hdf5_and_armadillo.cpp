@@ -142,15 +142,21 @@ bool is_model_group(const HighFive::File &file, const std::string &group)
 	return file.getGroup(model_group).hasAttribute("algorithm");
 }
 
+/// The groups a model's own tree is made of. No model can be inside one of them,
+/// so the walk does not descend into them.
+bool is_model_tree_group(const std::string &name)
+{
+	return name == "model" || name == "data" || name == "priors" || name == "initial" ||
+	       name == "posterior";
+}
+
 void collect_model_groups(const HighFive::File &file, const std::string &group,
                           std::vector<std::string> &found)
 {
-	if (is_model_group(file, group))
+	const bool model_here = is_model_group(file, group);
+	if (model_here)
 	{
-		// Stop here. Descending would walk /data, /priors and /posterior of
-		// every model looking for models that cannot be in them.
 		found.push_back(group);
-		return;
 	}
 
 	// group is "" for the root of the file, where getGroup wants a name.
@@ -158,6 +164,16 @@ void collect_model_groups(const HighFive::File &file, const std::string &group,
 
 	for (const std::string &name : handle.listObjectNames())
 	{
+		// A model's own model, data, priors, initial and posterior are skipped,
+		// and nothing else of it is. Stopping at the model outright, as this
+		// used to, also skipped every model beside those five: a file with one
+		// model at its root and others under /models ran the root model alone
+		// under --all-groups, without a word about the rest.
+		if (model_here && is_model_tree_group(name))
+		{
+			continue;
+		}
+
 		const std::string child = group + "/" + name;
 		if (file.getObjectType(child) == HighFive::ObjectType::Group)
 		{
