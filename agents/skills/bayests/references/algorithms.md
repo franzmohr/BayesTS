@@ -52,7 +52,13 @@ are refusals with reasons, not unimplemented features.
 | `h > 0` on either `*Ald` model | The h-step quantile is not the quantile of the iterated one-step quantiles |
 | `quantile` outside `(0, 1)` | At 0 or 1 the loss has no minimiser and the scale is infinite |
 | `n_obs_factors > 0` with `n_factors == 0` | A model with no unobserved factor is a VAR |
+| `n_factors > k` on a factor model | The identifying block of the loadings needs one observed series per factor to pin the rotation with |
+| A factor transition order `p` not below the number of periods | The transition regresses on `p` lags of the factors, and there has to be a sample left after the longest |
+| `FavarNormalWishart` with `n_obs_factors == 0` | A model with no observed factor is a dynamic factor model; `DfmNormalGamma` estimates it |
+| `FavarNormalWishart` whose state innovation Wishart prior has `df` below `n_factors + n_obs_factors` | A Wishart on an `n`-square matrix needs at least one degree of freedom per state element |
+| Fewer than two periods on a time-varying or stochastic volatility model | The random walk differences the path against its own lag, so one period leaves nothing to difference |
 | `rank > k_beta` | The rank cannot exceed the rows of the cointegration matrix |
+| A VEC of positive `rank` with no regressors | The beta block is drawn inside the coefficient block, so without regressors it would never run |
 | `y` whose length is not a multiple of `k` | A ragged sample would misalign silently |
 | A `z` whose columns disagree with the dimensions (VEC) | The sampler would size everything off `z` and run to completion on a model the attributes do not name |
 | `rho` outside `(0, 1]`, or a `rho` outside its own prior support | The state path would reverse sign or grow without bound |

@@ -722,11 +722,11 @@ arma::mat build_vec_w(const arma::mat &levels)
 /// tt x k(p-1), the compact reading of the same lagged differences the SUR
 /// regressors below kronecker up with I_k.
 ///
-/// Written into every VEC fixture, next to `z` rather than instead of it: the
-/// two layouts describe one sample, and a file that carries both can be read by
-/// either sampler -- which is what makes VecKlgs2010 and VecNormalWishart
-/// comparable on the same input. Only the /model/algorithm attribute decides
-/// which one runs, and each reads only its own dataset.
+/// Built for every VEC fixture, next to `z`, and written only where the model
+/// reads it: the two layouts describe one sample, which is what makes VecKlgs2010
+/// and VecNormalWishart comparable on the same input. Writing both into every
+/// file made `bayests check` warn, rightly, that the model never reads one of
+/// them -- on forty fixtures, which teaches a reader to ignore the warning.
 arma::mat build_vec_compact_regressors(const arma::mat &levels)
 {
     arma::mat x(kTT, kK * (kVecP - 1));
@@ -850,8 +850,17 @@ void write_vec_common(const ModelFile &file, const std::string &model, const std
 
     write_row(file, "/data/train/y", arma::vectorise(dy));
     write_mat(file, "/data/train/w", w);
-    write_mat(file, "/data/train/z", z_train);
-    write_mat(file, "/data/train/x", x_train);
+    // Both layouts are built from the same levels, so a VecKlgs2010 fixture and a
+    // SUR one still describe one sample; each file carries only the one its
+    // model reads.
+    if (model == "VecKlgs2010")
+    {
+        write_mat(file, "/data/train/x", x_train);
+    }
+    else
+    {
+        write_mat(file, "/data/train/z", z_train);
+    }
 
     if (h > 0)
     {
@@ -1034,7 +1043,7 @@ void write_vec_klgs_2010(const ModelFile &file, arma::uword nparams)
 }
 
 /// The same priors as VecKlgs2010 above, read from the SUR regressors rather
-/// than the compact ones -- both layouts are in every VEC fixture, so the two
+/// than the compact ones -- both layouts are built from one sample, so the two
 /// models differ here only in what /model/algorithm names and in the selection
 /// block this one accepts and that one refuses.
 void write_vec_normal_wishart(const ModelFile &file, const std::string &varsel,

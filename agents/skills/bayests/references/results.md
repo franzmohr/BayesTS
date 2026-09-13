@@ -10,11 +10,11 @@ A run writes back into the same file, under `/posterior` (or under
 | `/posterior/a/coeffs` | `(nparams, iterations)`, or `(nparams*tt, iterations)` when the coefficients drift | `coefficients` |
 | `/posterior/a/lambda` | `(nparams, iterations)` | `coefficients`, when selection is on: the inclusion indicators |
 | `/posterior/a/sigma` | `(nparams, iterations)` | `coefficients`, for a time-varying model: the random walk's innovation variances |
-| `/posterior/psi/coeffs` | `(k*k, iterations)` | `coefficients`, when the covariance block is on. **Not `k(k-1)/2`**: each column is the whole lower-triangular `Psi`, vectorised, even though only the free elements were drawn |
+| `/posterior/psi/coeffs` | `(k*k, iterations)`, or `(k*k*tt, iterations)` for the four time-varying models, whose `Psi` moves with time | `coefficients`, when the covariance block is on. **Not `k(k-1)/2`**: each column is the whole lower-triangular `Psi`, vectorised, even though only the free elements were drawn |
 | `/posterior/psi/lambda` | `(k*k, iterations)` | The same widening applies |
 | `/posterior/psi/sigma` | `(k(k-1)/2, iterations)` | But **not** here: the random walk's innovation variances are one per *free* element |
 | `/posterior/u_sigma_inv/coeffs` | `(k*k, iterations)`, or `(k*k*tt, iterations)` when the precision moves with time | `coefficients`. One vectorised precision matrix per draw. **This is the dataset every stage checks for** |
-| `/posterior/u_omega_inv/coeffs` | `(k, iterations)`; `(k*tt, iterations)` for the two `*Ald` models | `coefficients`, for the gamma and `*Ald` models: the **diagonal** of the precision, which is the part actually drawn |
+| `/posterior/u_omega_inv/coeffs` | `(k, iterations)` for the gamma models; `(k*tt, iterations)` for the stochastic volatility and `*Ald` models | `coefficients`, for the VARs and VECs other than the Wishart ones: the **diagonal** of the precision, which is the part actually drawn |
 | `/posterior/beta/coeffs` | `(k_beta*rank, iterations)`, widened over `tt` for a time-varying VEC | `coefficients`, for a VEC of positive rank |
 | `/posterior/beta/rho` | `(1, iterations)` | `coefficients`, where a time-varying VEC put a prior on the state autoregression |
 | `/posterior/lambda/coeffs` | `(k*n_factors, iterations)`; `(k*n_state, iterations)` for a FAVAR; widened over `tt` where the loadings drift | `coefficients`, for a factor model. **Not `n_lambda`**: each column is the whole `k x n_factors` loading matrix, `vec`'d column by column, fixed block included, even though only the free loadings were drawn |

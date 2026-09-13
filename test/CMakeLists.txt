@@ -293,10 +293,16 @@ function(bayests_add_model_fixture name model varsel covar structural horizon)
     # check that refuses it is stricter than the run it claims to predict. The
     # other direction -- a file the check accepts and a run refuses -- is what
     # the broken files in agents.recipes cover.
+    #
+    # A warning fails it too, as it does the recipes: the generator writes the
+    # file a model is meant to have, so anything the check warns about -- a
+    # dataset nothing reads, an attribute no model knows -- is the generator's
+    # mistake, and a warning every fixture prints is one nobody reads.
     add_test(NAME "check.${name}"
         COMMAND bayests check "${BAYESTS_FIXTURE_DIR}/${name}.h5" ${_golden_group})
     set_tests_properties("check.${name}" PROPERTIES
         FIXTURES_REQUIRED "fx.${name}"
+        FAIL_REGULAR_EXPRESSION "warning:"
         ENVIRONMENT_MODIFICATION "${_bayests_test_env_mod}")
 endfunction()
 
