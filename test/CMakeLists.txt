@@ -85,13 +85,16 @@ add_executable(bayests_unit_var_ald unit_var_ald.cpp)
 add_executable(bayests_unit_thin unit_thin.cpp)
 add_executable(bayests_unit_coint_prior_symmetry unit_coint_prior_symmetry.cpp)
 add_executable(bayests_unit_bvs unit_bvs.cpp)
+add_executable(bayests_unit_input_values unit_input_values.cpp)
+add_executable(bayests_unit_var_normal_stochvol unit_var_normal_stochvol.cpp)
 
 foreach(_core_unit bayests_unit_identification bayests_unit_vec_klgs_2010
                    bayests_unit_vec_tvp_coint bayests_unit_coint_prior_symmetry
                    bayests_unit_dfm_normal_gamma bayests_unit_dfm_normal_stochvol
                    bayests_unit_dfm_tvp_gamma bayests_unit_dfm_tvp_stochvol
                    bayests_unit_var_ald bayests_unit_thin
-                   bayests_unit_favar_normal_wishart bayests_unit_bvs)
+                   bayests_unit_favar_normal_wishart bayests_unit_bvs
+                   bayests_unit_input_values bayests_unit_var_normal_stochvol)
     target_link_libraries(${_core_unit} PRIVATE bayests_core)
     target_link_libraries(${_core_unit} PRIVATE bayests_warnings)
 
@@ -213,7 +216,8 @@ endif()
 foreach(_unit vec_to_var forecast_lags forecast_regressors_io stochvol kalman chan_jeliazkov
               inverse_gaussian truncated_normal identification
               vec_klgs_2010 vec_tvp_coint coint_prior_symmetry dfm_normal_gamma dfm_normal_stochvol
-              dfm_tvp_gamma dfm_tvp_stochvol favar_normal_wishart var_ald thin model_group bvs ssvs)
+              dfm_tvp_gamma dfm_tvp_stochvol favar_normal_wishart var_ald thin model_group bvs ssvs
+              input_values var_normal_stochvol)
     add_test(NAME "unit.${_unit}" COMMAND "bayests_unit_${_unit}")
     set_tests_properties("unit.${_unit}" PROPERTIES
         ENVIRONMENT_MODIFICATION "${_bayests_test_env_mod}")

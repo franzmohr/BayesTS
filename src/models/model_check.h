@@ -121,11 +121,11 @@ void require_var_forecast_regressors(const Input &input)
     {
         return;
     }
-    if (x.n_rows < h)
+    if (x.n_rows != h)
     {
         throw std::invalid_argument(
             "/data/forecast/x holds " + std::to_string(x.n_rows) + " horizons, and h = " +
-            std::to_string(spec.h) + " needs one per horizon");
+            std::to_string(spec.h) + " needs exactly one row per horizon");
     }
     if (n_a > n_structural && x.n_cols * k != n_a - n_structural)
     {
@@ -170,11 +170,11 @@ void require_vec_forecast_regressors(const Input &input)
     {
         return;
     }
-    if (x.n_rows < h)
+    if (x.n_rows != h)
     {
         throw std::invalid_argument(
             "/data/forecast/x holds " + std::to_string(x.n_rows) + " horizons, and h = " +
-            std::to_string(spec.h) + " needs one per horizon");
+            std::to_string(spec.h) + " needs exactly one row per horizon");
     }
     if (x.n_cols != width)
     {

@@ -434,6 +434,7 @@ ForecastDraws VarTvpStochvolSampler::forecast(const VarTvpStochvolInput &input,
     arma::mat x = input.forecast.x;
 
     require_forecast_regressors(input.spec, x);
+    core::require_forecast_horizons(x, h);
 
     // Counted off the model's dimensions rather than off `x`: the coefficients
     // move with time, so what the forecast starts from is the last in-sample
