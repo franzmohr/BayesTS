@@ -391,6 +391,24 @@ class Checker:
                 f"a written h = 0: the run succeeds, and check exited {checked.returncode} "
                 f"without 'forecast: none asked for'\n{checked.stdout}{checked.stderr}")
 
+    def scenario_exit_codes(self, d):
+        # references/pipeline.md: a path that does not exist never started, so
+        # 2; a path that exists but is not an HDF5 file is 1.
+        for command in ("posterior", "coefficients", "forecasts", "loglik", "check"):
+            for extra in ((), ("--all-groups",)):
+                result = self.bayests(d, command, "no-such-model.h5", *extra)
+                if result.returncode != 2 or "Path does not exist" not in result.stderr:
+                    raise AssertionError(
+                        f"{command} on a missing path {' '.join(extra)}: expected exit 2 "
+                        f"saying so, got {result.returncode}\n{result.stdout}{result.stderr}")
+
+        (d / "notes.txt").write_text("not a model\n")
+        result = self.bayests(d, "posterior", "notes.txt")
+        if result.returncode != 1:
+            raise AssertionError(
+                f"posterior on a file that is not HDF5: expected exit 1, got "
+                f"{result.returncode}\n{result.stdout}{result.stderr}")
+
     # -- the run -------------------------------------------------------------
 
     def run(self):

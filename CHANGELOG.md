@@ -128,6 +128,15 @@ Dates are ISO. Versions follow the `project(VERSION)` in `CMakeLists.txt`.
 
 ### Changed
 
+- **A path that does not exist exits 2, not 1.** Exit 1 means a run started and
+  something in it failed, and 2 that the command line could not be acted on. A
+  missing path started nothing: no file was opened and no walk begun. It belongs
+  with a `--group` that cannot name a group, and now exits the same way, still
+  printing "Path does not exist". A script that treated 1 as "check the path"
+  needs updating. A path that exists but is not an HDF5 file still exits 1, as
+  does any failure inside a walk. No sampler is touched, so draws are unchanged
+  by construction.
+
 - **The out-of-sample regressors are the compact layout.** `ForecastData::x` is
   `h` rows by `VarSpec::n_x()` columns, one period per row, where
   `ForecastData::z` was `h * k` rows by `k * n_x` columns — the same numbers

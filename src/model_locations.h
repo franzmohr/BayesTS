@@ -15,7 +15,8 @@
 using ModelAction = std::function<int(const ModelLocation &)>;
 
 /// Runs `action` over every model the command line names, and returns 0, or 1
-/// if any of them failed.
+/// if any of them failed, or 2 if the path does not exist -- a command line
+/// that cannot be acted on, which never started a walk.
 ///
 /// Two walks, nested. The outer one is over files: one file, or every HDF5 file
 /// below a directory, recursively. The inner one is over the models in each

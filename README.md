@@ -401,8 +401,8 @@ bayests forecasts models/ --all-groups
 they are the way to add a result to a model that has been sampled once, without
 re-running the sampler.
 
-The program reports its thread counts on startup and exits 1 on a bad path, a
-non-HDF5 file, an unknown `algorithm`, or a run that started and could not
+The program reports its thread counts on startup and exits 1 on a non-HDF5
+file, an unknown `algorithm`, or a run that started and could not
 finish — a model file the sampler rejects, or a `forecasts` or `loglik` asked
 for before the coefficients have been drawn. Having nothing to do is not
 failing and exits 0: output that is already there, and a forecast on a model
@@ -413,8 +413,9 @@ is 1 if any of them failed, so a script driving a directory of models can tell
 whether everything in it was processed.
 
 A command line that cannot be acted on at all — no arguments, a first argument
-that is not one of the five commands, or a `--group` with no value or one that
-cannot name an HDF5 group — prints the reason and exits 2. The two codes are
+that is not one of the five commands, a path that does not exist, or a `--group`
+with no value or one that cannot name an HDF5 group — prints the reason and
+exits 2. The two codes are
 worth keeping apart in a script: 1 means the run started and something in it
 failed, 2 means it never started. A `--group` that is well formed but names
 nothing in the file is the first kind, not the second: the command line was

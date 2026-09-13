@@ -86,10 +86,12 @@ int run_over_models(const CommandOptions &options, const ModelAction &action)
 {
 	const std::filesystem::path &path = options.path;
 
+	// A path that is not there is a command line that cannot be acted on, like a
+	// --group that cannot name a group: nothing started, so 2 rather than 1.
 	if (!std::filesystem::exists(path))
 	{
 		std::cerr << "Error: Path does not exist: " << path << std::endl;
-		return 1;
+		return 2;
 	}
 
 	if (std::filesystem::is_directory(path))

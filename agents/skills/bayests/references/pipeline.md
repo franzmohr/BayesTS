@@ -140,8 +140,9 @@ They are load-bearing; a script should branch on them.
 | 1 | The run started and something failed |
 | 2 | It never started: the command line was unusable |
 
-Exit 2 covers no path, an unknown command, a `--group` with no value after it,
-and a group that cannot name an HDF5 group. A `--group` that is *well formed*
+Exit 2 covers no path, a path that does not exist, an unknown command, a
+`--group` with no value after it, and a group that cannot name an HDF5 group. A
+path that exists but is not an HDF5 file is exit 1. A `--group` that is *well formed*
 but names nothing in the file is the **first** kind, not the second: the command
 line was actionable, the file just did not hold that model.
 
