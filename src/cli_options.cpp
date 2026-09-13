@@ -41,6 +41,19 @@ bool parse_command_options(int argc, char *argv[], const std::string &command,
 
 	options.path = argv[2];
 
+	// The path comes first. A flag in its place used to be taken for the path,
+	// and the real path after it was then refused as "a second path" -- the
+	// right exit code for the wrong reason. A file whose name starts with a dash
+	// can still be named as ./-file.h5.
+	const std::string first = argv[2];
+	if (!first.empty() && first[0] == '-')
+	{
+		std::cerr << "Error: '" << first << "' is where the path goes; the path comes "
+		          << "before any flag: bayests " << command << " <path> [flags...]\n";
+		print_usage(command, accept_step_flags);
+		return false;
+	}
+
 	for (int i = 3; i < argc; ++i)
 	{
 		const std::string arg = argv[i];
@@ -60,6 +73,17 @@ bool parse_command_options(int argc, char *argv[], const std::string &command,
 			}
 			group = argv[++i];
 			have_group = true;
+
+			// A flag where the group goes is a --group left without its value,
+			// not a group named after the flag: taken as one, it was looked for
+			// in the file and failed as a run (exit 1) rather than as the command
+			// line it is (exit 2).
+			if (!group.empty() && group[0] == '-')
+			{
+				std::cerr << "Error: --group needs the path of a group, e.g. --group /models/3, "
+				          << "but is followed by '" << group << "'\n";
+				return false;
+			}
 		}
 		else if (arg.rfind("--group=", 0) == 0)
 		{
