@@ -363,7 +363,6 @@ class Checker:
         base = self.code(*VAR, 0)
         cases = {
             "no forecast regressors": ('del f["/data/forecast/x"]', "/data/forecast/x is missing"),
-            "a written h = 0": ('f["/model"].attrs["h"] = 0', "h = 0 is written"),
             "z against p": ('f["/model"].attrs["p"] = 2', "/data/train/z has 12 columns"),
         }
         for label, (change, message) in cases.items():
@@ -376,6 +375,21 @@ class Checker:
                 raise AssertionError(
                     f"{label}: the run fails, and check exited {checked.returncode} without "
                     f"'{message}'\n{checked.stdout}{checked.stderr}")
+
+        # And one that only looks broken: "no forecast" written as h = 0 rather
+        # than left out, which is how R and Python callers spell it. Having
+        # nothing to do is not failing, so the run exits 0 and check accepts it.
+        self.run_python(d, inside_with(base, 'f["/model"].attrs["h"] = 0'))
+        checked = self.bayests(d, "check", "var.h5")
+        run = self.bayests(d, "posterior", "var.h5")
+        if run.returncode != 0:
+            raise AssertionError(
+                f"a written h = 0: expected the run to skip the forecast, it exited "
+                f"{run.returncode}\n{run.stdout}{run.stderr}")
+        if checked.returncode != 0 or "forecast: none asked for" not in checked.stdout:
+            raise AssertionError(
+                f"a written h = 0: the run succeeds, and check exited {checked.returncode} "
+                f"without 'forecast: none asked for'\n{checked.stdout}{checked.stderr}")
 
     # -- the run -------------------------------------------------------------
 

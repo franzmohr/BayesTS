@@ -48,11 +48,10 @@ changes what it means:
 | `/data/train/z has N columns, but ... make M` | `z` was built for different dimensions than the attributes state |
 
 It exits 0 when every model would be accepted, warnings or not, and 1 with the
-reason on stderr when a model would be refused. That includes three failures a
+reason on stderr when a model would be refused. That includes two failures a
 run meets only at the forecast stage, after the chain has run:
 - forecast regressors that are missing or have too few horizons;
-- a `z` whose width disagrees with the dimensions, when a forecast is asked for;
-- a written `h = 0`. Leave `h` out to ask for no forecast.
+- a `z` whose width disagrees with the dimensions, when a forecast is asked for.
 
 It takes `--group` and `--all-groups` like the rest.
 
@@ -86,7 +85,7 @@ Every stage skips when its output is already in the file:
 | Stage | Skips when |
 | --- | --- |
 | `coefficients` | `/posterior/u_sigma_inv/coeffs` holds data — and says so on stdout |
-| `forecasts` | `/posterior/forecast` holds data, **or** `/model` has no `h` attribute |
+| `forecasts` | `/posterior/forecast` holds data, **or** `/model` has no `h` attribute, or `h` is 0 |
 | `loglik` | `/posterior/loglik` holds data |
 
 This is deliberate — it makes a directory walk resumable — and it is the most

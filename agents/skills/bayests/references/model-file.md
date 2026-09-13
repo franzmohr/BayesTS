@@ -45,7 +45,7 @@ seen from R.
 | `m` | int | 0 | Exogenous variables |
 | `s` | int | 0 | Lags of the exogenous variables. For a VEC, a **level** order |
 | `n` | int | 0 | Deterministic terms entering unrestricted |
-| `h` | int | 0 | Forecast horizon. Absent means no forecast was asked for |
+| `h` | int | 0 | Forecast horizon. Absent or 0 means no forecast was asked for |
 | `varsel` | string | `none` | `none`, `ssvs` or `bvs`. Any other spelling throws |
 | `structural` | bool | false | Move the last `k(k-1)/2` entries of `a` to contemporaneous coefficients |
 | `error` | string | `""` | Descriptive, except for `gamma+covar` and `sv+covar` — see below |

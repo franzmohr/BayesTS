@@ -14,7 +14,7 @@
 // templates at the bottom, and the only rules restated here are the ones a run
 // meets after the sampler has finished: the forecast's checks on its
 // regressors, which the samplers can only make once there are draws to compare
-// against, and the front-ends' reading of the horizon. The check.* tests in
+// against. The check.* tests in
 // test/CMakeLists.txt run this over every fixture a golden.* run accepts, so a
 // rule here that is stricter than the run fails there.
 
@@ -67,22 +67,6 @@ ModelCheck inspect(const ModelFile &file, const Input &input)
     }
 
     return check;
-}
-
-/// The front-ends skip a forecast when /model has no `h` attribute, and hand
-/// one that is there to the sampler, which refuses a horizon below one. So a
-/// written h = 0 runs the whole chain and then fails -- which is what a file
-/// written as "no forecast, please" by anyone who spells that as zero gets. Not
-/// the quantile models: their forecast() is a no-op whatever the attribute says.
-inline void require_written_horizon(const ModelFile &file, const VarSpec &spec)
-{
-    if (spec.h <= 0 && attribute_exists(file, "/model", "h"))
-    {
-        throw std::invalid_argument(
-            "h = " + std::to_string(spec.h) +
-            " is written, and a written h asks for a forecast: the forecasts stage would refuse "
-            "the horizon after the chain has run. To ask for no forecast, leave the attribute out");
-    }
 }
 
 /// The checks a VAR's forecast() makes on its regressors, made without draws:
@@ -221,8 +205,7 @@ template <typename ReadInput>
 ModelCheck check_var_model(const ModelLocation &location, ReadInput read_input)
 {
     return bayests::model_check_detail::run(
-        location, read_input, [](const ModelFile &file, const auto &input) {
-            bayests::model_check_detail::require_written_horizon(file, input.spec);
+        location, read_input, [](const ModelFile &, const auto &input) {
             bayests::model_check_detail::require_var_forecast_regressors(input);
         });
 }
@@ -232,20 +215,18 @@ template <typename ReadInput>
 ModelCheck check_vec_model(const ModelLocation &location, ReadInput read_input)
 {
     return bayests::model_check_detail::run(
-        location, read_input, [](const ModelFile &file, const auto &input) {
-            bayests::model_check_detail::require_written_horizon(file, input.spec);
+        location, read_input, [](const ModelFile &, const auto &input) {
             bayests::model_check_detail::require_vec_forecast_regressors(input);
         });
 }
 
-/// A factor model, whose forecast runs on the horizon alone.
+/// A factor model, whose forecast runs on the horizon alone, so there is
+/// nothing past validate() to check.
 template <typename ReadInput>
 ModelCheck check_factor_model(const ModelLocation &location, ReadInput read_input)
 {
-    return bayests::model_check_detail::run(
-        location, read_input, [](const ModelFile &file, const auto &input) {
-            bayests::model_check_detail::require_written_horizon(file, input.spec);
-        });
+    return bayests::model_check_detail::run(location, read_input,
+                                            [](const ModelFile &, const auto &) {});
 }
 
 /// A quantile model: validate() refuses a horizon, and forecast() does nothing

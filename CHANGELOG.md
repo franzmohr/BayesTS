@@ -39,10 +39,9 @@ Dates are ISO. Versions follow the `project(VERSION)` in `CMakeLists.txt`.
   Exit 0 means every model would be accepted, warnings or not; 1 means a model
   would be refused, with the reason on stderr.
 
-  Three refusals are ones a run makes only at the forecast stage, after the
-  chain: missing or too few forecast regressors; a VAR whose `/data/train/z` is
-  a different width from what its dimensions make; and a written `h = 0`, which
-  the front-ends read as a request for a forecast of no horizons.
+  Two refusals are ones a run makes only at the forecast stage, after the
+  chain: missing or too few forecast regressors, and a VAR whose
+  `/data/train/z` is a different width from what its dimensions make.
 
   Each front-end implements `BaseModel::check()` by handing its own reader to a
   template in `src/models/model_check.h`, so the check cannot drift from the
@@ -165,6 +164,23 @@ Dates are ISO. Versions follow the `project(VERSION)` in `CMakeLists.txt`.
   covers both spellings, the precedence when a file has both, and that refusal.
 
 ### Fixed
+
+- **A written `h = 0` skips the forecast, as a missing `h` does.** The eighteen
+  non-quantile front-ends skipped the forecast only when `/model` had no `h`
+  attribute and handed any written value to the sampler, which refuses a
+  horizon below one. So a file carrying `h = 0` — the natural way for R and
+  Python callers to write "no forecast" — ran the whole Gibbs chain under
+  `bayests posterior` and then exited 1 with "forecast horizon (h) must be
+  positive". Reproduced for `VarNormalGamma`, `DfmNormalGamma` and
+  `FavarNormalWishart`; `VarNormalAld` and `VarTvpAld` were unaffected, their
+  `forecast()` being a no-op. The front-ends now read the attribute through its
+  default and skip silently for any `h <= 0`, which is what the README and
+  `agents/` already promised: having nothing to do is not failing.
+
+  `bayests check` (above) refused such a file up front for the same reason.
+  That refusal is removed, and `agents.recipes` now requires `posterior` to exit
+  0 on a written `h = 0` and `check` to accept it. Only exit codes change: no
+  sampler is touched, so draws are unchanged by construction.
 
 - **The local Docker harness copies out the packages it just built**, and not
   whatever else is lying in the build tree. `docker/ci.sh` globbed

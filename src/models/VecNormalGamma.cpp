@@ -71,12 +71,13 @@ void VecNormalGamma::forecast(const ModelLocation &location_arg)
         throw std::runtime_error("Posterior draws of u_sigma_inv are missing.");
     }
 
-    // No horizon, so no forecast was asked for: a skip, not a failure. A file
-    // written with h = 0 carries no attribute at all, which is what every
-    // -nofcst fixture looks like. Five of these front-ends used to print
-    // "Error processing ..." here and the other thirteen returned in silence;
-    // all eighteen are silent now, because none of them has failed.
-    if (!attribute_exists(file, "/model", "h"))
+    // No horizon, so no forecast was asked for: a skip, not a failure. That is
+    // an absent attribute -- every -nofcst fixture leaves it out -- and just as
+    // much a written h <= 0, which is how R and Python callers spell "no
+    // forecast". Five of these front-ends used to print "Error processing ..."
+    // here and the other thirteen returned in silence; all eighteen are silent
+    // now, because none of them has failed.
+    if (bayests::hdf5_io::optional_attribute_int(file, "/model", "h", 0) <= 0)
     {
         return;
     }
