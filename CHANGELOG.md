@@ -294,6 +294,28 @@ Dates are ISO. Versions follow the `project(VERSION)` in `CMakeLists.txt`.
 
 ### Fixed
 
+- **The generated VEC fixtures no longer carry a dataset their model never
+  reads, and a `check.*` test now fails on any warning.** The fixture generator
+  wrote both `/data/train/z` and `/data/train/x` into every VEC file, so
+  `bayests check` warned that the model never reads one of them on 40 of the 91
+  fixtures, and nothing failed on it. Each file now carries only the layout its
+  model reads, both still built from the same levels. The `check.*` tests fail
+  on a `warning:` line, as `agents.recipes` already did. Draws are unchanged:
+  the fingerprint comparison over all 91 fixtures shows none moved, and all 300
+  tests pass.
+
+- **The agent documentation states the posterior shapes and refusals the
+  binary has.** `results.md` gave `/posterior/psi/coeffs` as `k*k` wide, but the
+  four time-varying models with a covariance block write one block per period,
+  `k*k*tt`. It listed `/posterior/u_omega_inv/coeffs` for the gamma and quantile
+  models only, but the stochastic volatility models write it too, at `k*tt`. The
+  refusal table in `algorithms.md` now lists the six `validate()` refusals it
+  lacked: more factors than series, a factor transition order not below the
+  number of periods, a FAVAR with no observed factor, a FAVAR state Wishart
+  prior with fewer degrees of freedom than state elements, fewer than two
+  periods on a time-varying or stochastic volatility model, and a VEC of
+  positive rank with no regressors. Documentation only; no sampler is touched.
+
 - **A flag the command does not know, or a second path, exits 2 rather than
   running something else.** Either used to be a warning and a run with exit code
   0. `bayests check a.h5 --gruop /models/3` checked the model at the root of the
