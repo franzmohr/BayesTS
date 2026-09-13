@@ -315,10 +315,16 @@ Dates are ISO. Versions follow the `project(VERSION)` in `CMakeLists.txt`.
   `OPENBLAS_NUM_THREADS=1` on its own still ran BLAS on every core; only
   `OMP_NUM_THREADS` had any effect. The OpenMP count is now used only when
   `OPENBLAS_NUM_THREADS` is unset. A run that sets `OMP_NUM_THREADS`, or both,
-  gets the thread counts it got before. Draws are unchanged: the samplers are not
+  gets the thread counts it got before. This holds for an OpenBLAS built with
+  pthreads, as vcpkg's and Ubuntu's default are; one built with OpenMP, as
+  MSYS2's is, ignores `OPENBLAS_NUM_THREADS` whatever the binary does. The
+  startup line now names the threading model, as in
+  `OpenBLAS threads: 1 (pthreads)`. Draws are unchanged: the samplers are not
   touched, and the fingerprint comparison over all 91 fixtures, which pins both
   variables to one, shows none moved. `cli.refusals` checks the count the binary
-  reports.
+  reports against a pthreads OpenBLAS and skips the check on other builds. As
+  first committed it asserted the count on every OpenBLAS, and failed the
+  Windows CI job, which links MSYS2's OpenMP build.
 
 - **Two misordered command lines exit 2 with the right reason.** A flag
   directly after `--group`, as in `--group --all-groups`, was taken as the name

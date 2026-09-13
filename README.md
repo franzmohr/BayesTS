@@ -1086,7 +1086,10 @@ configuration you should see:
 By default the program uses all available cores, detected at startup and
 reported on the console. `OMP_NUM_THREADS` overrides it, and sets the OpenBLAS
 thread count too unless `OPENBLAS_NUM_THREADS` is set, which then decides
-OpenBLAS's alone:
+OpenBLAS's alone. That last part holds for an OpenBLAS built with pthreads, as
+vcpkg's and Ubuntu's default are. One built with OpenMP, as MSYS2's is, ignores
+`OPENBLAS_NUM_THREADS` and follows `OMP_NUM_THREADS` only. The startup line
+names which kind was loaded, as in `OpenBLAS threads: 1 (pthreads)`:
 
 **Windows (PowerShell)**
 

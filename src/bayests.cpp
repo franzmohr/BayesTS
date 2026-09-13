@@ -25,6 +25,9 @@
 extern "C" {
     void openblas_set_num_threads(int num_threads);
     int openblas_get_num_threads(void);
+#ifdef BAYESTS_HAVE_OPENBLAS_GET_PARALLEL
+    int openblas_get_parallel(void);
+#endif
 }
 #endif
 
@@ -51,7 +54,20 @@ int main(int argc, char* argv[]) {
         openblas_set_num_threads(num_threads);
     }
 
-    std::cout << "OpenBLAS threads: " << openblas_get_num_threads() << std::endl;
+    std::cout << "OpenBLAS threads: " << openblas_get_num_threads();
+#ifdef BAYESTS_HAVE_OPENBLAS_GET_PARALLEL
+    // The threading model decides what OPENBLAS_NUM_THREADS does: a pthreads
+    // build honours it, and an OpenMP build ignores it and follows
+    // OMP_NUM_THREADS alone, whatever this program does.
+    switch (openblas_get_parallel())
+    {
+    case 0: std::cout << " (serial)"; break;
+    case 1: std::cout << " (pthreads)"; break;
+    case 2: std::cout << " (openmp)"; break;
+    default: break;
+    }
+#endif
+    std::cout << std::endl;
 #endif
 #else
     std::cout << "OpenMP not available: Running single-threaded" << std::endl;
