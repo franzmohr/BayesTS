@@ -55,6 +55,7 @@ seen from R.
 | `n_restricted` | int | 0 | A VEC's deterministic terms restricted to the cointegration space. Disjoint from `n` |
 | `n_factors` | int | 0 | Unobserved factors. Zero for every model that is not a factor model |
 | `n_obs_factors` | int | 0 | A FAVAR's observed factors. Needs `n_factors > 0` as well |
+| `seed` | int | none | Seeds the random number generator for this model's run, so its draws depend on the file alone. A non-negative whole number; anything else is refused. Absent leaves the generator as it is — see `pipeline.md`, *Reproducibility* |
 
 `error` is load-bearing for exactly two values, and the spelling is
 model-specific: `gamma+covar` switches the covariance block on for the gamma

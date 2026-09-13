@@ -5,6 +5,7 @@
 
 #include "io/hdf5/hdf5_and_armadillo.h"
 
+#include <cmath>
 #include <set>
 #include <stdexcept>
 
@@ -334,16 +335,71 @@ namespace bayests::hdf5_io
 bool is_model_attribute(const std::string &name)
 {
     // read_spec() above reads all of these but `algorithm`, which picks the
-    // reader before there is one. Keep the two in the same file, and add a name
-    // here in the edit that teaches read_spec() to read it: `bayests check` warns
-    // about every /model attribute this does not list.
+    // reader before there is one, and `seed`, which read_model_seed() below reads
+    // for the command line. Keep them in the same file, and add a name here in
+    // the edit that teaches a reader to read it: `bayests check` warns about
+    // every /model attribute this does not list.
     static const std::set<std::string> names = {
         "algorithm", "k",         "iterations", "burnin",       "p",
         "m",         "s",         "h",          "quantile",     "n",
         "rank",      "k_beta",    "n_restricted", "n_factors",  "n_obs_factors",
-        "varsel",    "structural", "error",
+        "varsel",    "structural", "error",     "seed",
     };
     return names.count(name) > 0;
+}
+
+std::optional<std::uint64_t> read_model_seed(const ModelFile &file)
+{
+    if (!attribute_exists(file, "/model", "seed"))
+    {
+        return std::nullopt;
+    }
+
+    const HighFive::Attribute attr = file.getGroup("/model").getAttribute("seed");
+    const HighFive::DataType type = attr.getDataType();
+    const auto refuse = [](const std::string &why) {
+        return std::invalid_argument("/model/seed " + why +
+                                     "; a seed is a non-negative whole number, or left out");
+    };
+
+    if (attr.getSpace().getElementCount() != 1)
+    {
+        throw refuse("holds more than one value");
+    }
+
+    if (type.getClass() == HighFive::DataTypeClass::Integer)
+    {
+        if (H5Tget_sign(type.getId()) == H5T_SGN_NONE)
+        {
+            std::uint64_t value = 0;
+            attr.read(value);
+            return value;
+        }
+
+        std::int64_t value = 0;
+        attr.read(value);
+        if (value < 0)
+        {
+            throw refuse("is " + std::to_string(value));
+        }
+        return static_cast<std::uint64_t>(value);
+    }
+
+    if (type.getClass() == HighFive::DataTypeClass::Float)
+    {
+        // As get_attribute_int() accepts for a dimension, and for the same reason:
+        // `seed = 20260901` in R is a double. Above 2^53 a double no longer holds
+        // every whole number, so the seed it holds may not be the one typed.
+        double value = 0.0;
+        attr.read(value);
+        if (!(value >= 0.0) || value != std::floor(value) || value > 9007199254740992.0)
+        {
+            throw refuse("is " + std::to_string(value));
+        }
+        return static_cast<std::uint64_t>(value);
+    }
+
+    throw refuse("is not a number");
 }
 
 } // namespace bayests::hdf5_io

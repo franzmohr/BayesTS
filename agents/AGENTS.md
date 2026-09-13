@@ -65,7 +65,8 @@ Treat a warning as a bug in the file until you can say why it is there.
    started and failed, 2 the command line was unusable.
 
 10. **Samplers are reproducible single-threaded only.** Set
-    `OMP_NUM_THREADS=1` and `OPENBLAS_NUM_THREADS=1` when comparing runs.
+    `OMP_NUM_THREADS=1` and `OPENBLAS_NUM_THREADS=1` when comparing runs, and
+    write `/model/seed` so the draws do not depend on what ran before the model.
 
 ## Where to read more
 

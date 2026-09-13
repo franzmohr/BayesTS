@@ -50,6 +50,10 @@ ModelCheck inspect(const ModelFile &file, const Input &input)
     check.error_attribute = hdf5_io::optional_attribute_string(file, "/model", "error", "");
     check.has_posterior = dataset_has_data(file, "/posterior/u_sigma_inv/coeffs");
 
+    // Not the reader's -- the command line seeds the generator, see
+    // src/model_seed.cpp -- but a seed a run would refuse, the check refuses.
+    check.seed = hdf5_io::read_model_seed(file);
+
     for (const std::string &name : list_model_datasets(file))
     {
         if (!std::binary_search(read.begin(), read.end(), name))

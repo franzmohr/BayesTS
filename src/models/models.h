@@ -4,8 +4,10 @@
 #ifndef MODELS_H
 #define MODELS_H
 
+#include <cstdint>
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -57,6 +59,10 @@ struct ModelCheck
 
     /// Whether draws are already written, in which case coefficients skips.
     bool has_posterior = false;
+
+    /// /model/seed, when the file names one. A seed that is not a non-negative
+    /// whole number is refused here as it is by a run.
+    std::optional<std::uint64_t> seed;
 
     /// Datasets in the model's tree the reader never opened, /posterior aside.
     std::vector<std::string> unread;

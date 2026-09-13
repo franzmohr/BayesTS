@@ -10,6 +10,8 @@
 
 #include <highfive/H5File.hpp>
 
+#include <cstdint>
+#include <optional>
 #include <string>
 
 namespace bayests::hdf5_io
@@ -73,10 +75,18 @@ void ensure_group(const ModelFile &file, const std::string &group);
 VarSpec read_spec(const ModelFile &file, const char *covar_error);
 
 /// Whether some reader looks for a /model attribute of this name -- the ones
-/// read_spec() reads, and `algorithm`. `bayests check` warns about any other,
-/// since an attribute nothing reads is usually a misspelling of one that is
-/// then read through its default.
+/// read_spec() reads, `algorithm` and `seed`. `bayests check` warns about any
+/// other, since an attribute nothing reads is usually a misspelling of one that
+/// is then read through its default.
 bool is_model_attribute(const std::string &name);
+
+/// /model/seed: what the command line seeds each stage of this model's run
+/// from, or nothing when the file names no seed. Read here, where every other
+/// attribute is read, and applied by src/model_seed.cpp -- seeding the
+/// generator is the host's business, not the samplers'. A whole number stored
+/// as a float is accepted, as R writes one unless told `L`; anything that is
+/// not a non-negative whole number throws rather than seeding from a guess.
+std::optional<std::uint64_t> read_model_seed(const ModelFile &file);
 
 /// The (mu, v_inv) pair every normal prior is stored as.
 NormalPrior read_normal_prior(const ModelFile &file, const std::string &group);

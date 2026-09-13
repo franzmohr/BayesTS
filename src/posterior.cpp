@@ -4,9 +4,13 @@
 
 #include "cli_options.h"
 #include "model_locations.h"
+#include "model_seed.h"
 #include "models/models.h"
 #include "io/hdf5/hdf5_and_armadillo.h"
+#include "io/hdf5/model_io_common.h"
+#include <cstdint>
 #include <iostream>
+#include <optional>
 #include <string>
 
 // Helper function to process a single model
@@ -16,6 +20,7 @@ static int process_single_file_evaluation(const ModelLocation &location, bool ru
 	try
 	{
 		std::string model_type;
+		std::optional<std::uint64_t> seed;
 
 		{
 			// Open HDF5 file (will be closed when scope ends)
@@ -28,27 +33,37 @@ static int process_single_file_evaluation(const ModelLocation &location, bool ru
 			// Get model type from the model's own /model group
 			model_type = get_algorithm_type(ModelFile(h5, location.group));
 
+			// Read with the algorithm, so that a seed the file cannot supply
+			// fails the model before anything is drawn.
+			seed = bayests::hdf5_io::read_model_seed(ModelFile(h5, location.group));
+
 			// File is automatically closed here when 'h5' goes out of scope
 		}
 
 		// Initialize model
 		auto model = create_model(model_type);
 
+		// Each stage is seeded as the subcommand of its name seeds it, which is
+		// what makes this the same run as those three one after the other.
+
 		// Posterior draws
 		if (run_coefficients)
 		{
+			seed_model_stage(seed, ModelStage::coefficients);
 			model->draw_coefficients(location);
 		}
 
 		// Information criteria
 		if (run_loglik)
 		{
+			seed_model_stage(seed, ModelStage::log_likelihood);
 			model->log_likelihood(location);
 		}
 
 		// Forecasts
 		if (run_forecasts)
 		{
+			seed_model_stage(seed, ModelStage::forecast);
 			model->forecast(location);
 		}
 	}

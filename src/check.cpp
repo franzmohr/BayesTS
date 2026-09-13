@@ -148,6 +148,11 @@ void print_report(const std::string &algorithm, const ModelCheck &check)
 	          << "\n";
 	std::cout << "  chain: " << spec.iterations << " draws kept after " << spec.burnin
 	          << " burn-in\n";
+	std::cout << "  seed: "
+	          << (check.seed ? std::to_string(*check.seed)
+	                         : std::string("none, so the draws follow the generator's state when the "
+	                                       "model's turn comes"))
+	          << "\n";
 	if (check.has_posterior)
 	{
 		std::cout << "  posterior: already written, so coefficients will skip this model; "

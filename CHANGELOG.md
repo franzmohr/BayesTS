@@ -26,6 +26,44 @@ Dates are ISO. Versions follow the `project(VERSION)` in `CMakeLists.txt`.
 
 ### Added
 
+- **`/model/seed`, which makes a model's draws a property of its file.** A run
+  was only as reproducible as the generator's state when the model's turn came.
+  A command naming one model started from Armadillo's default state and so
+  repeated. In a walk over a directory or `--all-groups`, though, each model
+  started wherever the one before it had left the generator, so its draws
+  depended on what else was in the directory. And a forecast run on its own
+  drew different shocks from one run inside `posterior`.
+
+  With a non-negative whole number in `/model/seed`, the command line seeds
+  each stage just before running it. The chain starts from the seed itself, and
+  the log likelihood and the forecast from streams derived from it by
+  splitmix64. `posterior` therefore draws exactly what `coefficients`, `loglik`
+  and `forecasts` draw run one after another, and a model draws the same in a
+  walk as alone. A seed stored as a float is accepted when it is whole, since R
+  writes `20260901` as a double. A negative, fractional or non-numeric one is
+  refused before the chain, by the run and by `bayests check` alike; `check`
+  prints the seed it read.
+
+  The seed is read in `src/io/hdf5/` (`read_model_seed()`) and applied in the
+  command line (`src/model_seed.cpp`). Nothing under `src/core/` or
+  `include/bayests/` changes: seeding is the host's business, and an embedded
+  host keeps seeding its own generator, R through `set.seed()`. There is
+  nothing for the vendoring packages to propagate.
+
+  **Draws are unchanged** for every file without a seed, which is every file
+  written before this: the generator is not touched unless the attribute is
+  there. The golden harness calls the model entry points directly and seeds
+  them itself, so no fingerprint can move. Checked end to end as well: the two
+  unseeded model files of the JSS illustration, a `VarNormalGamma` and a
+  `VarTvpStochvol` with 20,000 draws each, were run through `bayests posterior`
+  built before and after, and every `/posterior` dataset is bit-identical. All
+  291 registered tests pass.
+  `agents.recipes` gains a `seed` scenario, which checks that a seeded file gives
+  identical `/posterior` datasets across two runs, when its stages run
+  separately, and for two copies in one directory walk. It also checks that a
+  different seed gives different draws and that a negative one exits 1 naming
+  `/model/seed`.
+
 - **`bayests check`, which says whether a run would accept a model file and how
   it read it, without running anything.** Most fields are read through a
   default, so a misspelled attribute or the wrong `error` spelling is not an

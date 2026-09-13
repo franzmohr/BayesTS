@@ -4,9 +4,13 @@
 
 #include "cli_options.h"
 #include "model_locations.h"
+#include "model_seed.h"
 #include "models/models.h"
 #include "io/hdf5/hdf5_and_armadillo.h"
+#include "io/hdf5/model_io_common.h"
+#include <cstdint>
 #include <iostream>
+#include <optional>
 
 // Helper function to process a single model
 static int process_single_file_coefficients(const ModelLocation &location)
@@ -14,6 +18,7 @@ static int process_single_file_coefficients(const ModelLocation &location)
 	try
 	{
 		std::string model_type;
+		std::optional<std::uint64_t> seed;
 
 		{
 			// Open HDF5 file (will be closed when scope ends)
@@ -25,6 +30,7 @@ static int process_single_file_coefficients(const ModelLocation &location)
 
 			// Get model type from the model's own /model group
 			model_type = get_algorithm_type(ModelFile(h5, location.group));
+			seed = bayests::hdf5_io::read_model_seed(ModelFile(h5, location.group));
 
 			// File is automatically closed here when 'h5' goes out of scope
 		}
@@ -33,6 +39,7 @@ static int process_single_file_coefficients(const ModelLocation &location)
 		auto model = create_model(model_type);
 
 		// Perform posterior simulation
+		seed_model_stage(seed, ModelStage::coefficients);
 		model->draw_coefficients(location);
 	}
 	catch (const std::exception &e)

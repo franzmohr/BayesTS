@@ -159,5 +159,16 @@ The draws come from Armadillo's RNG. Under an embedded host built against
 RcppArmadillo that is R's own RNG, so `set.seed()` reaches the draws; from the
 command line it is Armadillo's.
 
+**Write `/model/seed` to make the draws a property of the file.** With a seed,
+each stage starts from a stream fixed by it: `posterior` draws exactly what
+`coefficients`, `loglik` and `forecasts` draw when run one after another, a
+deleted forecast re-runs to the same numbers, and a model in a walk over a
+directory or `--all-groups` draws what it would draw alone. Without one the
+generator is left as it is. A command naming one model then starts from
+Armadillo's default state, which repeats from run to run, but in a walk each
+model starts wherever the one before it left the generator — so its draws
+depend on what else was in the directory. `bayests check` prints the seed it
+read.
+
 Fingerprints shift in the last digits with the compiler, the BLAS and the CPU,
 so compare runs on the same machine and the same build or not at all.

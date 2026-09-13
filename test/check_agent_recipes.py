@@ -121,6 +121,15 @@ def read(path, dataset):
         return f[dataset][:]
 
 
+def posterior_arrays(path):
+    """{name: array} for every dataset under /posterior."""
+    arrays = {}
+    with h5py.File(path, "r") as f:
+        f["posterior"].visititems(
+            lambda name, obj: arrays.__setitem__(name, obj[:]) if isinstance(obj, h5py.Dataset) else None)
+    return arrays
+
+
 class Checker:
     def __init__(self, bayests, generator, skill_dir, work_dir):
         self.bayests_exe = bayests
@@ -408,6 +417,59 @@ class Checker:
             raise AssertionError(
                 f"posterior on a file that is not HDF5: expected exit 1, got "
                 f"{result.returncode}\n{result.stdout}{result.stderr}")
+
+    def scenario_seed(self, d):
+        # references/model-file.md and pipeline.md: /model/seed makes a model's
+        # draws a function of its file, however the run is split up and whatever
+        # ran before it.
+        self.run_python(d, inside_with(self.code(*VAR, 0), 'f["/model"].attrs["seed"] = 20260913'))
+        self.check_clean(d, "var.h5")
+        checked = self.bayests(d, "check", "var.h5")
+        if "seed: 20260913" not in checked.stdout:
+            raise AssertionError(f"check did not report the seed\n{checked.stdout}")
+
+        # Copies taken before anything runs, so each holds the same data.
+        (d / "walk").mkdir()
+        for target in ("again.h5", "staged.h5", "other.h5", "negative.h5",
+                       "walk/first.h5", "walk/second.h5"):
+            shutil.copy(d / "var.h5", d / target)
+
+        self.posterior(d, "var.h5")
+        reference = posterior_arrays(d / "var.h5")
+
+        self.posterior(d, "again.h5")
+        for command in ("coefficients", "loglik", "forecasts"):
+            result = self.bayests(d, command, "staged.h5")
+            if result.returncode != 0:
+                raise AssertionError(
+                    f"{command} staged.h5 exited {result.returncode}\n{result.stdout}{result.stderr}")
+        # Two identical models in one walk: whichever the filesystem lists second
+        # starts after the first has used the generator.
+        walk = self.bayests(d, "posterior", "walk")
+        if walk.returncode != 0:
+            raise AssertionError(f"posterior walk exited {walk.returncode}\n{walk.stdout}{walk.stderr}")
+
+        for path in (d / "again.h5", d / "staged.h5", d / "walk" / "first.h5", d / "walk" / "second.h5"):
+            got = posterior_arrays(path)
+            if got.keys() != reference.keys() or any(
+                    not np.array_equal(reference[name], got[name]) for name in reference):
+                raise AssertionError(f"{path.name}: the same seed gave different draws")
+
+        with h5py.File(d / "other.h5", "a") as f:
+            f["/model"].attrs["seed"] = 20260914
+        self.posterior(d, "other.h5")
+        if np.array_equal(reference["a/coeffs"], read(d / "other.h5", "/posterior/a/coeffs")):
+            raise AssertionError("a different seed gave the same draws")
+
+        # Refused before a chain is spent on it, by the run and the check alike.
+        with h5py.File(d / "negative.h5", "a") as f:
+            f["/model"].attrs["seed"] = -1
+        for command in ("check", "posterior"):
+            result = self.bayests(d, command, "negative.h5")
+            if result.returncode != 1 or "/model/seed" not in result.stderr:
+                raise AssertionError(
+                    f"{command} on a negative seed: expected exit 1 naming /model/seed, got "
+                    f"{result.returncode}\n{result.stdout}{result.stderr}")
 
     # -- the run -------------------------------------------------------------
 
