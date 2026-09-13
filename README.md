@@ -784,8 +784,8 @@ The archive and its SHA-256 checksum land next to the build, in
 `build/bin/my-windows-release/`:
 
 ```
-BayesTS-0.0.1-Windows-AMD64.zip
-BayesTS-0.0.1-Windows-AMD64.zip.sha256
+BayesTS-0.1.0-Windows-AMD64.zip
+BayesTS-0.1.0-Windows-AMD64.zip.sha256
 ```
 
 It contains `bin/bayests.exe`, the runtime libraries it needs, and
@@ -803,8 +803,8 @@ nothing beyond CMake. When [NSIS](https://nsis.sourceforge.io/) is present an
 installer is built alongside it:
 
 ```
-BayesTS-0.0.1-Windows-AMD64.exe
-BayesTS-0.0.1-Windows-AMD64.exe.sha256
+BayesTS-0.1.0-Windows-AMD64.exe
+BayesTS-0.1.0-Windows-AMD64.exe.sha256
 ```
 
 It installs into `%ProgramFiles%\BayesTS`, shows the licence, offers to add
@@ -820,13 +820,16 @@ the directory — NSIS requires `/D` last and unquoted, even when the path
 contains spaces:
 
 ```bat
-BayesTS-0.0.1-Windows-AMD64.exe /S /D=C:\tools\BayesTS
+BayesTS-0.1.0-Windows-AMD64.exe /S /D=C:\tools\BayesTS
 "C:\tools\BayesTS\Uninstall.exe" /S
 ```
 
-A silent install leaves `PATH` alone: the page that asks about it cannot be
-answered without a UI, and the script adds nothing unless it is. Put the `bin`
-directory on `PATH` yourself if an unattended install needs it.
+A silent install takes the `PATH` page's default, so it adds the `bin`
+directory to the `PATH` of the user who runs it, the same as clicking through.
+No switch changes that. For an install that every user can run from anywhere,
+add the directory to the system `PATH` yourself. To keep it off `PATH`, remove
+the entry after installing. Uninstalling removes the entry the installer added,
+whether or not the install was silent.
 
 NSIS does not have to be on `PATH`: configuration also reads the registry key
 its installer writes — under both `SOFTWARE\NSIS` and `SOFTWARE\WOW6432Node\NSIS`,
@@ -854,7 +857,7 @@ is assembled at configure time rather than fixed.
 cpack --config build/bin/my-windows-release/CPackSourceConfig.cmake
 ```
 
-Produces `BayesTS-0.0.1-src.zip` and `.tar.gz`. The ignore list drops the build
+Produces `BayesTS-0.1.0-src.zip` and `.tar.gz`. The ignore list drops the build
 tree, `.git/`, `CMakeUserPresets.json` and every `*.h5`, since model files are
 derived data and run to hundreds of megabytes.
 
@@ -868,7 +871,7 @@ sudo snap install snapcraft --classic
 sudo snap install lxd && sudo lxd init --auto
 
 snapcraft                                       # builds for the host architecture
-sudo snap install --dangerous ./bayests_0.0.1_amd64.snap
+sudo snap install --dangerous ./bayests_0.1.0_amd64.snap
 bayests
 ```
 
@@ -879,7 +882,7 @@ publish, register the name once and upload:
 ```bash
 snapcraft login
 snapcraft register bayests
-snapcraft upload --release=edge ./bayests_0.0.1_amd64.snap
+snapcraft upload --release=edge ./bayests_0.1.0_amd64.snap
 ```
 
 The version is not written in `snapcraft.yaml`. It is read out of
