@@ -117,6 +117,10 @@ meant:
   read as a failure on its own.
 - A file whose dimensions are self-consistent but wrong estimates a different
   model and reports plausible numbers.
+- `iterations` counts stored draws, not independent ones. A slowly mixing chain
+  can report a posterior mean that a second `/model/seed` moves well beyond its
+  apparent precision. Run it longer with `/model/thin` (see `recipes.md`) until
+  two seeds agree.
 
 Run `bayests check` on the file before the run, and read its dimensions and
 warnings: that catches the fields a model never reads, which is how most

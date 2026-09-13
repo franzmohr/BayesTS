@@ -152,6 +152,16 @@ unrestricted** — with a Wishart precision, and with a covariance block — bec
 chain last wandered. Estimate it against a diagonal covariance instead: the
 `gamma` or `sv` error specification *without* `+covar`.
 
+## Chain length: `iterations`, `burnin`, `thin`
+
+`iterations` is the number of draws **kept**, and every posterior dataset has
+that many columns. `burnin` draws are discarded first. `thin` (default 1) keeps
+the last of every `thin` draws after the burn-in, so the chain runs
+`burnin + iterations * thin` draws while the file stays the size `iterations`
+makes it. Reach for it when a posterior summary moves with `/model/seed`. That is
+a chain too short for how slowly it mixes, and thinning lets it run longer
+without a larger file. `references/recipes.md` has the example.
+
 ## Dimension arithmetic
 
 Getting these wrong is the other common silent failure. The priors and the

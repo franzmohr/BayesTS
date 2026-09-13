@@ -67,6 +67,8 @@ Treat a warning as a bug in the file until you can say why it is there.
 10. **Samplers are reproducible single-threaded only.** Set
     `OMP_NUM_THREADS=1` and `OPENBLAS_NUM_THREADS=1` when comparing runs, and
     write `/model/seed` so the draws do not depend on what ran before the model.
+    If two seeds give different posterior summaries, the chain is too short:
+    raise `/model/thin` to run it longer without a larger file.
 
 ## Where to read more
 

@@ -7,7 +7,7 @@ The documents below are written for coding agents. Their Python examples are run
 ## Start here
 
 - [AGENTS.md](agents/AGENTS.md): the ten rules that prevent silently wrong model files, and where to read more
-- [Writing correct BayesTS code](agents/skills/bayests/SKILL.md): the naming grammar, the `error`, `varsel` and `structural` attributes, and the dimension arithmetic
+- [Writing correct BayesTS code](agents/skills/bayests/SKILL.md): the naming grammar, the `error`, `varsel` and `structural` attributes, chain length and `thin`, and the dimension arithmetic
 
 ## Reference
 

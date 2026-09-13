@@ -472,16 +472,22 @@ class Checker:
                     f"{result.returncode}\n{result.stdout}{result.stderr}")
 
     def scenario_thin(self, d):
-        # references/model-file.md and results.md: /model/thin keeps one draw in
-        # thin, every result still holds `iterations`, and the mcmc attributes
-        # count iterations after the burn-in.
-        ns = self.run_python(d, inside_with(self.code(*VAR, 0), 'f["/model"].attrs["thin"] = 3'))
+        # references/recipes.md, model-file.md and results.md: /model/thin keeps
+        # one draw in thin, every result still holds `iterations`, check reports
+        # the chain it will run, and the mcmc attributes count iterations after
+        # the burn-in.
+        thin = self.code("references/recipes.md", "Running a long chain with thin", 0)
+        ns = self.run_python(d, inside_with(self.code(*VAR, 0), thin))
         self.check_clean(d, "var.h5")
+        k, nparams, tt, h, it, burnin = (ns[v] for v in ("k", "nparams", "tt", "h", "iterations", "burnin"))
+        with h5py.File(d / "var.h5", "r") as f:
+            factor = int(f["/model"].attrs["thin"])
         checked = self.bayests(d, "check", "var.h5")
-        if "one in 3" not in checked.stdout:
-            raise AssertionError(f"check did not report the thinning\n{checked.stdout}")
+        expected = (f"chain: {it} draws kept after {burnin} burn-in, one in {factor}, "
+                    f"so {burnin + it * factor} run")
+        if expected not in checked.stdout:
+            raise AssertionError(f"check did not print '{expected}', as recipes.md says\n{checked.stdout}")
         self.posterior(d, "var.h5")
-        k, nparams, tt, h, it = (ns[v] for v in ("k", "nparams", "tt", "h", "iterations"))
         expect_shapes(d / "var.h5", {
             "/posterior/a/coeffs": (nparams, it),
             "/posterior/forecast": (h * k, it),
@@ -489,10 +495,10 @@ class Checker:
         })
         with h5py.File(d / "var.h5", "r") as f:
             attrs = {name: int(value) for name, value in f["/posterior/a/coeffs"].attrs.items()}
-        if (attrs.get("start"), attrs.get("end"), attrs.get("thin")) != (3, 3 * it, 3):
+        if (attrs.get("start"), attrs.get("end"), attrs.get("thin")) != (factor, factor * it, factor):
             raise AssertionError(
-                f"/posterior/a/coeffs carries {attrs}; results.md documents start 3, "
-                f"end {3 * it}, thin 3")
+                f"/posterior/a/coeffs carries {attrs}; results.md documents start {factor}, "
+                f"end {factor * it}, thin {factor}")
 
     # -- the run -------------------------------------------------------------
 

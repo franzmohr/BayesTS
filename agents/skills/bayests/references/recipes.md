@@ -157,6 +157,32 @@ For `ssvs`, add `tau0` and `tau1` beside `inprior` — one per coefficient of th
 block — and remember that SSVS reaches only the four constant-coefficient
 models without stochastic volatility.
 
+## Running a long chain with thin
+
+`iterations` counts the draws **stored**, not the draws that are independent of
+one another. A chain that mixes slowly — stochastic volatility near a spike, a
+time-varying cointegration space — can need far more of them than a file should
+hold, and every posterior dataset is sized by `iterations`. `thin` lets the chain
+run longer without the file growing. Inside the `with` block of the complete
+VAR:
+
+```python
+f["/model"].attrs["thin"] = 10     # keep one draw in 10 after the burn-in
+```
+
+The chain now runs `burnin + iterations * thin` draws and keeps the last of
+every 10, so every result still holds `iterations` draws and the file is the
+same size. The run takes about ten times as long. `bayests check` says what it
+read: `chain: 500 draws kept after 250 burn-in, one in 10, so 5250 run`. The
+`mcmc` attributes on each `/posterior` block record it too: `start` is 10 and
+`end` is `iterations * 10`.
+
+A chain thinned this way is exactly every tenth draw of the unthinned chain run
+from the same seed. Thinning adds no information that the full chain lacks — keep
+every draw instead if it fits. `thin` is what to reach for when it does not. The
+sign that a chain is too short is a posterior summary that moves when only
+`/model/seed` changes.
+
 ## Re-running
 
 Every stage skips when its output is already there, so a second run does
