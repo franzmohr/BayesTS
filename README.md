@@ -328,7 +328,7 @@ each file in place.
 | `check` | Nothing: reads and validates each model the way a run would, reports how the file was read, and writes nothing |
 | `posterior` | All three of the below, in the order coefficients, log likelihood, forecasts |
 | `coefficients` | Posterior draws of the coefficients and the error precision |
-| `forecasts` | One forecast path per posterior draw |
+| `forecasts` | One forecast path per posterior draw. A model whose coefficients or volatilities move with time forecasts from their values in the last sample period, held for every horizon rather than simulated forward |
 | `loglik` | Pointwise log likelihood, draws × periods |
 
 Every command takes `--group <path>`, the group a model's tree hangs under inside

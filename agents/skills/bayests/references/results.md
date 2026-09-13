@@ -27,6 +27,19 @@ A run writes back into the same file, under `/posterior` (or under
 A factor model's `u_sigma_inv` is diagonal by assumption, so it stores `k` per
 draw rather than `k*k`, and `k*tt` where it moves with time.
 
+## What a forecast holds fixed
+
+Every model whose coefficients or error precision move with time — the `Tvp`
+and `Stochvol` algorithms, VAR, VEC and DFM alike — forecasts from the **last
+in-sample period** of each draw: the coefficients, loadings, `beta` and
+volatilities at period `tt`, held there for all `h` horizons. The random walks
+are **not** simulated forward. The spread of `/posterior/forecast` therefore
+carries parameter uncertainty and the future errors at the period-`tt`
+precision, but not the further drift the model allows over the horizon, so its
+intervals are narrower than the model implies — most visibly at long horizons
+of a stochastic volatility model. Read them as conditional on the end of the
+sample, not as the full predictive distribution.
+
 ## The `mcmc` attributes
 
 Datasets under `/posterior/<block>/` carry `start`, `end` and `thin` attributes,
