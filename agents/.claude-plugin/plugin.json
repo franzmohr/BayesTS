@@ -1,0 +1,11 @@
+{
+  "name": "bayests",
+  "description": "Write correct BayesTS model files: the HDF5 layout every sampler reads, the twenty algorithms and what each refuses, the run order, and how to read the draws back from Python or R.",
+  "author": {
+    "name": "Franz X. Mohr"
+  },
+  "homepage": "https://github.com/franzmohr/BayesTS/tree/main/agents",
+  "repository": "https://github.com/franzmohr/BayesTS",
+  "license": "BSD-3-Clause",
+  "keywords": ["bayesian", "time-series", "var", "vec", "factor-model", "mcmc", "hdf5"]
+}

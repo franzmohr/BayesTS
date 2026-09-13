@@ -448,6 +448,30 @@ quantile models, `VecKlgs2010` and the factor models — has its reader compare
 against no spelling at all, so there the attribute describes the file without
 being read back.
 
+### With an AI coding assistant
+
+The model file is the whole interface, and it is the part that fails quietly. A
+`z` stacked the wrong way round, or `sv+covar` on a gamma model, runs to
+completion and reports plausible numbers. An assistant with only this README to
+go on will write files like that. [`agents/`](agents/) is documentation written
+for the assistant instead: the rules that prevent silently wrong files, the
+dimension arithmetic, the datasets each algorithm reads, and complete examples
+that the test suite runs against the binary.
+
+In Claude Code it installs as a plugin, and its skill loads whenever the work
+touches BayesTS:
+
+```
+/plugin marketplace add franzmohr/BayesTS
+/plugin install bayests@bayests
+```
+
+Any other assistant can be pointed at [`agents/AGENTS.md`](agents/AGENTS.md),
+which links to the rest. `agents/skills/bayests/` is plain Markdown in the
+`SKILL.md` layout that several assistants read. The documentation site serves
+the same files, indexed by `llms.txt`, and an installed package carries them
+under `share/doc/BayesTS/agents/`, matching the binary beside it.
+
 ## Building from source
 
 The build needs nothing but CMake and the four dependencies above. The toolchain
@@ -596,6 +620,7 @@ subdirectory, or use a preset, which already does.
 | `BAYESTS_NATIVE_ARCH` | `OFF` | `-march=native`; not redistributable, see *Packaging* |
 | `BAYESTS_BUNDLE_RUNTIME_DEPS` | `ON` (Windows) | Copy the runtime DLLs next to the executable |
 | `BAYESTS_RECORDED_FIXTURES` | *(empty)* | Recorded model files, `;`-separated, each registering an extra golden test; the generated suite runs without them |
+| `BAYESTS_TEST_AGENT_DOCS` | `AUTO` | Register `agents.recipes`, which runs the examples in `agents/` against the binary. `AUTO` when a Python with h5py and numpy is found (name one with `Python3_EXECUTABLE`), `ON` to require one, `OFF` to skip |
 | `BAYESTS_RUNTIME_DEP_DIRS` | *(empty)* | Extra directories to resolve the bundled runtime libraries from, see *Packaging* |
 
 ## Tests

@@ -26,6 +26,34 @@ Dates are ISO. Versions follow the `project(VERSION)` in `CMakeLists.txt`.
 
 ### Added
 
+- **Documentation for coding agents, in `agents/`.** The file format is the
+  whole interface and fails quietly, so an assistant working from the README
+  alone writes files that run and mean something else. `agents/` has a
+  vendor-neutral `AGENTS.md`, and a skill covering the model file, the twenty
+  algorithms, the run order, the results, and complete VAR, VEC and factor model
+  examples.
+
+  It reaches users three ways. The repository is a Claude Code plugin
+  marketplace (`/plugin marketplace add franzmohr/BayesTS`). The documentation
+  site serves the same files, indexed by `llms.txt`. An installed package
+  carries them under `share/doc/BayesTS/agents/`.
+
+  The new test `agents.recipes` runs every Python example against the built
+  binary and checks the shapes the text states. It is registered when CMake
+  finds a Python with h5py (`BAYESTS_TEST_AGENT_DOCS`, default `AUTO`), and the
+  Linux CI jobs require it. Writing it turned up these mistakes, each now fixed:
+  - A factor model's `/posterior/lambda/coeffs` holds the whole loading matrix
+    per draw, not only the free loadings.
+  - The forecast regressors only need the first horizon's lag block *for one
+    lag*. In general, lag `j` of horizon `i` is read while `j > i`.
+  - The VEC example inherited an unrestricted intercept from the VAR, which
+    contradicted the regressor width it stated.
+  - The VEC example flattened `beta` row by row where `vec(beta)` is column by
+    column, which is wrong from rank 2 up.
+  - Two results examples read a file that was already closed or never opened.
+
+  No sampler is touched, so draws are unchanged by construction.
+
 - **An informative marginal prior on a time-varying cointegration space.** The
   three time-varying VECs -- `VecTvpWishart`, `VecTvpGamma` and `VecTvpStochvol`
   -- read an optional `/priors/beta/p_tau`, `TvpCointSpacePrior::p_tau`, and use

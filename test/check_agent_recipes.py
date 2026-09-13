@@ -1,0 +1,354 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (c) 2026 Franz X. Mohr
+"""Run the Python examples in the agent documentation against a built bayests.
+
+    check_agent_recipes.py <bayests> <bayests_make_model_fixture> <skill dir> <work dir>
+
+agents/skills/bayests/ is what a coding agent copies into someone else's
+project. An example there that no longer matches the file format does not fail
+here -- it fails later, silently, as a model that runs and means something
+else. So this executes each example, runs the sampler over the file it wrote,
+and checks the shapes the text states against the ones the run produced.
+
+Every Python fence in the skill has to be claimed by a scenario below, and one
+that nothing claims fails the check: a new example is either verified or
+reported, never quietly skipped. Examples are addressed by file, section
+heading and position within the section, so renaming a heading fails here too
+-- update the address when you do.
+
+What this does not cover: the R snippet in results.md, the bash fences other
+than the generator's, and the tables. A table claim is checked only where an
+example below reads the dataset it describes.
+
+Exits 0 when every scenario passed and every example was run, 1 otherwise.
+"""
+
+import contextlib
+import os
+import pathlib
+import shutil
+import subprocess
+import sys
+import textwrap
+import traceback
+
+import h5py
+import numpy as np
+
+VAR = ("references/recipes.md", "A complete VAR from h5py")
+RESULTS = ("references/results.md", "From Python")
+
+
+def read_fences(skill_dir):
+    """{(file, heading, language, index): code} for every fence under skill_dir.
+
+    `index` counts fences of the same language within one `## ` section, so the
+    second Python example under a heading is index 1.
+    """
+    fences = {}
+    for path in sorted(skill_dir.rglob("*.md")):
+        name = path.relative_to(skill_dir).as_posix()
+        heading, counts, language, lines = "", {}, None, []
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if language is None:
+                if line.startswith("```"):
+                    language, lines = line[3:].strip(), []
+                elif line.startswith("## "):
+                    heading = line[3:].strip()
+            elif line.startswith("```"):
+                key = (name, heading, language)
+                index = counts.get(key, 0)
+                counts[key] = index + 1
+                fences[(name, heading, language, index)] = "\n".join(lines) + "\n"
+                language = None
+            else:
+                lines.append(line)
+    return fences
+
+
+class _Replacing(h5py.File):
+    """An h5py.File on which assigning to an existing path replaces it.
+
+    Only for an example the text says to write *in place of* lines of another;
+    everywhere else a duplicate write is a documentation bug and must raise.
+    """
+
+    def __setitem__(self, name, obj):
+        if name in self:
+            del self[name]
+        super().__setitem__(name, obj)
+
+
+@contextlib.contextmanager
+def _working_directory(path):
+    previous = os.getcwd()
+    os.chdir(path)
+    try:
+        yield
+    finally:
+        os.chdir(previous)
+
+
+def inside_with(base, *additions):
+    """`base` with each addition appended to the `with` block it ends in."""
+    last = [line for line in base.splitlines() if line.strip()][-1]
+    if not last.startswith("    "):
+        raise AssertionError(
+            f"{VAR[0]} '## {VAR[1]}' no longer ends inside its `with` block, which "
+            "the examples that add to that block rely on")
+    return base + "".join("\n" + textwrap.indent(code, "    ") for code in additions)
+
+
+def expect_shapes(path, expected):
+    problems = []
+    with h5py.File(path, "r") as f:
+        for dataset, shape in expected.items():
+            if dataset not in f:
+                problems.append(f"{dataset}: absent, documented as {shape}")
+            elif f[dataset].shape != shape:
+                problems.append(f"{dataset}: {f[dataset].shape}, documented as {shape}")
+    if problems:
+        raise AssertionError(f"{path.name}:\n  " + "\n  ".join(problems))
+
+
+def read(path, dataset):
+    with h5py.File(path, "r") as f:
+        return f[dataset][:]
+
+
+class Checker:
+    def __init__(self, bayests, generator, skill_dir, work_dir):
+        self.bayests_exe = bayests
+        self.generator = generator
+        self.work_dir = work_dir
+        self.fences = read_fences(skill_dir)
+        self.claimed = set()
+
+    # -- the examples --------------------------------------------------------
+
+    def code(self, file, heading, index=0, language="python"):
+        key = (file, heading, language, index)
+        if key not in self.fences:
+            raise LookupError(
+                f"{file}: no {language} example {index + 1} under '## {heading}' -- "
+                "was it renamed, moved or removed?")
+        self.claimed.add(key)
+        return self.fences[key]
+
+    def run_python(self, directory, code, namespace=None, replacing=False):
+        namespace = {} if namespace is None else namespace
+        original = h5py.File
+        with _working_directory(directory):
+            if replacing:
+                h5py.File = _Replacing
+            try:
+                exec(compile(code, "<documentation example>", "exec"), namespace)
+            finally:
+                h5py.File = original
+        return namespace
+
+    # -- the binary ----------------------------------------------------------
+
+    def bayests(self, directory, *args):
+        env = dict(os.environ, OMP_NUM_THREADS="1", OPENBLAS_NUM_THREADS="1")
+        return subprocess.run([self.bayests_exe, *args], cwd=directory, env=env,
+                              capture_output=True, text=True)
+
+    def posterior(self, directory, name):
+        result = self.bayests(directory, "posterior", name)
+        if result.returncode != 0:
+            raise AssertionError(
+                f"bayests posterior {name} exited {result.returncode}\n"
+                f"{result.stdout}{result.stderr}")
+
+    # -- the scenarios -------------------------------------------------------
+
+    def scenario_var(self, d):
+        ns = self.run_python(d, self.code(*VAR, 0))
+        k, nparams, tt, h, it = (ns[v] for v in ("k", "nparams", "tt", "h", "iterations"))
+        self.posterior(d, "var.h5")
+        expect_shapes(d / "var.h5", {
+            "/posterior/a/coeffs": (nparams, it),
+            "/posterior/u_sigma_inv/coeffs": (k * k, it),
+            "/posterior/u_omega_inv/coeffs": (k, it),
+            "/posterior/forecast": (h * k, it),
+            "/posterior/loglik": (tt, it),
+        })
+
+        self.run_python(d, self.code(*VAR, 1), ns)
+        diagonal = np.diag(ns["A1"])
+        if not np.all((diagonal > 0.2) & (diagonal < 0.8)):
+            raise AssertionError(
+                f"the diagonal of A1 came back {diagonal}; the example simulated 0.5 "
+                "and the text says it comes back near that")
+
+        # results.md reads a file called model.h5.
+        shutil.copy(d / "var.h5", d / "model.h5")
+        results = self.run_python(d, self.code(*RESULTS, 0))
+        if results["post_mean"].shape != (nparams,):
+            raise AssertionError(f"results.md: post_mean is {results['post_mean'].shape}")
+        results = self.run_python(d, self.code(*RESULTS, 2))
+        if results["fcst"].shape != (h, k, it):
+            raise AssertionError(f"results.md: the forecast reshapes to {results['fcst'].shape}")
+
+        # A second run finds the posterior and leaves it alone.
+        before = read(d / "var.h5", "/posterior/a/coeffs")
+        second = self.bayests(d, "posterior", "var.h5")
+        if second.returncode != 0:
+            raise AssertionError(f"a second run exited {second.returncode}")
+        if not np.array_equal(before, read(d / "var.h5", "/posterior/a/coeffs")):
+            raise AssertionError("a second run re-estimated, where the text says it skips")
+
+        self.run_python(d, self.code("references/recipes.md", "Re-running", 0))
+        self.run_python(d, self.code("references/pipeline.md", "Re-running does nothing", 0))
+        for name in ("var.h5", "model.h5"):
+            with h5py.File(d / name, "r") as f:
+                if "posterior" in f:
+                    raise AssertionError(f"{name} still has /posterior after deleting it")
+
+    def scenario_covariance_block(self, d):
+        covar = self.code("references/recipes.md", "Adding a covariance block", 0)
+        ns = self.run_python(d, inside_with(self.code(*VAR, 0), covar))
+        self.posterior(d, "var.h5")
+        k, it = ns["k"], ns["iterations"]
+        expect_shapes(d / "var.h5", {"/posterior/psi/coeffs": (k * k, it)})
+
+    def scenario_variable_selection(self, d):
+        selection = self.code("references/recipes.md", "Adding variable selection", 0)
+        ns = self.run_python(d, inside_with(self.code(*VAR, 0), selection))
+        self.posterior(d, "var.h5")
+        expect_shapes(d / "var.h5", {"/posterior/a/lambda": (ns["nparams"], ns["iterations"])})
+
+    def scenario_selection_with_covariance_block(self, d):
+        base = self.code(*VAR, 0)
+        covar = self.code("references/recipes.md", "Adding a covariance block", 0)
+        selection = self.code("references/recipes.md", "Adding variable selection", 0)
+        psi_selection = self.code("references/recipes.md", "Adding variable selection", 1)
+
+        # The failure the text promises when the psi datasets are left out.
+        self.run_python(d, inside_with(base, covar, selection))
+        result = self.bayests(d, "posterior", "var.h5")
+        output = result.stdout + result.stderr
+        if result.returncode != 1 or "psi_lambda" not in output:
+            raise AssertionError(
+                "without the psi selection datasets the text promises exit 1 naming "
+                f"/initial/psi_lambda; got exit {result.returncode}\n{output}")
+
+        ns = self.run_python(d, inside_with(base, covar, selection, psi_selection))
+        self.posterior(d, "var.h5")
+        k, nparams, it = ns["k"], ns["nparams"], ns["iterations"]
+        expect_shapes(d / "var.h5", {
+            "/posterior/a/lambda": (nparams, it),
+            "/posterior/psi/lambda": (k * k, it),
+        })
+
+    def scenario_time_varying(self, d):
+        tvp = self.code("references/recipes.md", "A time-varying model", 0)
+        ns = self.run_python(d, inside_with(self.code(*VAR, 0), tvp), replacing=True)
+        self.posterior(d, "var.h5")
+        k, nparams, tt, h, it = (ns[v] for v in ("k", "nparams", "tt", "h", "iterations"))
+        expect_shapes(d / "var.h5", {
+            "/posterior/a/coeffs": (nparams * tt, it),
+            "/posterior/a/sigma": (nparams, it),
+            "/posterior/forecast": (h * k, it),
+            "/posterior/loglik": (tt, it),
+        })
+
+        ns["a"] = read(d / "var.h5", "/posterior/a/coeffs")
+        self.run_python(d, self.code("references/recipes.md", "A time-varying model", 1), ns)
+        if ns["a_path"].shape != (tt, nparams, it):
+            raise AssertionError(f"recipes.md: a_path is {ns['a_path'].shape}")
+
+        shutil.copy(d / "var.h5", d / "model.h5")
+        results = self.run_python(d, self.code(*RESULTS, 1))
+        if results["a_path"].shape != (tt, nparams, it):
+            raise AssertionError(f"results.md: a_path is {results['a_path'].shape}")
+
+    def scenario_vec(self, d):
+        ns = self.run_python(d, self.code("references/recipes.md", "A VEC", 0))
+        self.posterior(d, "vec.h5")
+        k, nparams, tt, h, it = (ns[v] for v in ("k", "nparams", "tt", "h", "iterations"))
+        expect_shapes(d / "vec.h5", {
+            "/posterior/a/coeffs": (nparams, it),
+            "/posterior/beta/coeffs": (ns["k_beta"] * ns["rank"], it),
+            "/posterior/u_sigma_inv/coeffs": (k * k, it),
+            "/posterior/forecast": (h * k, it),
+            "/posterior/loglik": (tt, it),
+        })
+
+        # In levels: the first horizon sits by the last level, not by zero.
+        first = read(d / "vec.h5", "/posterior/forecast")[:k].mean(axis=1)
+        last = ns["L"][-1]
+        if np.max(np.abs(first - last)) > 0.5 * np.min(np.abs(last)):
+            raise AssertionError(
+                f"the first forecast horizon averages {first} against a last level of "
+                f"{last}; the text says the forecast is in levels")
+
+    def scenario_factor_model(self, d):
+        ns = self.run_python(d, self.code("references/recipes.md", "A factor model", 0))
+        self.posterior(d, "dfm.h5")
+        k, tt, h, it = (ns[v] for v in ("k", "tt", "h", "iterations"))
+        n_factors = ns["n_factors"]
+        expect_shapes(d / "dfm.h5", {
+            "/posterior/lambda/coeffs": (k * n_factors, it),
+            "/posterior/a/coeffs": (ns["n_a"], it),
+            "/posterior/factors/coeffs": (n_factors * tt, it),
+            "/posterior/u_sigma_inv/coeffs": (k, it),
+            "/posterior/v_sigma_inv/coeffs": (n_factors, it),
+            "/posterior/forecast": (h * k, it),
+            "/posterior/loglik": (tt, it),
+        })
+
+    def scenario_generator(self, d):
+        fence = self.code("references/recipes.md", "Generating a fixture instead", 0, "bash")
+        command = fence.splitlines()[0].split()
+        if command[0] != "bayests_make_model_fixture":
+            raise AssertionError(f"the generator example no longer starts with the generator: {command}")
+        result = subprocess.run([self.generator, *command[1:]], cwd=d,
+                                capture_output=True, text=True)
+        if result.returncode != 0:
+            raise AssertionError(
+                f"{' '.join(command)} exited {result.returncode}\n{result.stdout}{result.stderr}")
+        self.posterior(d, command[1])
+
+    # -- the run -------------------------------------------------------------
+
+    def run(self):
+        scenarios = [(name[len("scenario_"):], getattr(self, name))
+                     for name in sorted(vars(Checker)) if name.startswith("scenario_")]
+        failed = []
+        for name, scenario in scenarios:
+            directory = self.work_dir / name
+            shutil.rmtree(directory, ignore_errors=True)
+            directory.mkdir(parents=True)
+            try:
+                scenario(directory)
+                print(f"ok      {name}")
+            except Exception:  # every scenario runs, whatever the one before did
+                failed.append(name)
+                print(f"FAILED  {name}")
+                print(textwrap.indent(traceback.format_exc(), "    "))
+
+        unclaimed = sorted(key for key in self.fences
+                           if key[2] == "python" and key not in self.claimed)
+        for file, heading, _, index in unclaimed:
+            print(f"UNRUN   {file} '## {heading}' Python example {index + 1}: "
+                  "no scenario in test/check_agent_recipes.py runs it")
+
+        print(f"\n{len(scenarios) - len(failed)} of {len(scenarios)} scenarios passed, "
+              f"{len(unclaimed)} example(s) not run")
+        return 1 if failed or unclaimed else 0
+
+
+def main(argv):
+    if len(argv) != 5:
+        print(__doc__, file=sys.stderr)
+        return 2
+    bayests, generator, skill_dir, work_dir = argv[1:]
+    return Checker(bayests, generator, pathlib.Path(skill_dir).resolve(),
+                   pathlib.Path(work_dir).resolve()).run()
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

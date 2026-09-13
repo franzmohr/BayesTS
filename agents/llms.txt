@@ -1,0 +1,23 @@
+# BayesTS
+
+> Gibbs samplers in C++ for Bayesian VAR, VEC, dynamic factor and FAVAR models, driven by one HDF5 model file per run: `bayests posterior model.h5`. The file format is the entire API, and a wrong field usually estimates a different model instead of raising an error, so read the rules before writing a file.
+
+The documents below are written for coding agents. Their Python examples are run against the `bayests` binary by the project's test suite.
+
+## Start here
+
+- [AGENTS.md](agents/AGENTS.md): the ten rules that prevent silently wrong model files, and where to read more
+- [Writing correct BayesTS code](agents/skills/bayests/SKILL.md): the naming grammar, the `error`, `varsel` and `structural` attributes, and the dimension arithmetic
+
+## Reference
+
+- [The model file](agents/skills/bayests/references/model-file.md): every attribute, group and dataset a reader looks for, with shapes
+- [The twenty algorithms](agents/skills/bayests/references/algorithms.md): what each needs in the file, and the combinations it refuses
+- [Running a model](agents/skills/bayests/references/pipeline.md): the command line, the run order, idempotence, `--group` and exit codes
+- [Reading the results](agents/skills/bayests/references/results.md): what a run writes and how to read it back from Python and R
+- [Worked examples](agents/skills/bayests/references/recipes.md): complete VAR, VEC and factor model files from h5py
+
+## Optional
+
+- [API documentation](index.html): the Doxygen reference, for embedding the samplers in a host rather than driving the command line
+- [Source repository](https://github.com/franzmohr/BayesTS): the README, the changelog and the contributor guide

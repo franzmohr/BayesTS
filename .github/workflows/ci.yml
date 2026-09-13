@@ -58,6 +58,14 @@ jobs:
         id: deps
         uses: ./.github/actions/setup-linux-deps
 
+      # For agents.recipes, which runs the Python examples in agents/ against the
+      # binary this job builds. apt rather than pip: the runner's system Python
+      # is externally managed, and the distribution's h5py is all the test needs.
+      # The configure below asks for the test with BAYESTS_TEST_AGENT_DOCS=ON, so
+      # losing this step fails the job rather than dropping the check.
+      - name: Install h5py
+        run: sudo apt-get install -y --no-install-recommends python3-h5py python3-numpy
+
       # Configured without a preset. The presets do not carry a
       # CMAKE_PREFIX_PATH -- that lives in the gitignored, machine-specific
       # CMakeUserPresets.json -- so CI has to pass its own paths regardless, and
@@ -83,6 +91,8 @@ jobs:
             -DHIGHFIVE_DIR="${{ steps.deps.outputs.highfive-dir }}" \
             -DBAYESTS_BUILD_DOCS=OFF \
             -DBAYESTS_BUILD_TESTS=ON \
+            -DBAYESTS_TEST_AGENT_DOCS=ON \
+            -DPython3_EXECUTABLE=/usr/bin/python3 \
             -DBAYESTS_NATIVE_ARCH=OFF
 
       - name: Build

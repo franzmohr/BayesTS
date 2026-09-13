@@ -19,7 +19,8 @@ Each preset gets its own tree under `build/bin/<preset>/`. Configuring in the
 repository root is refused with a `FATAL_ERROR`. See README §"Building from
 source" for the toolchain and dependency setup.
 
-Test names are `unit.<name>`, `fixture.<name>` and `golden.<name>`. Each
+Test names are `unit.<name>`, `fixture.<name>` and `golden.<name>`, plus
+`agents.recipes` (see "The agent documentation" below). Each
 `fixture.*` writes a model file into `build/bin/<preset>/test/fixtures/` and the
 `golden.*` beside it runs all three entry points over it; they are paired with
 CTest `FIXTURES_SETUP`/`FIXTURES_REQUIRED`, so naming one golden test regenerates
@@ -272,3 +273,21 @@ core have to tell their users the same thing.
 
 New source files need the `SPDX-License-Identifier: BSD-3-Clause` header every
 existing one carries. Assisted commits get a `Co-Authored-By` trailer.
+
+## The agent documentation
+
+`agents/` is documentation for coding agents *using* BayesTS, not for working on
+it (that is this file). It covers the model file, the twenty algorithms, the run
+order and worked examples. It ships three ways: as a Claude Code plugin through
+`.claude-plugin/marketplace.json`, as `llms.txt` beside the Doxygen site, and
+under `share/doc/BayesTS/agents/` in an installed package.
+
+It describes the file format, so **a change to a dataset, an attribute, a shape
+or a refusal is not finished until `agents/` says the same.** `agents.recipes`
+runs every Python example in the skill against the built binary and checks the
+shapes the text states. An example that no scenario in
+`test/check_agent_recipes.py` claims fails it, so a new example needs a
+scenario. The test is registered only when CMake finds a Python with h5py and
+numpy; pass `-DPython3_EXECUTABLE=<python>` to name one. The tables and prose
+are not executed: check a claim against a file the binary wrote, not against the
+README.

@@ -33,6 +33,8 @@ it was intended.
 - [ ] `CHANGELOG.md` has an entry under *Unreleased* stating the effect on draws
 - [ ] New code paths have a fixture in `test/CMakeLists.txt`, if a branch was
       added that nothing exercised before
+- [ ] A change to the model file — a dataset, an attribute, a shape, a refusal —
+      is reflected in `agents/`, whose examples `ctest -R agents.recipes` runs
 - [ ] Anything vendored downstream is propagated, or an issue says it is pending
       — `src/core/` and `include/bayests/` are copied into the bvartools R
       package, which keeps its own release notes

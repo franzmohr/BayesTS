@@ -461,6 +461,15 @@ install(FILES
     DESTINATION "${CMAKE_INSTALL_DOCDIR}"
 )
 
+# The documentation for coding agents, so that a packaged binary carries the
+# description of the file format that matches it, rather than whatever main
+# says by the time someone reads it. The plugin manifest is only meaningful in a
+# repository checkout, so it stays behind.
+install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/agents/"
+    DESTINATION "${CMAKE_INSTALL_DOCDIR}/agents"
+    PATTERN ".claude-plugin" EXCLUDE
+)
+
 #####################################################################
 # Packaging
 #

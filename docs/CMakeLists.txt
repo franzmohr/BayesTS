@@ -43,8 +43,19 @@ set(DOXYFILE_OUT "${CMAKE_CURRENT_BINARY_DIR}/Doxyfile")
 
 configure_file("${DOXYFILE_IN}" "${DOXYFILE_OUT}" @ONLY)
 
+# The agent documentation rides along: agents/llms.txt at the root of the site,
+# and the files it links to beside it under agents/. An assistant given the
+# site's address then finds the rules for writing a model file without being
+# pointed at the repository. None of it goes through Doxygen, which would render
+# the Markdown into pages when what an assistant wants is the Markdown.
+set(_bayests_site "${DOXYGEN_OUTPUT_DIR}/html")
+
 add_custom_target(docs
     COMMAND Doxygen::doxygen "${DOXYFILE_OUT}"
+    COMMAND "${CMAKE_COMMAND}" -E make_directory "${_bayests_site}/agents"
+    COMMAND "${CMAKE_COMMAND}" -E copy "${PROJECT_SOURCE_DIR}/agents/llms.txt" "${_bayests_site}/llms.txt"
+    COMMAND "${CMAKE_COMMAND}" -E copy "${PROJECT_SOURCE_DIR}/agents/AGENTS.md" "${_bayests_site}/agents/AGENTS.md"
+    COMMAND "${CMAKE_COMMAND}" -E copy_directory "${PROJECT_SOURCE_DIR}/agents/skills" "${_bayests_site}/agents/skills"
     WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
     COMMENT "Generating API documentation with Doxygen"
     VERBATIM
