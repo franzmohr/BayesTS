@@ -608,6 +608,20 @@ if(WIN32)
 
         set(_bayests_nsis_stock
             "${CMAKE_ROOT}/Modules/Internal/CPack/NSIS.template.in")
+
+        # Each patch replaces one verbatim passage. One that no longer matches
+        # warns with what the installer loses and leaves the others applied.
+        function(_bayests_patch_nsis text_var before after consequence)
+            string(FIND "${${text_var}}" "${before}" _hit)
+            if(_hit LESS 0)
+                message(WARNING "CPack's NSIS template no longer contains a "
+                                "passage this project patches - ${consequence}")
+            else()
+                string(REPLACE "${before}" "${after}" _text "${${text_var}}")
+                set(${text_var} "${_text}" PARENT_SCOPE)
+            endif()
+        endfunction()
+
         set(_bayests_nsis_before [=[  ReadEnvStr $1 PATH
   ; if the path is too long for a NSIS variable NSIS will return a 0
   ; length string.  If we find that, then warn and skip any path
@@ -628,25 +642,58 @@ if(WIN32)
   IntOp $2 $2 + $3
   IntCmp $2 ${NSIS_MAX_STRLEN} CheckPathLength_ShowPathWarning CheckPathLength_Done CheckPathLength_ShowPathWarning]=])
 
+        # An upgrade should land where the previous version is, not back in the
+        # default directory. The stock .onInit never looks: it runs the old
+        # uninstaller -- which deletes the registry key holding that folder --
+        # and then sets $INSTDIR to the default. So read the key first, at the
+        # top of .onInit, and only while $INSTDIR is still the default, which
+        # is how the template itself tells that /D did not pick a directory.
+        # HKLM is where an elevated install records it, HKCU a per-user one;
+        # makensis builds a 32-bit installer, so both reads see the same
+        # registry view the writes in the install section went to. Setting
+        # $INSTDIR here also makes the default-directory test further down
+        # fail, so nothing after it puts the default back.
+        set(_bayests_oninit_before [=[Function .onInit
+  StrCmp "@CPACK_NSIS_ENABLE_UNINSTALL_BEFORE_INSTALL@" "ON" 0 inst]=])
+        set(_bayests_oninit_after [=[Function .onInit
+  ; Patched by the BayesTS build: propose the folder a previous install
+  ; recorded, before the uninstaller below deletes the record.
+  StrCmp "$INSTDIR" "@CPACK_NSIS_INSTALL_ROOT@\@CPACK_PACKAGE_INSTALL_DIRECTORY@" 0 previousInstallDir_Done
+  ReadRegStr $0 HKLM "Software\@CPACK_PACKAGE_VENDOR@\@CPACK_PACKAGE_INSTALL_REGISTRY_KEY@" ""
+  StrCmp $0 "" 0 +2
+    ReadRegStr $0 HKCU "Software\@CPACK_PACKAGE_VENDOR@\@CPACK_PACKAGE_INSTALL_REGISTRY_KEY@" ""
+  StrCmp $0 "" +2
+    StrCpy $INSTDIR $0
+  previousInstallDir_Done:
+  StrCmp "@CPACK_NSIS_ENABLE_UNINSTALL_BEFORE_INSTALL@" "ON" 0 inst]=])
+
+        # The start menu page defaults its folder to the installer's Name,
+        # which is CPACK_NSIS_PACKAGE_NAME and carries the version. Every
+        # release would then add a folder of its own. Name the folder for the
+        # package alone and leave the version in the installer's title.
+        set(_bayests_startmenu_before [=[  !insertmacro MUI_PAGE_STARTMENU Application $STARTMENU_FOLDER]=])
+        set(_bayests_startmenu_after [=[  !define MUI_STARTMENUPAGE_DEFAULTFOLDER "@CPACK_PACKAGE_NAME@"
+  !insertmacro MUI_PAGE_STARTMENU Application $STARTMENU_FOLDER]=])
+
         if(NOT EXISTS "${_bayests_nsis_stock}")
             message(WARNING
                 "CPack's NSIS template is not at ${_bayests_nsis_stock} - the "
-                "installer will refuse to edit a PATH over 1024 characters.")
+                "installer will refuse to edit a PATH over 1024 characters, "
+                "ignore where a previous version is installed and name its "
+                "start menu folder with the version.")
         else()
             file(READ "${_bayests_nsis_stock}" _bayests_nsis_text)
-            string(FIND "${_bayests_nsis_text}" "${_bayests_nsis_before}"
-                   _bayests_nsis_hit)
-            if(_bayests_nsis_hit LESS 0)
-                message(WARNING
-                    "CPack's NSIS template no longer contains the PATH-length "
-                    "check this project patches - the installer will refuse to "
-                    "edit a PATH over 1024 characters.")
-            else()
-                string(REPLACE "${_bayests_nsis_before}" "${_bayests_nsis_after}"
-                       _bayests_nsis_text "${_bayests_nsis_text}")
-                file(WRITE "${_bayests_nsis_dir}/NSIS.template.in"
-                     "${_bayests_nsis_text}")
-            endif()
+            _bayests_patch_nsis(_bayests_nsis_text
+                "${_bayests_nsis_before}" "${_bayests_nsis_after}"
+                "the installer will refuse to edit a PATH over 1024 characters.")
+            _bayests_patch_nsis(_bayests_nsis_text
+                "${_bayests_oninit_before}" "${_bayests_oninit_after}"
+                "the installer will propose the default directory even over an existing installation.")
+            _bayests_patch_nsis(_bayests_nsis_text
+                "${_bayests_startmenu_before}" "${_bayests_startmenu_after}"
+                "the start menu folder will carry the version number.")
+            file(WRITE "${_bayests_nsis_dir}/NSIS.template.in"
+                 "${_bayests_nsis_text}")
         endif()
 
         # The page starts on "Do not add", so a user who clicks straight

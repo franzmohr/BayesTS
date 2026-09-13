@@ -128,6 +128,17 @@ Dates are ISO. Versions follow the `project(VERSION)` in `CMakeLists.txt`.
 
 ### Changed
 
+- **The Windows installer upgrades in place, under one start menu folder.** It
+  used to propose `%ProgramFiles%\BayesTS` even when an earlier version was
+  installed elsewhere, because it removed that version — and the registry entry
+  recording where it was — before choosing a directory. It now reads that entry
+  first and proposes the same folder. `/D=` still overrides it. The start menu
+  folder is `BayesTS` rather than `BayesTS 0.1.0`, so a release no longer adds
+  a folder of its own. The 0.1.0 installer recorded its folder under the
+  versioned name, and an upgrade from it offers that name again only if you
+  decline removing 0.1.0 first. No sampler is touched, so draws are unchanged
+  by construction.
+
 - **A path that does not exist exits 2, not 1.** Exit 1 means a run started and
   something in it failed, and 2 that the command line could not be acted on. A
   missing path started nothing: no file was opened and no walk begun. It belongs

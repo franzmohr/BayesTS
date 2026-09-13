@@ -809,6 +809,9 @@ BayesTS-0.0.1-Windows-AMD64.exe.sha256
 
 It installs into `%ProgramFiles%\BayesTS`, shows the licence, offers to add
 `bayests` to `PATH`, and removes a previous version before installing over it.
+If a previous version is installed, the installer proposes its folder instead
+of the default. The start menu folder is `BayesTS`, with no version number, so
+upgrades keep using the same one.
 Elevation is required, and uninstalling removes the install directory, the
 registry entries and the `PATH` entry again.
 
