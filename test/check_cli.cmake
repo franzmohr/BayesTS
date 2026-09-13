@@ -56,20 +56,27 @@ endif()
 
 # OPENBLAS_NUM_THREADS is the caller's to set. The binary used to overwrite it
 # with the OpenMP count, so a BLAS pinned to one thread ran on every core.
-# Checked only where the binary reports an OpenBLAS count at all.
+#
+# Asserted only against a pthreads OpenBLAS, the one kind that honours the
+# variable. An OpenMP build -- MSYS2's, which the Windows CI job links --
+# ignores it and follows OMP_NUM_THREADS alone, so there it reports 2 whatever
+# the binary does, and a serial build always reports 1. Neither can tell a
+# binary that respects the variable from one that overwrites it.
 execute_process(
     COMMAND "${CMAKE_COMMAND}" -E env OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=1 "${BAYESTS}"
     OUTPUT_VARIABLE _threads_out
     ERROR_QUIET)
-if(_threads_out MATCHES "OpenBLAS threads: ([0-9]+)")
+if(_threads_out MATCHES "OpenBLAS threads: ([0-9]+) [(]pthreads[)]")
     if(CMAKE_MATCH_1 STREQUAL "1")
         message(STATUS "ok: OPENBLAS_NUM_THREADS is respected")
     else()
         message(STATUS "FAIL: OPENBLAS_NUM_THREADS=1 ran ${CMAKE_MATCH_1} OpenBLAS threads")
         math(EXPR _failures "${_failures} + 1")
     endif()
+elseif(_threads_out MATCHES "OpenBLAS threads: [0-9]+ [(]([a-z]+)[)]")
+    message(STATUS "skipped: OpenBLAS reports its threading as '${CMAKE_MATCH_1}', which does not honour OPENBLAS_NUM_THREADS")
 else()
-    message(STATUS "skipped: the binary reports no OpenBLAS thread count")
+    message(STATUS "skipped: the binary does not report an OpenBLAS threading model")
 endif()
 
 # A directory holding the model beside a link to a directory that does not

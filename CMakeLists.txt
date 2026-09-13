@@ -196,6 +196,17 @@ extern \"C\" {
 }
 int main() { openblas_set_num_threads(1); return openblas_get_num_threads(); }
 " BAYESTS_HAVE_OPENBLAS)
+# Which threading model the OpenBLAS was built with, reported beside the thread
+# count. It decides what OPENBLAS_NUM_THREADS does: a pthreads build honours it,
+# and an OpenMP build -- MSYS2's among them -- ignores it and follows
+# OMP_NUM_THREADS alone. Probed apart from the two above so that an OpenBLAS
+# old enough to lack it still gets its thread count set.
+check_cxx_source_compiles("
+extern \"C\" {
+    int openblas_get_parallel(void);
+}
+int main() { return openblas_get_parallel(); }
+" BAYESTS_HAVE_OPENBLAS_GET_PARALLEL)
 cmake_pop_check_state()
 
 add_library(bayests_openblas INTERFACE)
@@ -203,6 +214,9 @@ add_library(BayesTS::openblas ALIAS bayests_openblas)
 
 if(BAYESTS_HAVE_OPENBLAS)
     target_compile_definitions(bayests_openblas INTERFACE BAYESTS_HAVE_OPENBLAS)
+    if(BAYESTS_HAVE_OPENBLAS_GET_PARALLEL)
+        target_compile_definitions(bayests_openblas INTERFACE BAYESTS_HAVE_OPENBLAS_GET_PARALLEL)
+    endif()
     if(BAYESTS_OPENBLAS_LIBRARY)
         # By full path, so the executable gets a direct dependency on this
         # library rather than on whatever -lopenblas resolves to at load time.
