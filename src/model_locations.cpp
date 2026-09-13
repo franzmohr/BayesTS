@@ -5,9 +5,11 @@
 
 #include "io/hdf5/hdf5_and_armadillo.h"
 
+#include <algorithm>
 #include <filesystem>
 #include <iostream>
 #include <string>
+#include <system_error>
 #include <vector>
 
 namespace
@@ -80,36 +82,162 @@ int run_over_file(const std::filesystem::path &file, const CommandOptions &optio
 	return failures;
 }
 
+void report_unreadable(const std::filesystem::path &path, const std::error_code &error)
+{
+	std::cerr << "Error processing " << path.string() << ": cannot read it: " << error.message()
+	          << std::endl;
+}
+
+/// Whether a status query found nothing there, however the standard library
+/// says so. libstdc++ on Windows reports a missing path as `not_found` and sets
+/// ENOENT beside it, where other platforms clear the error; either is the same
+/// answer, and neither is a failure to read something that exists.
+bool nothing_there(const std::filesystem::file_status &status, const std::error_code &error)
+{
+	return status.type() == std::filesystem::file_type::not_found ||
+	       error == std::errc::no_such_file_or_directory;
+}
+
+void warn_dangling(const std::filesystem::path &path)
+{
+	std::cerr << "Warning: skipping " << path.string()
+	          << ": it is a link whose target does not exist" << std::endl;
+}
+
+/// Every HDF5 file below `root`, sorted, with the number of entries that could
+/// not be read.
+///
+/// Walked by hand, with error codes, rather than with the recursive directory
+/// iterator this replaces. That iterator throws on the first entry it cannot
+/// read -- a subdirectory without permission, a junction or link whose target is
+/// gone -- and nothing caught it: the program ended in std::terminate, with
+/// neither a line naming the entry nor either of the exit codes a script
+/// branches on, and every file after it went unprocessed.
+///
+/// An entry that cannot be read is reported and counted as a failure, since it
+/// may have held models the caller meant to run, and the walk carries on past
+/// it. A link whose target does not exist is skipped with a warning instead:
+/// there is nothing behind it to have been missed. How such a link shows up
+/// depends on the platform. Where the standard library can see links it reports
+/// the target as not found. libstdc++ on Windows cannot see them: a junction to a
+/// directory that is gone reports as a directory, and only opening it says
+/// ENOENT, which is therefore read the same way below the root. Links to
+/// directories that the library does recognise are not followed, as the
+/// iterator did not follow them, so a link cycle cannot make the walk endless.
+///
+/// Sorted, as list_model_groups() sorts the groups of one file, so the order the
+/// models run and fail in is the same on every platform.
+int collect_hdf5_files(const std::filesystem::path &root, std::vector<std::filesystem::path> &files)
+{
+	int failures = 0;
+	std::vector<std::filesystem::path> pending{root};
+
+	while (!pending.empty())
+	{
+		const std::filesystem::path directory = pending.back();
+		pending.pop_back();
+
+		std::error_code error;
+		std::filesystem::directory_iterator it(directory, error);
+		if (error)
+		{
+			if (directory != root && error == std::errc::no_such_file_or_directory)
+			{
+				warn_dangling(directory);
+			}
+			else
+			{
+				report_unreadable(directory, error);
+				++failures;
+			}
+			continue;
+		}
+
+		for (const std::filesystem::directory_iterator end; it != end; it.increment(error))
+		{
+			const std::filesystem::directory_entry &entry = *it;
+
+			std::error_code link_error;
+			const bool is_link = std::filesystem::is_symlink(entry.symlink_status(link_error));
+
+			std::error_code status_error;
+			const std::filesystem::file_status status = entry.status(status_error);
+
+			if (nothing_there(status, status_error))
+			{
+				warn_dangling(entry.path());
+				continue;
+			}
+			if (status_error)
+			{
+				report_unreadable(entry.path(), status_error);
+				++failures;
+				continue;
+			}
+
+			if (std::filesystem::is_directory(status))
+			{
+				if (!is_link)
+				{
+					pending.push_back(entry.path());
+				}
+			}
+			else if (std::filesystem::is_regular_file(status) && is_hdf5_file(entry.path()))
+			{
+				files.push_back(entry.path());
+			}
+		}
+
+		if (error)
+		{
+			report_unreadable(directory, error);
+			++failures;
+		}
+	}
+
+	std::sort(files.begin(), files.end());
+	return failures;
+}
+
 } // namespace
 
 int run_over_models(const CommandOptions &options, const ModelAction &action)
 {
 	const std::filesystem::path &path = options.path;
 
-	// A path that is not there is a command line that cannot be acted on, like a
-	// --group that cannot name a group: nothing started, so 2 rather than 1.
-	if (!std::filesystem::exists(path))
+	// Error codes throughout, for the reason collect_hdf5_files() gives: a
+	// filesystem call that throws here ends the program without an exit code.
+	std::error_code error;
+	const std::filesystem::file_status status = std::filesystem::status(path, error);
+
+	// A path that is not there, or cannot be asked about, is a command line that
+	// cannot be acted on, like a --group that cannot name a group: nothing
+	// started, so 2 rather than 1.
+	if (nothing_there(status, error))
 	{
 		std::cerr << "Error: Path does not exist: " << path << std::endl;
 		return 2;
 	}
-
-	if (std::filesystem::is_directory(path))
+	if (error)
 	{
-		int failures = 0;
+		std::cerr << "Error: cannot read the path " << path << ": " << error.message() << std::endl;
+		return 2;
+	}
 
-		for (const auto &entry : std::filesystem::recursive_directory_iterator(path))
+	if (std::filesystem::is_directory(status))
+	{
+		std::vector<std::filesystem::path> files;
+		int failures = collect_hdf5_files(path, files);
+
+		for (const std::filesystem::path &file : files)
 		{
-			if (entry.is_regular_file() && is_hdf5_file(entry.path()))
-			{
-				failures += run_over_file(entry.path(), options, action);
-			}
+			failures += run_over_file(file, options, action);
 		}
 
 		return failures == 0 ? 0 : 1;
 	}
 
-	if (std::filesystem::is_regular_file(path))
+	if (std::filesystem::is_regular_file(status))
 	{
 		if (!is_hdf5_file(path))
 		{

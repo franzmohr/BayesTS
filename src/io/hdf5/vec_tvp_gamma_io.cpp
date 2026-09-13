@@ -23,13 +23,13 @@ void read_paths(const ModelFile &file, const VecTvpGammaInput &input,
     if (n_a > 0 && dataset_has_data(file, "/posterior/a/coeffs"))
     {
         draws.a = last_period_only
-                      ? read_draws_at_period(file, "/posterior/a/coeffs", tt - 1, n_a)
+                      ? read_draws_at_period(file, "/posterior/a/coeffs", last_sample_period(tt), n_a)
                       : read_draws(file, "/posterior/a/coeffs");
     }
     if (n_beta > 0 && dataset_has_data(file, "/posterior/beta/coeffs"))
     {
         draws.beta = last_period_only
-                         ? read_draws_at_period(file, "/posterior/beta/coeffs", tt - 1, n_beta)
+                         ? read_draws_at_period(file, "/posterior/beta/coeffs", last_sample_period(tt), n_beta)
                          : read_draws(file, "/posterior/beta/coeffs");
     }
 }

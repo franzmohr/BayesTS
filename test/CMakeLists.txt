@@ -128,6 +128,17 @@ if(OpenMP_CXX_FOUND)
     target_link_libraries(bayests_unit_forecast_regressors_io PRIVATE OpenMP::OpenMP_CXX)
 endif()
 
+# On the io layer as well: that a starting path is read at exactly the size the
+# model says, and that a forecast reader refuses a file with no sample.
+add_executable(bayests_unit_read_path unit_read_path.cpp)
+
+target_link_libraries(bayests_unit_read_path PRIVATE bayests_hdf5_helper)
+target_link_libraries(bayests_unit_read_path PRIVATE bayests_warnings)
+
+if(OpenMP_CXX_FOUND)
+    target_link_libraries(bayests_unit_read_path PRIVATE OpenMP::OpenMP_CXX)
+endif()
+
 #####################################################################
 # Tests
 #
@@ -217,11 +228,25 @@ foreach(_unit vec_to_var forecast_lags forecast_regressors_io stochvol kalman ch
               inverse_gaussian truncated_normal identification
               vec_klgs_2010 vec_tvp_coint coint_prior_symmetry dfm_normal_gamma dfm_normal_stochvol
               dfm_tvp_gamma dfm_tvp_stochvol favar_normal_wishart var_ald thin model_group bvs ssvs
-              input_values var_normal_stochvol)
+              input_values var_normal_stochvol read_path)
     add_test(NAME "unit.${_unit}" COMMAND "bayests_unit_${_unit}")
     set_tests_properties("unit.${_unit}" PROPERTIES
         ENVIRONMENT_MODIFICATION "${_bayests_test_env_mod}")
 endforeach()
+
+# The command line's exit codes, where a script depends on them: a flag the
+# command does not know and a second path exit 2 rather than running something
+# else, and a directory walk carries on past a link it cannot follow. Reads one
+# fixture through `bayests check` and writes nothing into it.
+add_test(NAME cli.refusals
+    COMMAND ${CMAKE_COMMAND}
+            -DBAYESTS=$<TARGET_FILE:bayests>
+            -DFIXTURE=${BAYESTS_FIXTURE_DIR}/VarNormalGamma-plain.h5
+            -DSCRATCH=${CMAKE_CURRENT_BINARY_DIR}/cli_refusals
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/check_cli.cmake)
+set_tests_properties(cli.refusals PROPERTIES
+    FIXTURES_REQUIRED fx.VarNormalGamma-plain
+    ENVIRONMENT_MODIFICATION "${_bayests_test_env_mod}")
 
 # One generated model file plus the golden run over it.
 #

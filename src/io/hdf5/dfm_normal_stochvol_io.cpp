@@ -117,12 +117,12 @@ DfmNormalStochvolDraws read_forecast_coefficients(const ModelFile &file,
 
     if (dataset_has_data(file, "/posterior/u_sigma_inv/coeffs"))
     {
-        draws.u_sigma_inv = read_draws_at_period(file, "/posterior/u_sigma_inv/coeffs", tt - 1,
+        draws.u_sigma_inv = read_draws_at_period(file, "/posterior/u_sigma_inv/coeffs", last_sample_period(tt),
                                                  static_cast<arma::uword>(input.spec.k));
     }
     if (dataset_has_data(file, "/posterior/v_sigma_inv/coeffs"))
     {
-        draws.v_sigma_inv = read_draws_at_period(file, "/posterior/v_sigma_inv/coeffs", tt - 1,
+        draws.v_sigma_inv = read_draws_at_period(file, "/posterior/v_sigma_inv/coeffs", last_sample_period(tt),
                                                  static_cast<arma::uword>(input.spec.n_factors));
     }
 

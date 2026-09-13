@@ -103,9 +103,24 @@ bool parse_command_options(int argc, char *argv[], const std::string &command,
 		{
 			options.run_loglik = false;
 		}
+		// Anything else is a command line that cannot be acted on, and exits 2.
+		// Both used to be a warning and a run: a misspelled --group ran the
+		// model at the root of the file, a misspelled --all-groups ran one model
+		// instead of all of them, and a second path was never looked at -- each
+		// with exit code 0, so a script had no way to tell that what ran was not
+		// what it asked for.
+		else if (!arg.empty() && arg[0] == '-')
+		{
+			std::cerr << "Error: unknown flag '" << arg << "' for " << command << "\n";
+			print_usage(command, accept_step_flags);
+			return false;
+		}
 		else
 		{
-			std::cerr << "Warning: Unknown flag '" << arg << "' ignored" << std::endl;
+			std::cerr << "Error: '" << arg << "' is a second path, but " << command
+			          << " takes one; pass a directory to run the files below it\n";
+			print_usage(command, accept_step_flags);
+			return false;
 		}
 	}
 

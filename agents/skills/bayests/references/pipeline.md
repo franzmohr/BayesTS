@@ -128,7 +128,9 @@ bayests coefficients one.h5 --group /models/3 # exactly one model
 
 A model that fails is reported on stderr and the walk carries on to the next —
 one bad file must not strand the rest. The exit status is what tells you
-something failed.
+something failed. An entry the walk cannot read, such as a subdirectory without
+permission, is reported and counts as a failure; a link whose target is gone is
+skipped with a warning.
 
 ## Exit codes
 
@@ -140,8 +142,10 @@ They are load-bearing; a script should branch on them.
 | 1 | The run started and something failed |
 | 2 | It never started: the command line was unusable |
 
-Exit 2 covers no path, a path that does not exist, an unknown command, a
-`--group` with no value after it, and a group that cannot name an HDF5 group. A
+Exit 2 covers no path, a path that does not exist or cannot be read, an unknown
+command, a flag the command does not know (a misspelled `--group` included), a
+second path, a `--group` with no value after it, and a group that cannot name an
+HDF5 group. A
 path that exists but is not an HDF5 file is exit 1. A `--group` that is *well formed*
 but names nothing in the file is the **first** kind, not the second: the command
 line was actionable, the file just did not hold that model.

@@ -130,17 +130,17 @@ DfmTvpGammaDraws read_forecast_coefficients(const ModelFile &file, const DfmTvpG
 
     const arma::uword tt = sample_periods(input);
 
-    if (tt > 0 && dataset_has_data(file, "/posterior/lambda/coeffs"))
+    if (dataset_has_data(file, "/posterior/lambda/coeffs"))
     {
         const arma::uword width =
             static_cast<arma::uword>(input.spec.k) * input.spec.n_factors;
-        draws.lambda = read_draws_at_period(file, "/posterior/lambda/coeffs", tt - 1, width);
+        draws.lambda = read_draws_at_period(file, "/posterior/lambda/coeffs", last_sample_period(tt), width);
     }
 
-    if (tt > 0 && input.use_a() && dataset_has_data(file, "/posterior/a/coeffs"))
+    if (input.use_a() && dataset_has_data(file, "/posterior/a/coeffs"))
     {
         const arma::uword n_a = static_cast<arma::uword>(input.spec.n_factor_a());
-        draws.a = read_draws_at_period(file, "/posterior/a/coeffs", tt - 1, n_a);
+        draws.a = read_draws_at_period(file, "/posterior/a/coeffs", last_sample_period(tt), n_a);
     }
 
     read_common(file, draws);

@@ -201,6 +201,14 @@ void print_report(const std::string &algorithm, const ModelCheck &check)
 		std::cout << "  warning: /model attribute '" << name << "' is not one any model reads\n";
 	}
 
+	if (check.psi_varsel_unread)
+	{
+		std::cout << "  warning: attribute 'varsel' of /model/priors/psi is in the file, but "
+		          << algorithm
+		          << " never reads it: only the time-varying models with a covariance block "
+		             "switched on do, so no selection over the covariance block will be made\n";
+	}
+
 	for (const std::string &name : check.unread)
 	{
 		std::cout << "  warning: " << name << " is in the file, but " << algorithm

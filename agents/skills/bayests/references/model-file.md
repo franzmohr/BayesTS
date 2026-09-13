@@ -67,7 +67,7 @@ models with no `psi` block never compare it.
 
 | Attribute | Meaning |
 | --- | --- |
-| `varsel` | The selection scheme for the covariance block alone, read by the four time-varying models that have one. The `/model` attribute governs the coefficients |
+| `varsel` | The selection scheme for the covariance block alone, read by the four time-varying models that have one, with the block switched on. The `/model` attribute governs the coefficients. `bayests check` warns when the model does not read it |
 
 ## `/data/train`
 
@@ -150,7 +150,7 @@ Starting values, at the widths the priors imply.
 | Dataset | Shape | For |
 | --- | --- | --- |
 | `a` | `(1, nparams)` | Constant coefficients |
-| `a` | `(tt, nparams)` | Time-varying coefficients: the whole path, one period per column on paper |
+| `a` | `(tt, nparams)` | Time-varying coefficients: the whole path, one period per column on paper. Exactly `tt` periods of `nparams`; a path of any other size is refused rather than padded, and so are `psi`, `beta` and `lambda` below |
 | `a_sigma_inv`, `a_init` | `(nparams, nparams)`, `(1, nparams)` | The random walk's innovation precision and the state before the sample |
 | `a_lambda` | `(1, nparams)` | Inclusion indicators, when `varsel` is on |
 | `psi`, `psi_sigma_inv`, `psi_init`, `psi_lambda` | The same at width `k(k-1)/2` | The covariance block |

@@ -20,7 +20,8 @@ repository root is refused with a `FATAL_ERROR`. See README §"Building from
 source" for the toolchain and dependency setup.
 
 Test names are `unit.<name>`, `fixture.<name>`, `golden.<name>` and
-`check.<name>`, plus `agents.recipes` (see "The agent documentation" below). Each
+`check.<name>`, plus `cli.refusals` (the command line's exit codes) and
+`agents.recipes` (see "The agent documentation" below). Each
 `fixture.*` writes a model file into `build/bin/<preset>/test/fixtures/` and the
 `golden.*` beside it runs all three entry points over it; they are paired with
 CTest `FIXTURES_SETUP`/`FIXTURES_REQUIRED`, so naming one golden test regenerates

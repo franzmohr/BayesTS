@@ -118,7 +118,36 @@ bool read_forecast_regressors(const ModelFile &file, int k, arma::mat &out)
 arma::mat read_path(const ModelFile &file, const std::string &dataset, arma::uword rows,
                     arma::uword periods)
 {
-    return arma::reshape(read_vec(file, dataset), rows, periods);
+    const arma::vec values = read_vec(file, dataset);
+
+    if (periods == 0)
+    {
+        return {};
+    }
+
+    // Counted before the reshape: see the header. A path 24 values short used to
+    // pass `bayests check` and a run with exit code 0, its missing starting
+    // values zeros.
+    if (values.n_elem != rows * periods)
+    {
+        throw std::invalid_argument(
+            "'" + file.resolve(dataset) + "' holds " + std::to_string(values.n_elem) +
+            " values, but a path of " + std::to_string(rows) + " per period over " +
+            std::to_string(periods) + " periods needs " + std::to_string(rows * periods));
+    }
+
+    return arma::reshape(values, rows, periods);
+}
+
+arma::uword last_sample_period(const arma::uword periods)
+{
+    if (periods == 0)
+    {
+        throw std::invalid_argument(
+            "a forecast of a time-varying quantity starts from its last in-sample period, and "
+            "without /data/train/y there is no sample to find that period in");
+    }
+    return periods - 1;
 }
 
 arma::uvec read_positions(const ModelFile &file, const std::string &dataset)
@@ -308,7 +337,7 @@ arma::mat read_precision(const ModelFile &file, const VarSpec &spec, arma::uword
         return read_draws(file, dataset);
     }
     const arma::uword k = static_cast<arma::uword>(spec.k);
-    return read_draws_at_period(file, dataset, tt - 1, k * k);
+    return read_draws_at_period(file, dataset, last_sample_period(tt), k * k);
 }
 
 void write_draws(const ModelFile &file, const std::string &dataset, const arma::mat &draws)

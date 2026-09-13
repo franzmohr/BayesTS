@@ -410,12 +410,15 @@ with no horizon, the two quantile models included. Where more than one model is
 being run — a directory, `--all-groups`, or both — a model that fails is
 reported on `stderr` and the walk continues to the next one, but the exit status
 is 1 if any of them failed, so a script driving a directory of models can tell
-whether everything in it was processed.
+whether everything in it was processed. An entry the walk cannot read — a
+subdirectory without permission, say — is reported and counts as such a
+failure, since it may have held models; a link whose target is gone is skipped
+with a warning. Either way the walk goes on.
 
 A command line that cannot be acted on at all — no arguments, a first argument
-that is not one of the five commands, a path that does not exist, or a `--group`
-with no value or one that cannot name an HDF5 group — prints the reason and
-exits 2. The two codes are
+that is not one of the five commands, a flag the command does not know, a second
+path, a path that does not exist or cannot be read, or a `--group` with no value
+or one that cannot name an HDF5 group — prints the reason and exits 2. The two codes are
 worth keeping apart in a script: 1 means the run started and something in it
 failed, 2 means it never started. A `--group` that is well formed but names
 nothing in the file is the first kind, not the second: the command line was
