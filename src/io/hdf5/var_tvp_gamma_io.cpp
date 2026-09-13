@@ -83,7 +83,9 @@ VarTvpGammaDraws read_loglik_coefficients(const ModelFile &file,
     {
         draws.a = read_draws(file, "/posterior/a/coeffs");
     }
-    draws.u_sigma_inv = read_precision(file, input.spec, input.train.periods(input.spec.k), input.use_psi());
+    // The whole precision path, not the last period a forecast starts from:
+    // the log likelihood scores every period under its own.
+    draws.u_sigma_inv = read_precision(file, input.spec, input.train.periods(input.spec.k), false);
 
     return draws;
 }
