@@ -46,6 +46,31 @@ expect_exit(2 "a misspelled --group" check "${FIXTURE}" --gruop /models/3)
 expect_exit(2 "a misspelled --all-groups" check "${FIXTURE}" --all-group)
 expect_exit(2 "a second path" check "${FIXTURE}" "${FIXTURE}")
 expect_exit(2 "a step flag on a command that runs one step" coefficients "${FIXTURE}" --no-loglik)
+expect_exit(2 "--group followed by another flag" check "${FIXTURE}" --group --all-groups)
+
+expect_exit(2 "a flag where the path goes" check --all-groups "${FIXTURE}")
+if(NOT _err MATCHES "is where the path goes")
+    message(STATUS "FAIL: a flag before the path was not reported as one\n${_err}")
+    math(EXPR _failures "${_failures} + 1")
+endif()
+
+# OPENBLAS_NUM_THREADS is the caller's to set. The binary used to overwrite it
+# with the OpenMP count, so a BLAS pinned to one thread ran on every core.
+# Checked only where the binary reports an OpenBLAS count at all.
+execute_process(
+    COMMAND "${CMAKE_COMMAND}" -E env OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=1 "${BAYESTS}"
+    OUTPUT_VARIABLE _threads_out
+    ERROR_QUIET)
+if(_threads_out MATCHES "OpenBLAS threads: ([0-9]+)")
+    if(CMAKE_MATCH_1 STREQUAL "1")
+        message(STATUS "ok: OPENBLAS_NUM_THREADS is respected")
+    else()
+        message(STATUS "FAIL: OPENBLAS_NUM_THREADS=1 ran ${CMAKE_MATCH_1} OpenBLAS threads")
+        math(EXPR _failures "${_failures} + 1")
+    endif()
+else()
+    message(STATUS "skipped: the binary reports no OpenBLAS thread count")
+endif()
 
 # A directory holding the model beside a link to a directory that does not
 # exist. The link is skipped with a warning -- nothing behind it was missed --

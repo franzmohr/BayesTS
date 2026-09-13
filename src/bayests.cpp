@@ -3,6 +3,7 @@
 
 
 
+#include <cstdlib>
 #include <functional>
 #include <map>
 #include <string>
@@ -39,8 +40,16 @@ int main(int argc, char* argv[]) {
     std::cout << "OpenMP threads: " << num_threads << std::endl;
 
 #ifdef BAYESTS_HAVE_OPENBLAS
-    // Set OpenBLAS threads (for BLAS/LAPACK operations)
-    openblas_set_num_threads(num_threads);
+    // Set OpenBLAS threads (for BLAS/LAPACK operations) to the OpenMP count,
+    // unless the caller has already said how many it wants. Setting it
+    // unconditionally overrode OPENBLAS_NUM_THREADS, the usual way to pin BLAS,
+    // so OPENBLAS_NUM_THREADS=1 on its own still ran every core -- and the
+    // samplers only reproduce single-threaded.
+    const char *openblas_env = std::getenv("OPENBLAS_NUM_THREADS");
+    if (openblas_env == nullptr || *openblas_env == '\0')
+    {
+        openblas_set_num_threads(num_threads);
+    }
 
     std::cout << "OpenBLAS threads: " << openblas_get_num_threads() << std::endl;
 #endif

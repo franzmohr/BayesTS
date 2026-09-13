@@ -1084,7 +1084,9 @@ configuration you should see:
 ### Controlling the thread count
 
 By default the program uses all available cores, detected at startup and
-reported on the console. `OMP_NUM_THREADS` overrides it:
+reported on the console. `OMP_NUM_THREADS` overrides it, and sets the OpenBLAS
+thread count too unless `OPENBLAS_NUM_THREADS` is set, which then decides
+OpenBLAS's alone:
 
 **Windows (PowerShell)**
 

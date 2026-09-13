@@ -310,6 +310,23 @@ Dates are ISO. Versions follow the `project(VERSION)` in `CMakeLists.txt`.
 
 ### Fixed
 
+- **`OPENBLAS_NUM_THREADS` is respected.** The binary set the OpenBLAS thread
+  count to the OpenMP one on every start, overwriting the variable, so
+  `OPENBLAS_NUM_THREADS=1` on its own still ran BLAS on every core; only
+  `OMP_NUM_THREADS` had any effect. The OpenMP count is now used only when
+  `OPENBLAS_NUM_THREADS` is unset. A run that sets `OMP_NUM_THREADS`, or both,
+  gets the thread counts it got before. Draws are unchanged: the samplers are not
+  touched, and the fingerprint comparison over all 91 fixtures, which pins both
+  variables to one, shows none moved. `cli.refusals` checks the count the binary
+  reports.
+
+- **Two misordered command lines exit 2 with the right reason.** A flag
+  directly after `--group`, as in `--group --all-groups`, was taken as the name
+  of a group, looked for in the file, and failed as a run with exit 1. A flag in
+  the place of the path, as in `bayests check --all-groups model.h5`, exited 2
+  but called the real path "a second path". Both are now refused as the command
+  lines they are, before any file is opened, and `cli.refusals` covers both.
+
 - **`--all-groups` finds every model in a file that also has one at its root.**
   The search stopped at the first group holding a model, so a file with a
   model at its root and more under `/models` ran the root model alone, printed
