@@ -109,7 +109,8 @@ A factor model needs neither: the horizon alone drives its forecast.
 | `/priors/beta` | `v_inv` (scalar), `p_tau_inv` `(k_beta, k_beta)` | The constant VECs: the cointegration space prior |
 | `/priors/beta` | `mu`, `v_inv`, optional `rho`, optional `rho_min`/`rho_max`, optional `p_tau` `(k_beta, k_beta)` | The time-varying VECs — a state equation rather than a shrinkage. See below |
 | `/priors/lambda` | `mu`, `v_inv` (and `shape`/`rate` where the loadings drift) | The factor models: the free loadings |
-| `/priors/v_sigma` | `shape` `(1, n_factors)`, `rate` | The DFMs: the factor innovation precisions |
+| `/priors/v_sigma` | `shape` `(1, n_factors)`, `rate` `(1, n_factors)` | `DfmNormalGamma` and `DfmTvpGamma`: the factor innovation precisions |
+| `/priors/v_sigma` | `offset`, `sigma`, `shape`, `rate`, `mu` `(1, n_factors)` and `v_inv` `(n_factors, n_factors)` | `DfmNormalStochvol` and `DfmTvpStochvol`: the factor innovations' log-volatilities, the same group `/priors/u_sigma` is for the series, at the width of the factors |
 | `/priors/v_sigma` | `df`, `scale` `(n_state, n_state)` | `FavarNormalWishart`: its state innovation precision is a matrix |
 
 `rho` is the autoregression of a time-varying VEC's cointegration state
@@ -154,17 +155,19 @@ Starting values, at the widths the priors imply.
 | `a_sigma_inv`, `a_init` | `(nparams, nparams)`, `(1, nparams)` | The random walk's innovation precision and the state before the sample |
 | `a_lambda` | `(1, nparams)` | Inclusion indicators, when `varsel` is on |
 | `psi`, `psi_sigma_inv`, `psi_init`, `psi_lambda` | The same at width `k(k-1)/2` | The covariance block |
-| `u_sigma_inv` | `(k, k)` | Wishart and gamma error precisions. **A factor model's is `(1, k)`** — diagonal by assumption, so it is stored flat |
+| `u_sigma_inv` | `(k, k)` | The Wishart models, and `VarNormalGamma` and `VecNormalGamma`. **A factor model's is `(1, k)`** — diagonal by assumption, so it is stored flat — and only `DfmNormalGamma`, `DfmTvpGamma` and `FavarNormalWishart` read it |
 | `u_omega_inv` | `(k, k)` | The time-varying gamma models |
 | `h`, `h_init` | `(k, tt)`, `(1, k)` | Stochastic volatility: the log-volatility path and its start |
 | `w`, `u_scale` | `(k, tt)`, `(1, k)` | The `*Ald` models: the latent scales (strictly positive) and the scale of the asymmetric Laplace |
 | `beta` | `(1, k_beta*rank)` | A constant VEC's cointegration matrix, flat as `vec(beta)` — the first column of `beta`, then the second |
 | `beta`, `beta_init` | `(tt, k_beta*rank)`, `(1, k_beta*rank)` | A time-varying VEC: the whole path, and the state before the sample |
-| `lambda` | `(1, n_lambda)` | A factor model's free loadings, flat |
-| `v_sigma_inv` | `(1, n_factors)` | A DFM's factor innovation precisions, diagonal so stored flat |
+| `lambda` | `(1, n_lambda)` | A constant-loading factor model's free loadings, flat. `FavarNormalWishart` counts them differently, `(k - n_factors) * n_state` — see `VarSpec::n_favar_lambda()` |
+| `lambda` | `(tt, n_lambda)` | `DfmTvpGamma` and `DfmTvpStochvol`: the whole path of the free loadings, held to exactly `tt` periods like `a` |
+| `lambda_sigma_inv`, `lambda_init` | `(n_lambda, n_lambda)`, `(1, n_lambda)` | `DfmTvpGamma` and `DfmTvpStochvol`: the loadings' random walk innovation precision and the state before the sample. Their `a`, `a_sigma_inv` and `a_init` are the rows above at the transition's width, `n_factors * n_factors * p` |
+| `v_sigma_inv` | `(1, n_factors)` | `DfmNormalGamma` and `DfmTvpGamma`: the factor innovation precisions, diagonal so stored flat |
 | `v_sigma_inv` | `(n_state, n_state)` | `FavarNormalWishart`: a matrix, not a diagonal |
-| `u_h`, `v_h` | | A DFM under stochastic volatility |
-| `lambda_sigma_inv`, `lambda_init`, `a_sigma_inv`, `a_init` | | `DfmTvpGamma`, where `lambda` and `a` are paths |
+| `u_h`, `u_h_init` | `(k, tt)`, `(1, k)` | `DfmNormalStochvol` and `DfmTvpStochvol`: the series' log-volatility path and its start, in place of `u_sigma_inv` |
+| `v_h`, `v_h_init` | `(n_factors, tt)`, `(1, n_factors)` | The same two models: the factors' log-volatility path and its start, in place of `v_sigma_inv` |
 
 ## `/posterior`
 
