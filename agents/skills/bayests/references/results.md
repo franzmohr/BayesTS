@@ -115,5 +115,7 @@ meant:
 - A file whose dimensions are self-consistent but wrong estimates a different
   model and reports plausible numbers.
 
-Check the shapes against the dimension arithmetic in `SKILL.md` before reading
-anything into the values.
+Run `bayests check` on the file before the run, and read its dimensions and
+warnings: that catches the fields a model never reads, which is how most
+self-consistent wrong files show. Then check the shapes against the dimension
+arithmetic in `SKILL.md` before reading anything into the values.

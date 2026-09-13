@@ -26,6 +26,35 @@ Dates are ISO. Versions follow the `project(VERSION)` in `CMakeLists.txt`.
 
 ### Added
 
+- **`bayests check`, which says whether a run would accept a model file and how
+  it read it, without running anything.** Most fields are read through a
+  default, so a misspelled attribute or the wrong `error` spelling is not an
+  error but a different model, and a run that exits 0 cannot tell you which.
+  `check` opens the file read-only and passes each model through the reader and
+  `validate()` its run would use. It adds the checks a forecast makes on its
+  regressors, which otherwise come only after the chain has run. It then prints
+  the dimensions and switches the file resolved to, and warns about every
+  dataset the model never opened and every `/model` attribute no model reads.
+  It takes the same `--group` and `--all-groups` flags as the other commands.
+  Exit 0 means every model would be accepted, warnings or not; 1 means a model
+  would be refused, with the reason on stderr.
+
+  Three refusals are ones a run makes only at the forecast stage, after the
+  chain: missing or too few forecast regressors; a VAR whose `/data/train/z` is
+  a different width from what its dimensions make; and a written `h = 0`, which
+  the front-ends read as a request for a forecast of no horizons.
+
+  Each front-end implements `BaseModel::check()` by handing its own reader to a
+  template in `src/models/model_check.h`, so the check cannot drift from the
+  readers. A `check.*` test beside the `golden.*` test of each single-model fixture
+  fails if the check refuses a file a run accepts. `agents.recipes` requires every documentation
+  example to pass it without warnings, and requires it to refuse the files a run
+  refuses. That turned up one more documentation mistake: the time-varying
+  example left the VAR's `/initial/u_sigma_inv` in place, and `VarTvpGamma`
+  never reads it.
+
+  No sampler is touched, so draws are unchanged by construction.
+
 - **Documentation for coding agents, in `agents/`.** The file format is the
   whole interface and fails quietly, so an assistant working from the README
   alone writes files that run and mean something else. `agents/` has a

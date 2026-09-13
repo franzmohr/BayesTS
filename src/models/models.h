@@ -8,8 +8,10 @@
 #include <filesystem>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "bayests/arma.h"
+#include "bayests/spec.h"
 
 /// Where a model is: the file, and the group inside it that the model's tree
 /// hangs under.
@@ -33,6 +35,37 @@ struct ModelLocation
     }
 };
 
+/// What `bayests check` learned about one model without running it: how the
+/// reader resolved the file, and what in the file it never looked at. Filled in
+/// by models/model_check.h and reported by src/check.cpp.
+struct ModelCheck
+{
+    /// The model's dimensions and switches as the reader resolved them,
+    /// defaults included -- which is the point, since a field left out is read
+    /// as its default rather than refused.
+    bayests::VarSpec spec;
+
+    /// tt, which no file stores.
+    arma::uword periods = 0;
+
+    /// Columns of /data/train/z, 0 when there is none. A VAR's validate() sizes
+    /// its priors off z rather than off the dimensions, so this is the one place
+    /// the two can be seen to disagree.
+    arma::uword z_columns = 0;
+
+    /// /model's `error` attribute as written, "" when absent.
+    std::string error_attribute;
+
+    /// Whether draws are already written, in which case coefficients skips.
+    bool has_posterior = false;
+
+    /// Datasets in the model's tree the reader never opened, /posterior aside.
+    std::vector<std::string> unread;
+
+    /// /model attributes no reader looks for.
+    std::vector<std::string> unknown_attributes;
+};
+
 /// Base class for all models.
 ///
 /// **A stage that cannot do what it was asked throws.** These three used to
@@ -54,6 +87,13 @@ public:
     virtual void draw_coefficients(const ModelLocation &location_arg) = 0;
     virtual void forecast(const ModelLocation &location_arg) = 0;
     virtual void log_likelihood(const ModelLocation &location_arg) = 0;
+
+    /// Reads and validates the model the way draw_coefficients() would, and
+    /// forecast()'s checks on the regressors besides, without drawing or writing
+    /// anything -- the file is opened read-only. Throws with the reason where a
+    /// run would refuse the file. What `bayests check` runs; see
+    /// models/model_check.h, whose templates each front-end hands its reader to.
+    virtual ModelCheck check(const ModelLocation &location_arg) = 0;
 };
 
 class VarNormalGamma : public BaseModel
@@ -67,6 +107,7 @@ public:
     void draw_coefficients(const ModelLocation &location_arg) override;
     void forecast(const ModelLocation &location_arg) override;
     void log_likelihood(const ModelLocation &location_arg) override;
+    ModelCheck check(const ModelLocation &location_arg) override;
 };
 
 
@@ -81,6 +122,7 @@ public:
     void draw_coefficients(const ModelLocation &location_arg) override;
     void forecast(const ModelLocation &location_arg) override;
     void log_likelihood(const ModelLocation &location_arg) override;
+    ModelCheck check(const ModelLocation &location_arg) override;
 };
 
 class VarNormalStochvol : public BaseModel
@@ -94,6 +136,7 @@ public:
     void draw_coefficients(const ModelLocation &location_arg) override;
     void forecast(const ModelLocation &location_arg) override;
     void log_likelihood(const ModelLocation &location_arg) override;
+    ModelCheck check(const ModelLocation &location_arg) override;
 };
 
 
@@ -108,6 +151,7 @@ public:
     void draw_coefficients(const ModelLocation &location_arg) override;
     void forecast(const ModelLocation &location_arg) override;
     void log_likelihood(const ModelLocation &location_arg) override;
+    ModelCheck check(const ModelLocation &location_arg) override;
 };
 
 
@@ -122,6 +166,7 @@ public:
     void draw_coefficients(const ModelLocation &location_arg) override;
     void forecast(const ModelLocation &location_arg) override;
     void log_likelihood(const ModelLocation &location_arg) override;
+    ModelCheck check(const ModelLocation &location_arg) override;
 };
 
 class VarTvpWishart : public BaseModel
@@ -135,6 +180,7 @@ public:
     void draw_coefficients(const ModelLocation &location_arg) override;
     void forecast(const ModelLocation &location_arg) override;
     void log_likelihood(const ModelLocation &location_arg) override;
+    ModelCheck check(const ModelLocation &location_arg) override;
 };
 
 class VarTvpAld : public BaseModel
@@ -148,6 +194,7 @@ public:
     void draw_coefficients(const ModelLocation &location_arg) override;
     void forecast(const ModelLocation &location_arg) override;
     void log_likelihood(const ModelLocation &location_arg) override;
+    ModelCheck check(const ModelLocation &location_arg) override;
 };
 
 class VarTvpStochvol : public BaseModel
@@ -161,6 +208,7 @@ public:
     void draw_coefficients(const ModelLocation &location_arg) override;
     void forecast(const ModelLocation &location_arg) override;
     void log_likelihood(const ModelLocation &location_arg) override;
+    ModelCheck check(const ModelLocation &location_arg) override;
 };
 
 class DfmNormalGamma : public BaseModel
@@ -174,6 +222,7 @@ public:
     void draw_coefficients(const ModelLocation &location_arg) override;
     void forecast(const ModelLocation &location_arg) override;
     void log_likelihood(const ModelLocation &location_arg) override;
+    ModelCheck check(const ModelLocation &location_arg) override;
 };
 
 class DfmNormalStochvol : public BaseModel
@@ -187,6 +236,7 @@ public:
     void draw_coefficients(const ModelLocation &location_arg) override;
     void forecast(const ModelLocation &location_arg) override;
     void log_likelihood(const ModelLocation &location_arg) override;
+    ModelCheck check(const ModelLocation &location_arg) override;
 };
 
 class DfmTvpGamma : public BaseModel
@@ -200,6 +250,7 @@ public:
     void draw_coefficients(const ModelLocation &location_arg) override;
     void forecast(const ModelLocation &location_arg) override;
     void log_likelihood(const ModelLocation &location_arg) override;
+    ModelCheck check(const ModelLocation &location_arg) override;
 };
 
 class DfmTvpStochvol : public BaseModel
@@ -213,6 +264,7 @@ public:
     void draw_coefficients(const ModelLocation &location_arg) override;
     void forecast(const ModelLocation &location_arg) override;
     void log_likelihood(const ModelLocation &location_arg) override;
+    ModelCheck check(const ModelLocation &location_arg) override;
 };
 
 class VecNormalWishart : public BaseModel
@@ -226,6 +278,7 @@ public:
     void draw_coefficients(const ModelLocation &location_arg) override;
     void forecast(const ModelLocation &location_arg) override;
     void log_likelihood(const ModelLocation &location_arg) override;
+    ModelCheck check(const ModelLocation &location_arg) override;
 };
 
 class VecKlgs2010 : public BaseModel
@@ -239,6 +292,7 @@ public:
     void draw_coefficients(const ModelLocation &location_arg) override;
     void forecast(const ModelLocation &location_arg) override;
     void log_likelihood(const ModelLocation &location_arg) override;
+    ModelCheck check(const ModelLocation &location_arg) override;
 };
 
 class VecNormalGamma : public BaseModel
@@ -252,6 +306,7 @@ public:
     void draw_coefficients(const ModelLocation &location_arg) override;
     void forecast(const ModelLocation &location_arg) override;
     void log_likelihood(const ModelLocation &location_arg) override;
+    ModelCheck check(const ModelLocation &location_arg) override;
 };
 
 class VecNormalStochvol : public BaseModel
@@ -265,6 +320,7 @@ public:
     void draw_coefficients(const ModelLocation &location_arg) override;
     void forecast(const ModelLocation &location_arg) override;
     void log_likelihood(const ModelLocation &location_arg) override;
+    ModelCheck check(const ModelLocation &location_arg) override;
 };
 
 class VecTvpGamma : public BaseModel
@@ -278,6 +334,7 @@ public:
     void draw_coefficients(const ModelLocation &location_arg) override;
     void forecast(const ModelLocation &location_arg) override;
     void log_likelihood(const ModelLocation &location_arg) override;
+    ModelCheck check(const ModelLocation &location_arg) override;
 };
 
 class VecTvpWishart : public BaseModel
@@ -291,6 +348,7 @@ public:
     void draw_coefficients(const ModelLocation &location_arg) override;
     void forecast(const ModelLocation &location_arg) override;
     void log_likelihood(const ModelLocation &location_arg) override;
+    ModelCheck check(const ModelLocation &location_arg) override;
 };
 
 class VecTvpStochvol : public BaseModel
@@ -304,6 +362,7 @@ public:
     void draw_coefficients(const ModelLocation &location_arg) override;
     void forecast(const ModelLocation &location_arg) override;
     void log_likelihood(const ModelLocation &location_arg) override;
+    ModelCheck check(const ModelLocation &location_arg) override;
 };
 
 class FavarNormalWishart : public BaseModel
@@ -317,9 +376,14 @@ public:
     void draw_coefficients(const ModelLocation &location_arg) override;
     void forecast(const ModelLocation &location_arg) override;
     void log_likelihood(const ModelLocation &location_arg) override;
+    ModelCheck check(const ModelLocation &location_arg) override;
 };
 
 // Factory function to create models based on type string
 std::unique_ptr<BaseModel> create_model(const std::string& model_type);
+
+/// The algorithm names create_model() accepts, sorted -- for a message that can
+/// say what a misspelled /model/algorithm might have meant.
+std::vector<std::string> registered_models();
 
 #endif // MODELS_H

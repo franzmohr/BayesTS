@@ -317,6 +317,7 @@ each file in place.
 
 | Command | What it computes |
 | --- | --- |
+| `check` | Nothing: reads and validates each model the way a run would, reports how the file was read, and writes nothing |
 | `posterior` | All three of the below, in the order coefficients, log likelihood, forecasts |
 | `coefficients` | Posterior draws of the coefficients and the error precision |
 | `forecasts` | One forecast path per posterior draw |
@@ -351,7 +352,21 @@ it says so and exits 0, the same as a directory with no HDF5 files in it. A
 switched off with `--no-coefficients`, `--no-forecasts` and `--no-loglik`.
 `coefficients`, `forecasts` and `loglik` take no step flags.
 
+`check` runs none of them. It opens each model read-only and passes it through
+the same reader and `validate()` its run would use, plus the checks the forecast
+makes on its regressors, which a run otherwise meets only after the chain. It
+exits 1 with the reason for a file a run would refuse. For a file a run would
+accept it exits 0, and prints the dimensions and switches the file resolved to,
+with a warning for every dataset the model never reads and every `/model`
+attribute no model looks for. A misspelled attribute or an `error` spelled for
+another model is not an error to a run, only a different model, and those
+warnings are where it shows. Run it on a file written by hand before the file
+costs a chain.
+
 ```bash
+# How the file will be read, and whether it would be accepted -- writes nothing
+bayests check model.h5
+
 # Everything
 bayests posterior model.h5
 
@@ -390,7 +405,7 @@ is 1 if any of them failed, so a script driving a directory of models can tell
 whether everything in it was processed.
 
 A command line that cannot be acted on at all — no arguments, a first argument
-that is not one of the four commands, or a `--group` with no value or one that
+that is not one of the five commands, or a `--group` with no value or one that
 cannot name an HDF5 group — prints the reason and exits 2. The two codes are
 worth keeping apart in a script: 1 means the run started and something in it
 failed, 2 means it never started. A `--group` that is well formed but names

@@ -9,5 +9,6 @@ int coefficients(int argc, char* argv[]);
 int forecasts(int argc, char* argv[]);
 int loglik(int argc, char* argv[]);
 int posterior(int argc, char* argv[]);
+int check(int argc, char* argv[]);
 
 #endif // COMMANDS_H

@@ -21,6 +21,24 @@ format is the entire API.** Getting a field wrong does not usually produce an
 error — it produces a different model that runs to completion and reports
 plausible numbers.
 
+**So check a file before running it:**
+
+```bash
+bayests check model.h5
+```
+
+`check` reads each model through the same reader and validation a run uses,
+plus the forecast's checks on its regressors, and draws and writes nothing. It
+prints what the file resolved to: the dimensions, the coefficient counts, whether
+the covariance block is on, the selection scheme, the horizon. It exits 1 with
+the reason on stderr for a file a run would refuse. For a file a run would
+accept it exits 0, but still warns about every dataset the model never opened
+and every `/model` attribute no model reads. Those warnings are the silent
+failures this skill is about: `/priors/psi` left unread because `error` was
+spelled for another model, or `lags` written where `p` was meant. **Compare its
+report with what you meant, and do not run a file with a warning you cannot
+explain.**
+
 ## The five rules that prevent silent wrongness
 
 Everything else in this skill is detail. These five are the ones that fail

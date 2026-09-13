@@ -56,7 +56,8 @@ int main(int argc, char* argv[]) {
     // its libraries and reached main() rather than dying in the loader.
     if (argc < 3) {
         std::cerr << "Usage: " << argv[0] << " <command> <path_to_file.h5 | directory> [args...]\n";
-        std::cerr << "Available commands: posterior, coefficients, forecasts, loglik\n";
+        std::cerr << "Available commands: posterior, coefficients, forecasts, loglik, check\n";
+        std::cerr << "              check reads and validates each model without running it\n";
         std::cerr << "Common flags: --group <path>  the group a model's tree hangs under inside\n";
         std::cerr << "                             its file, e.g. /models/3 (default: the root)\n";
         std::cerr << "              --all-groups   run every model below --group rather than the\n";
@@ -68,7 +69,8 @@ int main(int argc, char* argv[]) {
         {"coefficients", coefficients},
         {"forecasts", forecasts},
         {"loglik", loglik},
-        {"posterior", posterior}
+        {"posterior", posterior},
+        {"check", check}
     };
 
     std::string command = argv[1];
@@ -80,7 +82,7 @@ int main(int argc, char* argv[]) {
         // A name that is not a command is the same class of mistake as no name
         // at all, so it exits the same way.
         std::cerr << "Unknown command: " << command << "\n";
-        std::cerr << "Available commands: posterior, coefficients, forecasts, loglik\n";
+        std::cerr << "Available commands: posterior, coefficients, forecasts, loglik, check\n";
         return 2;
     }
 }

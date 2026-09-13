@@ -9,6 +9,7 @@
 // reading the input, and putting the results back.
 
 #include "models/models.h"
+#include "models/model_check.h"
 
 #include "bayests/dfm_normal_gamma.h"
 #include "io/hdf5/dfm_normal_gamma_io.h"
@@ -122,4 +123,9 @@ void DfmNormalGamma::log_likelihood(const ModelLocation &location_arg)
     const arma::mat loglik = bayests::DfmNormalGammaSampler{}.log_likelihood(input, draws);
 
     bayests::hdf5_io::write_log_likelihood(file, loglik);
+}
+
+ModelCheck DfmNormalGamma::check(const ModelLocation &location_arg)
+{
+    return check_factor_model(location_arg, [](const ModelFile &file) { return io::read_input(file); });
 }

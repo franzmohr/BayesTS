@@ -72,6 +72,12 @@ void ensure_group(const ModelFile &file, const std::string &group);
 /// a usable spec.
 VarSpec read_spec(const ModelFile &file, const char *covar_error);
 
+/// Whether some reader looks for a /model attribute of this name -- the ones
+/// read_spec() reads, and `algorithm`. `bayests check` warns about any other,
+/// since an attribute nothing reads is usually a misspelling of one that is
+/// then read through its default.
+bool is_model_attribute(const std::string &name);
+
 /// The (mu, v_inv) pair every normal prior is stored as.
 NormalPrior read_normal_prior(const ModelFile &file, const std::string &group);
 

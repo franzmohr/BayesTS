@@ -17,6 +17,10 @@ reported, never quietly skipped. Examples are addressed by file, section
 heading and position within the section, so renaming a heading fails here too
 -- update the address when you do.
 
+Every file an example writes also has to pass `bayests check` with no
+warnings: an example that leaves a dataset the model never reads, or an
+attribute no model looks at, is teaching the reader to write one.
+
 What this does not cover: the R snippet in results.md, the bash fences other
 than the generator's, and the tables. A table claim is checked only where an
 example below reads the dataset it describes.
@@ -155,6 +159,15 @@ class Checker:
         return subprocess.run([self.bayests_exe, *args], cwd=directory, env=env,
                               capture_output=True, text=True)
 
+    def check_clean(self, directory, name):
+        """`bayests check` accepts the file and has nothing to warn about."""
+        result = self.bayests(directory, "check", name)
+        warnings = [line for line in result.stdout.splitlines() if "warning:" in line]
+        if result.returncode != 0 or warnings:
+            raise AssertionError(
+                f"bayests check {name} exited {result.returncode} with "
+                f"{len(warnings)} warning(s)\n{result.stdout}{result.stderr}")
+
     def posterior(self, directory, name):
         result = self.bayests(directory, "posterior", name)
         if result.returncode != 0:
@@ -167,6 +180,7 @@ class Checker:
     def scenario_var(self, d):
         ns = self.run_python(d, self.code(*VAR, 0))
         k, nparams, tt, h, it = (ns[v] for v in ("k", "nparams", "tt", "h", "iterations"))
+        self.check_clean(d, "var.h5")
         self.posterior(d, "var.h5")
         expect_shapes(d / "var.h5", {
             "/posterior/a/coeffs": (nparams, it),
@@ -210,6 +224,7 @@ class Checker:
     def scenario_covariance_block(self, d):
         covar = self.code("references/recipes.md", "Adding a covariance block", 0)
         ns = self.run_python(d, inside_with(self.code(*VAR, 0), covar))
+        self.check_clean(d, "var.h5")
         self.posterior(d, "var.h5")
         k, it = ns["k"], ns["iterations"]
         expect_shapes(d / "var.h5", {"/posterior/psi/coeffs": (k * k, it)})
@@ -217,6 +232,7 @@ class Checker:
     def scenario_variable_selection(self, d):
         selection = self.code("references/recipes.md", "Adding variable selection", 0)
         ns = self.run_python(d, inside_with(self.code(*VAR, 0), selection))
+        self.check_clean(d, "var.h5")
         self.posterior(d, "var.h5")
         expect_shapes(d / "var.h5", {"/posterior/a/lambda": (ns["nparams"], ns["iterations"])})
 
@@ -226,8 +242,14 @@ class Checker:
         selection = self.code("references/recipes.md", "Adding variable selection", 0)
         psi_selection = self.code("references/recipes.md", "Adding variable selection", 1)
 
-        # The failure the text promises when the psi datasets are left out.
+        # The failure the text promises when the psi datasets are left out --
+        # which check has to predict, since the run makes it.
         self.run_python(d, inside_with(base, covar, selection))
+        checked = self.bayests(d, "check", "var.h5")
+        if checked.returncode != 1 or "psi_lambda" not in checked.stderr:
+            raise AssertionError(
+                "bayests check accepted a file the run refuses for want of /initial/psi_lambda\n"
+                f"{checked.stdout}{checked.stderr}")
         result = self.bayests(d, "posterior", "var.h5")
         output = result.stdout + result.stderr
         if result.returncode != 1 or "psi_lambda" not in output:
@@ -236,6 +258,7 @@ class Checker:
                 f"/initial/psi_lambda; got exit {result.returncode}\n{output}")
 
         ns = self.run_python(d, inside_with(base, covar, selection, psi_selection))
+        self.check_clean(d, "var.h5")
         self.posterior(d, "var.h5")
         k, nparams, it = ns["k"], ns["nparams"], ns["iterations"]
         expect_shapes(d / "var.h5", {
@@ -246,6 +269,11 @@ class Checker:
     def scenario_time_varying(self, d):
         tvp = self.code("references/recipes.md", "A time-varying model", 0)
         ns = self.run_python(d, inside_with(self.code(*VAR, 0), tvp), replacing=True)
+        # The text says to write these in place of the VAR's lines, one of which
+        # the example has no dataset to overwrite with.
+        with h5py.File(d / "var.h5", "a") as f:
+            del f["/initial/u_sigma_inv"]
+        self.check_clean(d, "var.h5")
         self.posterior(d, "var.h5")
         k, nparams, tt, h, it = (ns[v] for v in ("k", "nparams", "tt", "h", "iterations"))
         expect_shapes(d / "var.h5", {
@@ -267,6 +295,7 @@ class Checker:
 
     def scenario_vec(self, d):
         ns = self.run_python(d, self.code("references/recipes.md", "A VEC", 0))
+        self.check_clean(d, "vec.h5")
         self.posterior(d, "vec.h5")
         k, nparams, tt, h, it = (ns[v] for v in ("k", "nparams", "tt", "h", "iterations"))
         expect_shapes(d / "vec.h5", {
@@ -287,6 +316,7 @@ class Checker:
 
     def scenario_factor_model(self, d):
         ns = self.run_python(d, self.code("references/recipes.md", "A factor model", 0))
+        self.check_clean(d, "dfm.h5")
         self.posterior(d, "dfm.h5")
         k, tt, h, it = (ns[v] for v in ("k", "tt", "h", "iterations"))
         n_factors = ns["n_factors"]
@@ -310,7 +340,42 @@ class Checker:
         if result.returncode != 0:
             raise AssertionError(
                 f"{' '.join(command)} exited {result.returncode}\n{result.stdout}{result.stderr}")
+        self.check_clean(d, command[1])
         self.posterior(d, command[1])
+
+    def scenario_wrong_error_spelling(self, d):
+        # The text says the wrong spelling switches nothing on and raises no
+        # error. check is where it shows: accepted, and warned about.
+        covar = self.code("references/recipes.md", "Adding a covariance block", 0)
+        if '"gamma+covar"' not in covar:
+            raise AssertionError("the covariance block example no longer spells gamma+covar")
+        self.run_python(d, inside_with(self.code(*VAR, 0), covar.replace('"gamma+covar"', '"sv+covar"')))
+        result = self.bayests(d, "check", "var.h5")
+        if result.returncode != 0:
+            raise AssertionError(f"check refused a file a run accepts\n{result.stdout}{result.stderr}")
+        for expected in ('switches no covariance block on', '/priors/psi/mu is in the file'):
+            if expected not in result.stdout:
+                raise AssertionError(f"check did not warn '{expected}'\n{result.stdout}")
+
+    def scenario_broken_files(self, d):
+        # Files a run refuses only after the chain has finished, which check has
+        # to refuse up front. Each is the complete VAR with one thing wrong.
+        base = self.code(*VAR, 0)
+        cases = {
+            "no forecast regressors": ('del f["/data/forecast/x"]', "/data/forecast/x is missing"),
+            "a written h = 0": ('f["/model"].attrs["h"] = 0', "h = 0 is written"),
+            "z against p": ('f["/model"].attrs["p"] = 2', "/data/train/z has 12 columns"),
+        }
+        for label, (change, message) in cases.items():
+            self.run_python(d, inside_with(base, change))
+            checked = self.bayests(d, "check", "var.h5")
+            run = self.bayests(d, "posterior", "var.h5")
+            if run.returncode != 1:
+                raise AssertionError(f"{label}: expected the run to fail, it exited {run.returncode}")
+            if checked.returncode != 1 or message not in checked.stderr:
+                raise AssertionError(
+                    f"{label}: the run fails, and check exited {checked.returncode} without "
+                    f"'{message}'\n{checked.stdout}{checked.stderr}")
 
     # -- the run -------------------------------------------------------------
 

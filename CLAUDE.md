@@ -19,8 +19,8 @@ Each preset gets its own tree under `build/bin/<preset>/`. Configuring in the
 repository root is refused with a `FATAL_ERROR`. See README §"Building from
 source" for the toolchain and dependency setup.
 
-Test names are `unit.<name>`, `fixture.<name>` and `golden.<name>`, plus
-`agents.recipes` (see "The agent documentation" below). Each
+Test names are `unit.<name>`, `fixture.<name>`, `golden.<name>` and
+`check.<name>`, plus `agents.recipes` (see "The agent documentation" below). Each
 `fixture.*` writes a model file into `build/bin/<preset>/test/fixtures/` and the
 `golden.*` beside it runs all three entry points over it; they are paired with
 CTest `FIXTURES_SETUP`/`FIXTURES_REQUIRED`, so naming one golden test regenerates
@@ -63,7 +63,7 @@ Five layers, and which one code belongs in is decided by what it may touch:
 
 `src/*.cpp` above those is the command line itself — `bayests.cpp`, the option
 parsing, one file per subcommand, and `model_locations.cpp`, which turns a
-command line into the models it names and runs each of them. The four
+command line into the models it names and runs each of them. The five
 subcommands share that walk rather than each carrying a copy: a file or a
 directory tree on the outside, and on the inside either the one group `--group`
 names or, under `--all-groups`, every model below it. A subcommand supplies only
@@ -199,6 +199,13 @@ in": structs in `include/bayests/` → sampler declaration → `src/core/models/
 `src/io/hdf5/` → `src/models/` + `model_factory.cpp` → fixture in
 `test/make_model_fixture.cpp`. Each step builds on its own, and step 3 is the
 checkpoint that proves the model is host-embeddable.
+
+The front-end in `src/models/` also implements `check()`, which is what
+`bayests check` runs: one line handing its `io::read_input` to the template in
+`src/models/model_check.h` for its family. It is pure virtual, so a model that
+lacks one does not compile. A new `/model` attribute needs adding to
+`is_model_attribute()` beside `read_spec()` as well, or `check` warns that no
+model reads it.
 
 Steps 3–5 each add a line to a **different** `CMakeLists.txt`. A forgotten one
 surfaces as an undefined reference at link time, not a compile error — add the

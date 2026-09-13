@@ -5,6 +5,8 @@
 #define READ_HDF5_H
 
 #include <filesystem>
+#include <memory>
+#include <set>
 #include <string>
 #include <vector>
 #include <highfive/H5File.hpp>
@@ -85,7 +87,26 @@ public:
 
     HighFive::DataSet getDataSet(const std::string &name) const
     {
+        if (reads_)
+        {
+            reads_->insert(name);
+        }
         return file_.getDataSet(resolve(name));
+    }
+
+    /// From here on, remember the name of every dataset opened through this
+    /// handle -- and through every copy of it, since the readers take one by
+    /// const reference and pass it on. `bayests check` compares that list with
+    /// the datasets the model's tree holds: a dataset the reader never opened
+    /// is usually the trace of a model other than the one the file was written
+    /// for. Off unless asked for, so a run pays nothing.
+    void record_reads() { reads_ = std::make_shared<std::set<std::string>>(); }
+
+    /// The datasets opened since record_reads(), model-relative and sorted.
+    std::vector<std::string> datasets_read() const
+    {
+        return reads_ ? std::vector<std::string>(reads_->begin(), reads_->end())
+                      : std::vector<std::string>();
     }
 
     HighFive::Group createGroup(const std::string &name) const
@@ -105,6 +126,7 @@ public:
 private:
     HighFive::File &file_;
     std::string prefix_;
+    std::shared_ptr<std::set<std::string>> reads_;
 };
 
 /// Throws unless `group` is a group in `file`. An empty group is the root, which
@@ -131,6 +153,15 @@ void require_group(const HighFive::File &file, const std::string &group);
 /// misspelled --group is worth failing on, and is not the same thing as a
 /// well-formed root with no models under it.
 std::vector<std::string> list_model_groups(const HighFive::File &file, const std::string &root);
+
+/// Every dataset in one model's tree, model-relative ("/data/train/y") and
+/// sorted. /posterior is left out, being the run's output rather than its
+/// input, and so is any group below that is a model of its own -- a model at
+/// the root of a file that also holds /models/3 does not own what is in it.
+std::vector<std::string> list_model_datasets(const ModelFile &file);
+
+/// The names of the attributes on `group` within a model, sorted.
+std::vector<std::string> list_attribute_names(const ModelFile &file, const std::string &group);
 
 // Get algorithm type from the model's /model group
 std::string get_algorithm_type(const ModelFile &file);

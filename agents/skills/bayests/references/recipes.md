@@ -176,9 +176,11 @@ a state equation, `/initial/a` becomes a whole path, and the chain needs the
 state before the sample and a starting value for the precision.
 
 In the `with` block of the complete VAR, **write these in place of** its
-`/priors/a/mu`, `/priors/a/v_inv` and `/initial/a` lines, and keep the rest.
-h5py refuses to create a dataset that already exists, so appending them after
-the originals fails:
+`/priors/a/mu`, `/priors/a/v_inv`, `/initial/a` and `/initial/u_sigma_inv`
+lines, and keep the rest. h5py refuses to create a dataset that already exists,
+so appending them after the originals fails; and `VarTvpGamma` starts its
+precision from `/initial/u_omega_inv`, so a `u_sigma_inv` left behind is never
+read — `bayests check` names it:
 
 ```python
 f["/model"].attrs["algorithm"] = "VarTvpGamma"

@@ -5,6 +5,7 @@
 
 #include "io/hdf5/hdf5_and_armadillo.h"
 
+#include <set>
 #include <stdexcept>
 
 namespace bayests::hdf5_io
@@ -323,6 +324,26 @@ void write_log_likelihood(const ModelFile &file, const arma::mat &loglik)
 {
     ensure_group(file, "/posterior");
     write_armadillo_matrix_to_hdf5(file, "/posterior/loglik", loglik, false);
+}
+
+} // namespace bayests::hdf5_io
+
+namespace bayests::hdf5_io
+{
+
+bool is_model_attribute(const std::string &name)
+{
+    // read_spec() above reads all of these but `algorithm`, which picks the
+    // reader before there is one. Keep the two in the same file, and add a name
+    // here in the edit that teaches read_spec() to read it: `bayests check` warns
+    // about every /model attribute this does not list.
+    static const std::set<std::string> names = {
+        "algorithm", "k",         "iterations", "burnin",       "p",
+        "m",         "s",         "h",          "quantile",     "n",
+        "rank",      "k_beta",    "n_restricted", "n_factors",  "n_obs_factors",
+        "varsel",    "structural", "error",
+    };
+    return names.count(name) > 0;
 }
 
 } // namespace bayests::hdf5_io

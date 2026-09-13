@@ -253,6 +253,16 @@ function(bayests_add_model_fixture name model varsel covar structural horizon)
         FIXTURES_REQUIRED "fx.${name}"
         ENVIRONMENT "${_bayests_pin_threads}"
         ENVIRONMENT_MODIFICATION "${_bayests_test_env_mod}")
+
+    # `bayests check` over the same file, which golden.* runs to completion: a
+    # check that refuses it is stricter than the run it claims to predict. The
+    # other direction -- a file the check accepts and a run refuses -- is what
+    # the broken files in agents.recipes cover.
+    add_test(NAME "check.${name}"
+        COMMAND bayests check "${BAYESTS_FIXTURE_DIR}/${name}.h5" ${_golden_group})
+    set_tests_properties("check.${name}" PROPERTIES
+        FIXTURES_REQUIRED "fx.${name}"
+        ENVIRONMENT_MODIFICATION "${_bayests_test_env_mod}")
 endfunction()
 
 # Two models in one file, and a golden run over each of them.

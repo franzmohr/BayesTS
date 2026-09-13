@@ -507,3 +507,69 @@ bool attribute_exists(const ModelFile &file, const std::string &group_name, cons
 		return false;
 	}
 }
+
+namespace
+{
+
+void collect_model_datasets(const ModelFile &file, const std::string &relative,
+                            std::vector<std::string> &found)
+{
+	const HighFive::File &h5 = file.file();
+	const std::string absolute = file.resolve(relative);
+	const HighFive::Group handle = h5.getGroup(absolute.empty() ? "/" : absolute);
+
+	for (const std::string &name : handle.listObjectNames())
+	{
+		const std::string child = relative + "/" + name;
+		const std::string child_absolute = file.resolve(child);
+
+		switch (h5.getObjectType(child_absolute))
+		{
+		case HighFive::ObjectType::Dataset:
+			found.push_back(child);
+			break;
+		case HighFive::ObjectType::Group:
+			if (child != "/posterior" && !is_model_group(h5, child_absolute))
+			{
+				collect_model_datasets(file, child, found);
+			}
+			break;
+		default:
+			break;
+		}
+	}
+}
+
+} // namespace
+
+std::vector<std::string> list_model_datasets(const ModelFile &file)
+{
+	std::vector<std::string> found;
+	try
+	{
+		collect_model_datasets(file, "", found);
+	}
+	catch (const HighFive::Exception &e)
+	{
+		throw std::runtime_error("Failed to list the datasets of the model at '" +
+		                         (file.group().empty() ? std::string("/") : file.group()) +
+		                         "': " + std::string(e.what()));
+	}
+	std::sort(found.begin(), found.end());
+	return found;
+}
+
+std::vector<std::string> list_attribute_names(const ModelFile &file, const std::string &group)
+{
+	try
+	{
+		std::vector<std::string> names = file.getGroup(group).listAttributeNames();
+		std::sort(names.begin(), names.end());
+		return names;
+	}
+	catch (const HighFive::Exception &e)
+	{
+		throw std::runtime_error("Failed to list the attributes of '" + file.resolve(group) +
+		                         "': " + std::string(e.what()));
+	}
+}

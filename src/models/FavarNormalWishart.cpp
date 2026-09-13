@@ -9,6 +9,7 @@
 // reading the input, and putting the results back.
 
 #include "models/models.h"
+#include "models/model_check.h"
 
 #include "bayests/favar_normal_wishart.h"
 #include "io/hdf5/favar_normal_wishart_io.h"
@@ -122,4 +123,9 @@ void FavarNormalWishart::log_likelihood(const ModelLocation &location_arg)
     const arma::mat loglik = bayests::FavarNormalWishartSampler{}.log_likelihood(input, draws);
 
     bayests::hdf5_io::write_log_likelihood(file, loglik);
+}
+
+ModelCheck FavarNormalWishart::check(const ModelLocation &location_arg)
+{
+    return check_factor_model(location_arg, [](const ModelFile &file) { return io::read_input(file); });
 }

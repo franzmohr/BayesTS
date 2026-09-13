@@ -9,6 +9,7 @@
 // reading the input, and putting the results back.
 
 #include "models/models.h"
+#include "models/model_check.h"
 
 #include "bayests/dfm_tvp_stochvol.h"
 #include "io/hdf5/dfm_tvp_stochvol_io.h"
@@ -129,4 +130,9 @@ void DfmTvpStochvol::log_likelihood(const ModelLocation &location_arg)
     const arma::mat loglik = bayests::DfmTvpStochvolSampler{}.log_likelihood(input, draws);
 
     bayests::hdf5_io::write_log_likelihood(file, loglik);
+}
+
+ModelCheck DfmTvpStochvol::check(const ModelLocation &location_arg)
+{
+    return check_factor_model(location_arg, [](const ModelFile &file) { return io::read_input(file); });
 }

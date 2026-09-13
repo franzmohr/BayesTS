@@ -4,15 +4,57 @@
 bayests <command> <path_to_file.h5 | directory> [flags...]
 ```
 
-Four commands, and nothing else on the command line but the path and the flags
+Five commands, and nothing else on the command line but the path and the flags
 below. The file names the sampler; the command names which results to produce.
 
 | Command | Does |
 | --- | --- |
+| `check` | Reads and validates each model without running it — writes nothing |
 | `posterior` | All three stages, in order |
 | `coefficients` | The Gibbs sampler alone — writes `/posterior/<block>/coeffs` |
 | `forecasts` | The forecast alone — writes `/posterior/forecast` |
 | `loglik` | The pointwise log likelihood alone — writes `/posterior/loglik` |
+
+## Checking a file first
+
+```bash
+bayests check model.h5
+```
+
+`check` opens the file read-only and passes each model through the reader and
+`validate()` its run would use. It adds the checks the forecast makes on its
+regressors, which a run otherwise meets only after the chain has finished. Then
+it stops. For an accepted model it prints what the file resolved to:
+
+```
+  accepted: VarNormalGamma reads this file and would run it
+  dimensions: k = 3, p = 1, m = 0, s = 0, n = 1, tt = 24
+  coefficients: 12 (4 regressors per equation)
+  covariance block: off (error "gamma")
+  variable selection: none
+  structural: no
+  forecast: h = 4
+  chain: 500 draws kept after 250 burn-in
+```
+
+Then one `warning:` line for each thing a run would not stop on but that
+changes what it means:
+
+| Warning | Usually means |
+| --- | --- |
+| `<dataset> is in the file, but <algorithm> never reads it` | A block the model does not have switched on, e.g. `/priors/psi` under the wrong `error` spelling, or a dataset written for another model |
+| `/model attribute '<name>' is not one any model reads` | A misspelling, and the attribute it was meant to be is read through its default |
+| `error "<x>" switches no covariance block on` | The spelling belongs to another model family |
+| `/data/train/z has N columns, but ... make M` | `z` was built for different dimensions than the attributes state |
+
+It exits 0 when every model would be accepted, warnings or not, and 1 with the
+reason on stderr when a model would be refused. That includes three failures a
+run meets only at the forecast stage, after the chain has run:
+- forecast regressors that are missing or have too few horizons;
+- a `z` whose width disagrees with the dimensions, when a forecast is asked for;
+- a written `h = 0`. Leave `h` out to ask for no forecast.
+
+It takes `--group` and `--all-groups` like the rest.
 
 ## The order
 

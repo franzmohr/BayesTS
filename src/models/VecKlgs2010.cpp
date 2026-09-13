@@ -9,6 +9,7 @@
 // reading the input, and putting the results back.
 
 #include "models/models.h"
+#include "models/model_check.h"
 
 #include "bayests/vec_klgs_2010.h"
 #include "io/hdf5/hdf5_and_armadillo.h"
@@ -122,4 +123,9 @@ void VecKlgs2010::log_likelihood(const ModelLocation &location_arg)
     const arma::mat loglik = bayests::VecKlgs2010Sampler{}.log_likelihood(input, draws);
 
     bayests::hdf5_io::write_log_likelihood(file, loglik);
+}
+
+ModelCheck VecKlgs2010::check(const ModelLocation &location_arg)
+{
+    return check_vec_model(location_arg, [](const ModelFile &file) { return io::read_input(file); });
 }

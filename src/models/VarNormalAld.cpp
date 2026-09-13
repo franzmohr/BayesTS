@@ -9,6 +9,7 @@
 // the input, and putting the results back.
 
 #include "models/models.h"
+#include "models/model_check.h"
 
 #include "bayests/var_normal_ald.h"
 #include "io/hdf5/hdf5_and_armadillo.h"
@@ -103,4 +104,9 @@ void VarNormalAld::log_likelihood(const ModelLocation &location_arg)
     const arma::mat loglik = bayests::VarNormalAldSampler{}.log_likelihood(input, draws);
 
     bayests::hdf5_io::write_log_likelihood(file, loglik);
+}
+
+ModelCheck VarNormalAld::check(const ModelLocation &location_arg)
+{
+    return check_quantile_model(location_arg, [](const ModelFile &file) { return io::read_input(file); });
 }

@@ -2,10 +2,13 @@
 // Copyright (c) 2026 Franz X. Mohr
 
 #include "models.h"
+#include <algorithm>
 #include <unordered_map>
 #include <functional>
 
-std::unique_ptr<BaseModel> create_model(const std::string& model_type) {
+namespace {
+
+const std::unordered_map<std::string, std::function<std::unique_ptr<BaseModel>()>> &factory_map() {
 	static const std::unordered_map<std::string, std::function<std::unique_ptr<BaseModel>()>> factory = {
 		{"DfmNormalGamma", []() { return std::make_unique<DfmNormalGamma>(); }},
 		{"DfmNormalStochvol", []() { return std::make_unique<DfmNormalStochvol>(); }},
@@ -28,6 +31,13 @@ std::unique_ptr<BaseModel> create_model(const std::string& model_type) {
 		{"VecTvpStochvol", []() { return std::make_unique<VecTvpStochvol>(); }},
 		{"VecTvpWishart", []() { return std::make_unique<VecTvpWishart>(); }}
 	};
+	return factory;
+}
+
+} // namespace
+
+std::unique_ptr<BaseModel> create_model(const std::string& model_type) {
+	const auto &factory = factory_map();
 
 	auto it = factory.find(model_type);
 	if (it != factory.end()) {
@@ -35,4 +45,13 @@ std::unique_ptr<BaseModel> create_model(const std::string& model_type) {
 	}
 
 	throw std::runtime_error("Unknown model: " + model_type);
+}
+
+std::vector<std::string> registered_models() {
+	std::vector<std::string> names;
+	for (const auto &entry : factory_map()) {
+		names.push_back(entry.first);
+	}
+	std::sort(names.begin(), names.end());
+	return names;
 }

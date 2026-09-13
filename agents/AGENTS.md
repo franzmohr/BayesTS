@@ -20,6 +20,14 @@ Nothing else is passed on the command line. **The file format is the entire
 API.** A wrong field does not usually raise an error; it estimates a different
 model and reports plausible numbers.
 
+So **run `bayests check model.h5` before `posterior`**, and read what it prints.
+It reads the file through the same code a run uses, without sampling or writing
+anything. It prints the dimensions and switches the file resolved to, refuses
+(exit 1, reason on stderr) what a run would refuse, and warns about every
+dataset the model never reads and every `/model` attribute no model looks for.
+A warning is usually a field meant for a different model, or a misspelled one.
+Treat a warning as a bug in the file until you can say why it is there.
+
 ## Rules
 
 1. **Orientation.** In HDF5 dataspace terms every dataset is one row per

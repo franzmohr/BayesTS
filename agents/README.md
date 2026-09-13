@@ -61,7 +61,9 @@ Every Python example in `skills/bayests/` is run by the test suite. The test
 `agents.recipes` (`test/check_agent_recipes.py`) executes each example, runs
 `bayests posterior` over the file it wrote, and checks the shapes the text
 states against the ones the run produced. An example that no scenario claims
-fails the test, so a new one cannot go unverified. The test is registered when
+fails the test, so a new one cannot go unverified. Every file an example writes
+must also pass `bayests check` with no warnings, so an example cannot teach a
+dataset the model never reads. The test is registered when
 CMake finds a Python with h5py and numpy, and CI requires it.
 
 The tables and the prose are not executed. A shape stated in `model-file.md` or
