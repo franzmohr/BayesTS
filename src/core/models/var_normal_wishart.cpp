@@ -254,6 +254,11 @@ ForecastDraws VarNormalWishartSampler::forecast(const VarNormalWishartInput &inp
         const arma::mat a_draw =
             use_a ? arma::reshape(a.col(draw), k, x.n_cols) : arma::mat();
 
+        // The error covariance factorised once per draw rather than once per
+        // horizon: the precision is the same at every horizon, and the
+        // factorisation draws nothing, so where it sits does not move a draw.
+        arma::eig_sym(eigval, eigvec, arma::solve(arma::reshape(coefficients.u_sigma_inv.col(draw), k, k), diag_k));
+
         for (int i = 0; i < h; i++)
         {
             if (use_a)
@@ -268,7 +273,6 @@ ForecastDraws VarNormalWishartSampler::forecast(const VarNormalWishartInput &inp
             }
 
             // Add error
-            arma::eig_sym(eigval, eigvec, arma::solve(arma::reshape(coefficients.u_sigma_inv.col(draw), k, k), diag_k));
             fcst.submat(i * k, draw, (i + 1) * k - 1, draw) = fcst.submat(i * k, draw, (i + 1) * k - 1, draw) + eigvec * arma::diagmat(arma::sqrt(eigval)) * arma::trans(eigvec) * arma::randn(k);
 
             // A_0 y_t = A_1 y_{t-1} + ... + u_t, so the inverse applies to the

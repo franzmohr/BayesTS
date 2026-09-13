@@ -197,6 +197,22 @@ Dates are ISO. Versions follow the `project(VERSION)` in `CMakeLists.txt`.
 
 ### Changed
 
+- **The VAR forecasts factorise the error covariance once per draw rather than
+  once per horizon.** `VarNormalWishart`, `VarNormalGamma`, `VarNormalStochvol`,
+  `VarTvpWishart`, `VarTvpGamma` and `VarTvpStochvol` redid the inverse and the
+  eigendecomposition of the same precision at every horizon of every draw, and
+  every VEC forecast runs through one of them. The factorisation draws nothing,
+  and the product that scales the shocks is unchanged, so draws are unchanged:
+  the fingerprint comparison over all 91 fixtures shows none moved.
+
+- **The documentation says what a time-varying forecast holds fixed.** Every
+  `Tvp` and `Stochvol` model forecasts from the coefficients and volatilities of
+  the last sample period, held for all `h` horizons rather than simulated
+  forward, so its intervals leave out the drift the model allows over the
+  horizon. The README said so only for the two stochastic volatility factor
+  models, and `agents/` not at all. `results.md` now has a section on it, and
+  the README's command table states it. Documentation only.
+
 - **The time-varying models hold their Psi path and error precisions one block
   per period.** All four time-varying models with a covariance block kept Psi as
   a `(k tt)` square block diagonal. `VarTvpStochvol` and `VecTvpStochvol` also
