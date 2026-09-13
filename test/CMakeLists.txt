@@ -72,6 +72,7 @@ endforeach()
 # on the right side of.
 add_executable(bayests_unit_identification unit_identification.cpp)
 add_executable(bayests_unit_vec_klgs_2010 unit_vec_klgs_2010.cpp)
+add_executable(bayests_unit_vec_tvp_coint unit_vec_tvp_coint.cpp)
 add_executable(bayests_unit_dfm_normal_gamma unit_dfm_normal_gamma.cpp)
 add_executable(bayests_unit_dfm_normal_stochvol unit_dfm_normal_stochvol.cpp)
 add_executable(bayests_unit_dfm_tvp_gamma unit_dfm_tvp_gamma.cpp)
@@ -80,6 +81,7 @@ add_executable(bayests_unit_favar_normal_wishart unit_favar_normal_wishart.cpp)
 add_executable(bayests_unit_var_ald unit_var_ald.cpp)
 
 foreach(_core_unit bayests_unit_identification bayests_unit_vec_klgs_2010
+                   bayests_unit_vec_tvp_coint
                    bayests_unit_dfm_normal_gamma bayests_unit_dfm_normal_stochvol
                    bayests_unit_dfm_tvp_gamma bayests_unit_dfm_tvp_stochvol
                    bayests_unit_var_ald
@@ -204,7 +206,7 @@ endif()
 # many threads computed it.
 foreach(_unit vec_to_var forecast_lags forecast_regressors_io stochvol kalman chan_jeliazkov
               inverse_gaussian truncated_normal identification
-              vec_klgs_2010 dfm_normal_gamma dfm_normal_stochvol dfm_tvp_gamma
+              vec_klgs_2010 vec_tvp_coint dfm_normal_gamma dfm_normal_stochvol dfm_tvp_gamma
               dfm_tvp_stochvol favar_normal_wishart var_ald model_group)
     add_test(NAME "unit.${_unit}" COMMAND "bayests_unit_${_unit}")
     set_tests_properties("unit.${_unit}" PROPERTIES
@@ -460,11 +462,18 @@ bayests_add_model_fixture(VecNormalStochvol-bvs-covar VecNormalStochvol bvs  1 0
 # block, which the state equation does not touch. The plain rows above stay
 # fixed-rho, which is the path every file written before the prior existed takes.
 #
+# The `-rho-ptau` rows add Koop, Leon-Gonzalez and Strachan's informative marginal
+# prior on the space, P_tau in the transition of the state equation, on top of
+# the drawn rho -- the one configuration that puts P_tau through all three places
+# it enters: the smoother, the state before the sample and the draw of rho. Every
+# other row leaves it out and so runs the identity transition.
+#
 # No covar row: like VarTvpWishart, this model carries no psi block.
 bayests_add_model_fixture(VecTvpWishart-plain  VecTvpWishart none 0 0 4)
 bayests_add_model_fixture(VecTvpWishart-bvs    VecTvpWishart bvs  0 0 4)
 bayests_add_model_fixture(VecTvpWishart-nofcst VecTvpWishart none 0 0 0)
 bayests_add_model_fixture(VecTvpWishart-rho    VecTvpWishart none 0 0 4 --coint-rho)
+bayests_add_model_fixture(VecTvpWishart-rho-ptau VecTvpWishart none 0 0 4 --coint-rho --coint-p-tau)
 
 bayests_add_model_fixture(VecTvpGamma-plain     VecTvpGamma none 0 0 4)
 bayests_add_model_fixture(VecTvpGamma-bvs       VecTvpGamma bvs  0 0 4)
@@ -473,6 +482,7 @@ bayests_add_model_fixture(VecTvpGamma-structural VecTvpGamma none 0 1 4)
 bayests_add_model_fixture(VecTvpGamma-nofcst    VecTvpGamma none 0 0 0)
 bayests_add_model_fixture(VecTvpGamma-bvs-covar VecTvpGamma bvs  1 0 4)
 bayests_add_model_fixture(VecTvpGamma-rho       VecTvpGamma none 0 0 4 --coint-rho)
+bayests_add_model_fixture(VecTvpGamma-rho-ptau  VecTvpGamma none 0 0 4 --coint-rho --coint-p-tau)
 
 bayests_add_model_fixture(VecTvpStochvol-plain     VecTvpStochvol none 0 0 4)
 bayests_add_model_fixture(VecTvpStochvol-bvs       VecTvpStochvol bvs  0 0 4)
@@ -481,6 +491,7 @@ bayests_add_model_fixture(VecTvpStochvol-structural VecTvpStochvol none 0 1 4)
 bayests_add_model_fixture(VecTvpStochvol-nofcst    VecTvpStochvol none 0 0 0)
 bayests_add_model_fixture(VecTvpStochvol-bvs-covar VecTvpStochvol bvs  1 0 4)
 bayests_add_model_fixture(VecTvpStochvol-rho       VecTvpStochvol none 0 0 4 --coint-rho)
+bayests_add_model_fixture(VecTvpStochvol-rho-ptau  VecTvpStochvol none 0 0 4 --coint-rho --coint-p-tau)
 
 #####################################################################
 # Recorded model files

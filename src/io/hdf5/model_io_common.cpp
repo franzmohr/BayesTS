@@ -248,6 +248,11 @@ TvpCointSpacePrior read_coint_space_prior_tvp(const ModelFile &file, const std::
         prior.rho_prior.max = get_dataset_double(file, group + "/rho_max");
     }
 
+    // Koop, Leon-Gonzalez and Strachan's informative marginal prior: the
+    // transition of the state equation with rho taken out, k_beta square. Absent
+    // is the identity, which is what every file written before it means.
+    read_mat_if_present(file, group + "/p_tau", prior.p_tau);
+
     return prior;
 }
 

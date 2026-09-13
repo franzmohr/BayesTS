@@ -101,6 +101,14 @@ constexpr double kVecRho = 0.99;
 constexpr double kVecRhoMin = 0.9;
 constexpr double kVecRhoMax = 0.999;
 
+// The spread of the informative marginal prior on the space, written only by the
+// `--coint-p-tau` fixtures as P_tau = H H' + tau H_perp H_perp', with H the
+// cointegration vector the chain starts from. Away from both ends: at one P_tau
+// is the identity and the fixture would run the noninformative path it is there
+// to differ from, and at zero the directions off sp(H) forget their past
+// entirely, which is admissible but the less interesting half of the range.
+constexpr double kVecTau = 0.5;
+
 /// A 64-bit LCG, so the fixtures do not depend on the host's <random>
 /// implementation the way std::mt19937 plus a distribution would.
 class Lcg
@@ -914,6 +922,19 @@ void write_vec_tvp_coint_rho_prior(const ModelFile &file)
     write_dataset_double(file, "/priors/beta/rho_max", kVecRhoMax);
 }
 
+/// Koop, Leon-Gonzalez and Strachan's informative marginal prior on the space:
+/// the transition P_tau, centred on the cointegration vector the chain starts
+/// from. Written beside the fixed-rho block for the same reason the rho prior is,
+/// and only the transition -- the prior on the state before the sample stays the
+/// one write_vec_tvp_coint() wrote, which the sampler reads either way.
+void write_vec_tvp_coint_p_tau(const ModelFile &file)
+{
+    const arma::vec h = arma::normalise(vec_initial_beta());
+    const arma::mat along = h * arma::trans(h);
+    write_mat(file, "/priors/beta/p_tau",
+              along + kVecTau * (arma::eye<arma::mat>(kVecKBeta, kVecKBeta) - along));
+}
+
 /// The time-varying coefficient block, which is the VAR's: a path, the precision
 /// of its innovations and the state it starts from. Selection is the VEC's,
 /// though, so it is written here rather than by write_tvp_coefficients().
@@ -1617,7 +1638,7 @@ int main(int argc, char *argv[])
     {
         std::cerr << "Usage: " << argv[0]
                   << " <dest.h5> <model> <none|ssvs|bvs> <covar 0|1> <structural 0|1> <h>"
-                     " [group] [append] [--coint-rho]\n";
+                     " [group] [append] [--coint-rho] [--coint-p-tau]\n";
         return 2;
     }
 
@@ -1635,6 +1656,7 @@ int main(int argc, char *argv[])
     std::string group_argument;
     bool append = false;
     bool coint_rho = false;
+    bool coint_p_tau = false;
     bool bare_group_seen = false;
 
     for (int i = 7; i < argc; i++)
@@ -1644,6 +1666,10 @@ int main(int argc, char *argv[])
         if (token == "--coint-rho")
         {
             coint_rho = true;
+        }
+        else if (token == "--coint-p-tau")
+        {
+            coint_p_tau = true;
         }
         else if (token == "append")
         {
@@ -1838,10 +1864,18 @@ int main(int argc, char *argv[])
                 write_vec_tvp_coint_rho_prior(file);
             }
 
+            if (coint_p_tau)
+            {
+                write_vec_tvp_coint_p_tau(file);
+            }
+
+            // coint_p_tau only when set, so the line every existing fixture
+            // prints stays the one its recorded fingerprints were taken from.
             std::cout << "wrote " << dest.string() << group_suffix << " (" << model << ", varsel=" << varsel
                       << ", covar=" << covar << ", structural=" << structural << ", h=" << h
                       << ", k=" << kK << ", tt=" << kTT << ", rank=" << kVecRank
-                      << ", nparams=" << nparams << ", coint_rho=" << coint_rho << ")\n";
+                      << ", nparams=" << nparams << ", coint_rho=" << coint_rho
+                      << (coint_p_tau ? ", coint_p_tau=1" : "") << ")\n";
             return 0;
         }
 

@@ -24,6 +24,52 @@ Dates are ISO. Versions follow the `project(VERSION)` in `CMakeLists.txt`.
 
 ## Unreleased
 
+### Added
+
+- **An informative marginal prior on a time-varying cointegration space.** The
+  three time-varying VECs -- `VecTvpWishart`, `VecTvpGamma` and `VecTvpStochvol`
+  -- read an optional `/priors/beta/p_tau`, `TvpCointSpacePrior::p_tau`, and use
+  it as the transition of the state equation with rho taken out:
+
+      beta_t = rho (I_r kron P_tau) beta_{t-1} + eta_t,   eta_t ~ N(0, I).
+
+  This is eq. 12 of the working paper version of Koop, Leon-Gonzalez and
+  Strachan (2011). With P_tau = H H' + tau H_perp H_perp' the part of beta along
+  sp(H) keeps rho and the part off it decays at rho tau, so the mode of the
+  marginal distribution of the space is sp(H) at every t while the space at t
+  stays centred between the space at t - 1 and sp(H). The published version of
+  the paper, and everything here until now, is the identity: a uniform marginal
+  prior. P_tau goes into the transition and not the innovation variance, which
+  stays the identity and keeps pinning beta's scale against alpha's.
+
+  `p_tau` is `k_beta` square and has to be symmetric with eigenvalues in
+  [0, 1] -- a tau per direction is accepted, one along H and below one off it
+  being the paper's case. The prior on the state before the sample stays
+  `initial_state`, supplied by the file; the paper's is the stationary
+  distribution the transition implies, N(0, I_r kron P_tau* / (1 - rho^2)) with
+  tau* = (1 - rho^2) / (1 - rho^2 tau^2), and that is what a host writing the
+  file should put there.
+
+  The transition enters in three places, all changed: the smoother's transition
+  and the mean of the first state, rho P beta_0; the posterior of the state
+  before the sample, whose precision picks up rho^2 P'P and whose mean rho P'
+  beta_1; and the draw of rho, which regresses beta_t on P beta_{t-1}. The last
+  is still an exact truncated normal.
+
+  **Draws are unchanged** for every file without `p_tau`, which is every file
+  written before this. Verified with the fingerprint comparison over the whole
+  suite: all 88 existing fixtures print their previous fingerprints digit for
+  digit. Under P = I the new arithmetic is the old one to the bit -- products
+  with an identity and sums formed in the same order -- and
+  `unit.vec_tvp_coint` asserts it directly: a `VecTvpWishart` chain with rho
+  drawn and `p_tau` set to the identity equals the chain without it, exactly,
+  from the same seed. The same test checks that an informative P_tau changes the
+  chain and that `validate()` refuses a P_tau of the wrong size, an asymmetric
+  one, and one with an eigenvalue outside [0, 1]. Three new fixtures --
+  `VecTvpWishart-rho-ptau`, `VecTvpGamma-rho-ptau` and `VecTvpStochvol-rho-ptau`
+  -- run P_tau with rho drawn, the one configuration that goes through all three
+  places.
+
 ### Changed
 
 - **The out-of-sample regressors are the compact layout.** `ForecastData::x` is
