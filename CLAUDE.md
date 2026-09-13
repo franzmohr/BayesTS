@@ -244,8 +244,8 @@ they shift in the last digits with the compiler, the BLAS and the CPU. The
 `fingerprints.yml` workflow runs the same base-vs-head comparison on every PR.
 
 A fingerprint recording is not something to read in full: the suite at `-V` is
-close to 1.1 MB (183 tests from a clean clone), and a recording of it around
-115 KB. Redirect, then read the reduction — both scripts do this by design, and
+about 1.3 MB (292 tests from a clean clone), and a recording of it around
+130 KB. Redirect, then read the reduction — both scripts do this by design, and
 neither `ctest -V` nor a `test/baselines/` file belongs on a terminal it is not
 being paged through. The same goes for a green `ctest` run: `> /tmp/ctest.log
 2>&1` and read `tail -3`, then grep the log if anything failed. What one failing

@@ -1,4 +1,5 @@
-
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (c) 2026 Franz X. Mohr
 
 add_library(bayests_algorithms
             chan_jeliazkov_2009.cpp chan_jeliazkov_2009.h

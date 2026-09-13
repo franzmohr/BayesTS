@@ -1,4 +1,5 @@
-
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (c) 2026 Franz X. Mohr
 
 # The floor is what the project actually uses, not what the author happens to
 # have installed -- a needlessly high one excludes every distribution. What sets

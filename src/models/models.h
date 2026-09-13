@@ -4,7 +4,6 @@
 #ifndef MODELS_H
 #define MODELS_H
 
-#include <hdf5.h>
 #include <filesystem>
 #include <memory>
 #include <string>

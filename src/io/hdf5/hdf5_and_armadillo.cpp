@@ -8,6 +8,7 @@
 #include <cctype>
 #include <cmath>
 #include <stdexcept>
+#include <highfive/H5Utility.hpp>
 
 // Returns true if the path has an HDF5 extension (.hdf5 or .h5), case-insensitive
 bool is_hdf5_file(const std::filesystem::path &filepath)
@@ -19,9 +20,17 @@ bool is_hdf5_file(const std::filesystem::path &filepath)
 }
 
 // Open the file in read-only mode and return HighFive File object
+//
+// The library's own error stack is silenced for the open, and only for the open.
+// HighFive walks that stack into the exception it throws, so the message below
+// already carries what the stack says; printing it as well puts a dozen lines of
+// HDF5 internals on stderr ahead of the one line that names the file. The guard
+// restores whatever handler was installed before, so a host that set its own
+// keeps it.
 HighFive::File open_hdf5_file(const std::filesystem::path &filepath)
 {
 	try {
+		HighFive::SilenceHDF5 silence;
 		return HighFive::File(filepath.string(), HighFive::File::ReadOnly);
 	}
 	catch (const HighFive::Exception &e) {
@@ -29,10 +38,12 @@ HighFive::File open_hdf5_file(const std::filesystem::path &filepath)
 	}
 }
 
-// Open the file in read-write mode and return HighFive File object
+// Open the file in read-write mode and return HighFive File object; see above
+// for the silenced error stack
 HighFive::File open_hdf5_file_readwrite(const std::filesystem::path &filepath)
 {
 	try {
+		HighFive::SilenceHDF5 silence;
 		return HighFive::File(filepath.string(), HighFive::File::ReadWrite);
 	}
 	catch (const HighFive::Exception &e) {

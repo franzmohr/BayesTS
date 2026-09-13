@@ -165,6 +165,15 @@ Dates are ISO. Versions follow the `project(VERSION)` in `CMakeLists.txt`.
 
 ### Fixed
 
+- **A file that is not HDF5 is refused in one line.** Opening one used to print
+  the HDF5 library's error stack, a dozen lines of internals such as
+  "minor: Not an HDF5 file", on stderr ahead of BayesTS's own message. That message
+  already carries what the stack says, since HighFive walks the stack into the
+  exception, so the stack is now silenced while the file is opened, and only
+  then. A handler installed beforehand is restored, so a host that set its own
+  keeps it. Exit codes are unchanged, and no sampler is touched, so draws are
+  unchanged by construction.
+
 - **A written `h = 0` skips the forecast, as a missing `h` does.** The eighteen
   non-quantile front-ends skipped the forecast only when `/model` had no `h`
   attribute and handed any written value to the sampler, which refuses a

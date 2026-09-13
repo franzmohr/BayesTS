@@ -713,7 +713,7 @@ test/diff_fingerprints.sh test/baselines/before.txt test/baselines/after.txt
 differ between two runs of an unchanged build. `diff_fingerprints.sh` then
 reports which *fixtures* moved, and prints one fixture's lines when given its
 name as a third argument. Prefer it to a plain `diff`: a recording of the full
-suite is around 115 KB and the `-V` run behind it close to 1.1 MB, so a change to
+suite is around 130 KB and the `-V` run behind it about 1.3 MB, so a change to
 a shared algorithm produces a line diff longer than anyone reads, while the list
 of fixtures it moved is short and is what says whether the blast radius matches
 the intent.
