@@ -100,7 +100,7 @@ VarTvpGammaDraws read_forecast_coefficients(const ModelFile &file,
     if (nparams > 0 && dataset_has_data(file, "/posterior/a/coeffs"))
     {
         const arma::uword tt = input.train.periods(input.spec.k);
-        draws.a = read_draws_at_period(file, "/posterior/a/coeffs", tt - 1, nparams);
+        draws.a = read_draws_at_period(file, "/posterior/a/coeffs", last_sample_period(tt), nparams);
     }
     draws.u_sigma_inv = read_precision(file, input.spec, input.train.periods(input.spec.k), input.use_psi());
 

@@ -119,7 +119,7 @@ VarNormalStochvolDraws read_forecast_coefficients(const ModelFile &file,
         const arma::uword k = static_cast<arma::uword>(input.spec.k);
         const arma::uword tt = input.train.periods(input.spec.k);
         draws.u_sigma_inv = read_draws_at_period(file, "/posterior/u_sigma_inv/coeffs",
-                                                 tt - 1, k * k);
+                                                 last_sample_period(tt), k * k);
     }
 
     return draws;

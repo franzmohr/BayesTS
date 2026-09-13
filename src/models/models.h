@@ -69,6 +69,12 @@ struct ModelCheck
 
     /// /model attributes no reader looks for.
     std::vector<std::string> unknown_attributes;
+
+    /// Whether /model/priors/psi carries a `varsel` attribute this model does
+    /// not read. The one model attribute kept outside /model, so the scan of
+    /// /model above cannot see it: only the four time-varying models with a
+    /// covariance block read it, and only with the block switched on.
+    bool psi_varsel_unread = false;
 };
 
 /// Base class for all models.

@@ -31,6 +31,14 @@
 namespace bayests::model_check_detail
 {
 
+/// Whether a model's input has a selection scheme of its own for the covariance
+/// block, which is what reading /model/priors/psi's `varsel` fills in.
+template <typename Input>
+struct has_psi_varsel
+{
+    static constexpr bool value = requires(const Input &input) { input.psi_varsel; };
+};
+
 /// Everything the check reports that does not depend on which model it is.
 template <typename Input>
 ModelCheck inspect(const ModelFile &file, const Input &input)
@@ -69,6 +77,13 @@ ModelCheck inspect(const ModelFile &file, const Input &input)
             check.unknown_attributes.push_back(name);
         }
     }
+
+    // The covariance block's own selection scheme. A model reads it only if its
+    // input has somewhere to put it -- the four time-varying models with a
+    // covariance block -- and only with that block switched on. Anywhere else
+    // the file asks for a selection nothing performs.
+    check.psi_varsel_unread = attribute_exists(file, "/model/priors/psi", "varsel") &&
+                              !(has_psi_varsel<Input>::value && input.spec.uses_covar());
 
     return check;
 }

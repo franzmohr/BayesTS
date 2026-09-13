@@ -54,8 +54,19 @@ bool read_forecast_regressors(const ModelFile &file, int k, arma::mat &out);
 /// A time-varying starting value. A state path is stored as one long row, so
 /// reading it back means saying how wide a period is; the sampler is handed
 /// the rectangle, `rows` by `periods`.
+///
+/// The dataset has to hold exactly `rows * periods` values, and one that does not
+/// is refused. The reshape this used to be alone pads a short path with zeros and
+/// cuts a long one, after which validate() sees a matrix of exactly the shape it
+/// asks for whatever the file held. An empty matrix comes back when there is no
+/// sample to measure against (`periods` of zero); validate() refuses that run.
 arma::mat read_path(const ModelFile &file, const std::string &dataset, arma::uword rows,
                     arma::uword periods);
+
+/// The index of the last in-sample period, where a forecast of a time-varying
+/// quantity starts. Throws for a file with no training sample, where
+/// `periods - 1` would wrap round to the largest index there is.
+arma::uword last_sample_period(arma::uword periods);
 
 /// Selection positions are stored one-based, the way R and the file format
 /// count. The samplers index from zero.

@@ -294,6 +294,56 @@ Dates are ISO. Versions follow the `project(VERSION)` in `CMakeLists.txt`.
 
 ### Fixed
 
+- **A flag the command does not know, or a second path, exits 2 rather than
+  running something else.** Either used to be a warning and a run with exit code
+  0. `bayests check a.h5 --gruop /models/3` checked the model at the root of the
+  file, a misspelled `--all-groups` ran one model instead of all of them,
+  `bayests check a.h5 b.h5` never looked at `b.h5`, and a step flag such as
+  `--no-loglik` on `coefficients` was ignored. Each now prints the reason and
+  the usage line and exits 2, the code documented for a command line that
+  cannot be acted on. `cli.refusals` runs each case against the built binary.
+
+- **A directory walk that meets an entry it cannot read no longer ends the
+  program.** The walk used `std::filesystem::recursive_directory_iterator`,
+  which throws on the first entry it cannot read, and nothing caught it. A
+  directory holding a junction whose target was gone ended in `std::terminate`,
+  with exit code -1073740791 on Windows, no line naming the entry, and every file
+  after it unprocessed. The walk now goes directory by directory with error
+  codes. An entry that cannot be read is reported and counts as a failure (exit
+  1), since it may have held models. A link whose target does not exist is
+  skipped with a warning. Either way the walk carries on, and the files it finds
+  run in sorted order. A path that does not exist still exits 2. `cli.refusals`
+  covers the broken junction on Windows and a dangling symbolic link elsewhere.
+
+- **A time-varying starting path of the wrong length is refused rather than
+  padded.** `read_path()` was an `arma::reshape`, which pads a short path with
+  zeros and cuts a long one. `validate()` then saw a matrix of exactly the shape
+  it asks for, whatever the file held: a `VarTvpGamma` file with 264 of its 288
+  starting coefficients passed `bayests check` and a run with exit code 0. The
+  element count is now checked first, for `/initial/a`, `psi`, `beta` and
+  `lambda` in every time-varying VAR, VEC and DFM, and the message names the
+  dataset and both counts. `unit.read_path` covers a path short, long and at the
+  wrong width.
+
+- **Forecasting a time-varying model from a file with no training sample is
+  refused with a message.** The forecast readers took the last period as
+  `tt - 1` on an unsigned `tt`, so a file holding a fitted posterior but no
+  `/data/train/y` asked for the largest index there is and failed inside
+  Armadillo. The DFM readers guarded against it and the rest did not.
+  All of them, the constant-coefficient stochastic volatility readers included,
+  now go through `last_sample_period()` in `model_io_common.h`, which says what
+  is missing.
+
+- **`bayests check` warns about a covariance-block selection attribute that
+  nothing reads.** `/model/priors/psi`'s `varsel` is read only by the four
+  time-varying models with a covariance block, and only with the block switched
+  on. Anywhere else the file asked for a selection that was never made, and
+  `check`, which scans only the attributes of `/model`, said nothing.
+
+  None of these five touches a sampler. *Draws are unchanged*: all 91 fixtures'
+  fingerprints are byte-identical before and after, and all 300 tests pass,
+  `agents.recipes` and every `check.*` among them.
+
 - **The time-varying gamma models draw their covariance block under the current
   error variances.** `VarTvpGamma` and `VecTvpGamma` inverted the *starting*
   error precision once, before the chain, and drew every psi path under that

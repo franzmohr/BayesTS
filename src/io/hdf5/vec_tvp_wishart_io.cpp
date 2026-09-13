@@ -108,11 +108,11 @@ VecTvpWishartDraws read_forecast_coefficients(const ModelFile &file,
 
     if (n_a > 0 && dataset_has_data(file, "/posterior/a/coeffs"))
     {
-        draws.a = read_draws_at_period(file, "/posterior/a/coeffs", tt - 1, n_a);
+        draws.a = read_draws_at_period(file, "/posterior/a/coeffs", last_sample_period(tt), n_a);
     }
     if (n_beta > 0 && dataset_has_data(file, "/posterior/beta/coeffs"))
     {
-        draws.beta = read_draws_at_period(file, "/posterior/beta/coeffs", tt - 1, n_beta);
+        draws.beta = read_draws_at_period(file, "/posterior/beta/coeffs", last_sample_period(tt), n_beta);
     }
     if (dataset_has_data(file, "/posterior/u_sigma_inv/coeffs"))
     {
