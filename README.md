@@ -22,6 +22,14 @@ command line except which file to work on and which of those three results are
 wanted, so a run is fully described by the file it is given and can be repeated
 from it.
 
+Working with an AI coding assistant? Point it at [`agents/`](agents/) before it
+writes a model file, and have it run `bayests check` on the file before
+`bayests posterior` — see [With an AI coding
+assistant](#with-an-ai-coding-assistant). From R, the
+[bvartools](https://github.com/franzmohr/bvartools) and
+[dfmtools](https://github.com/franzmohr/dfmtools) packages carry guides of their
+own.
+
 The numerics are deliberately isolated. `bayests_core` links neither HDF5 nor
 HighFive, prints nothing, and touches no global state beyond the Armadillo RNG:
 values in, values out. That is what lets the same sampler objects serve this
@@ -486,6 +494,22 @@ which links to the rest. `agents/skills/bayests/` is plain Markdown in the
 `SKILL.md` layout that several assistants read. The documentation site serves
 the same files, indexed by `llms.txt`, and an installed package carries them
 under `share/doc/BayesTS/agents/`, matching the binary beside it.
+
+Whatever the assistant, have it run `bayests check` on a file it wrote before
+running the file. `check` reads the file the way a run would, without sampling,
+and prints what the file resolved to. It refuses what a run would refuse, and
+warns about every dataset the model never reads and every `/model` attribute
+no model looks for. Those warnings are where a silently different model shows.
+
+An analysis written in R goes through
+[bvartools](https://github.com/franzmohr/bvartools) for VAR and VEC models or
+[dfmtools](https://github.com/franzmohr/dfmtools) for factor models, which build
+the model without a file. Each carries its own guide in `inst/agents/`, installed
+with the package at `system.file("agents", package = "bvartools")` (or
+`"dfmtools"`), and installs as a plugin the same way:
+`/plugin marketplace add franzmohr/bvartools`. The file format in `agents/`
+matters there only when a model is moved to the command line with
+`write_to_hdf5()` and read back with `read_model_from_hdf5()`.
 
 ## Building from source
 

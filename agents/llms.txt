@@ -17,6 +17,11 @@ The documents below are written for coding agents. Their Python examples are run
 - [Reading the results](agents/skills/bayests/references/results.md): what a run writes and how to read it back from Python and R
 - [Worked examples](agents/skills/bayests/references/recipes.md): complete VAR, VEC and factor model files from h5py
 
+## Working from R
+
+- [bvartools AGENTS.md](https://github.com/franzmohr/bvartools/blob/main/inst/agents/AGENTS.md): the R package for Bayesian VAR and VEC models on these samplers, and the rules for writing correct bvartools code
+- [dfmtools AGENTS.md](https://github.com/franzmohr/dfmtools/blob/main/inst/agents/AGENTS.md): the R package for dynamic factor models and FAVARs, with its identification and draw layout rules
+
 ## Optional
 
 - [API documentation](index.html): the Doxygen reference, for embedding the samplers in a host rather than driving the command line

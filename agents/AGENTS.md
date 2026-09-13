@@ -77,6 +77,18 @@ Treat a warning as a bug in the file until you can say why it is there.
 | What comes out, and how to read it | `skills/bayests/references/results.md` |
 | A file built from scratch, end to end | `skills/bayests/references/recipes.md` |
 
+## Working from R
+
+An analysis written in R does not usually touch a model file at all. The
+[bvartools](https://github.com/franzmohr/bvartools) package covers VAR and VEC
+models, and [dfmtools](https://github.com/franzmohr/dfmtools) dynamic factor
+models and FAVARs. Both build the model as an R object and run these same
+samplers compiled into the package, and each carries its own guide in
+`inst/agents/`, installed at `system.file("agents", package = "bvartools")` (or
+`"dfmtools"`). Read that guide rather than this one. This bundle matters to
+R code only when a model moves between R and the command line through
+`write_to_hdf5()` and `read_model_from_hdf5()`.
+
 ## When contributing to BayesTS itself
 
 This bundle is about *using* BayesTS. The repository's own `CLAUDE.md` and

@@ -39,6 +39,11 @@ spelled for another model, or `lags` written where `p` was meant. **Compare its
 report with what you meant, and do not run a file with a warning you cannot
 explain.**
 
+**Working in R instead?** The bvartools (VAR, VEC) and dfmtools (DFM, FAVAR)
+packages run these samplers from R objects, without a model file, and each has
+its own skill. Use those, and come back here only for a model moved through
+`write_to_hdf5()` to the command line.
+
 ## The five rules that prevent silent wrongness
 
 Everything else in this skill is detail. These five are the ones that fail
