@@ -12,9 +12,10 @@
 # can: the stage-package sonames are those of the core24 base, and a base bump
 # or an archive rename turns one of them into a pull-time "package not found".
 #
-# It does not upload anything. Publishing needs a store credential this
-# repository does not hold; `snapcraft upload` is a manual step, documented in
-# the Packaging section of README.md.
+# It does not upload anything to the Snap Store. Publishing there needs a store
+# credential this repository does not hold; `snapcraft upload` is a manual step,
+# documented in the Packaging section of README.md. release.yml calls this
+# workflow for a tag and attaches the artifact it uploads to the GitHub release.
 
 name: Snap
 
@@ -37,9 +38,18 @@ on:
       - '.github/highfive-version'
       - '.github/workflows/snap.yml'
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      ref:
+        description: Git ref to build, for release.yml's tag.
+        type: string
+        required: true
 
+# Called from release.yml, github.ref is the caller's -- refs/heads/main for a
+# dispatched release -- so the group names the ref being built, or a push to
+# main would cancel the release's snap.
 concurrency:
-  group: snap-${{ github.ref }}
+  group: snap-${{ inputs.ref || github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -51,7 +61,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # inputs.ref is empty outside workflow_call, which leaves checkout on the
+      # ref of the event that triggered the run.
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
 
       # The HighFive tag is written twice -- in .github/highfive-version, which
       # ci.yml and release.yml read, and as source-tag in snapcraft.yaml, which

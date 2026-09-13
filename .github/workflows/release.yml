@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright (c) 2026 Franz X. Mohr
 
-# Build the redistributable packages for a tag and attach them to a release.
+# Build the redistributable packages for a tag and attach them to its release.
 #
 # BAYESTS_NATIVE_ARCH must stay off here, and the release preset already turns it
 # off: it bakes the building machine's instruction set into the binary, so a
@@ -17,18 +17,51 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing tag to build packages for, without creating a release.
+        description: Existing tag to build packages for.
         required: true
+      publish:
+        description: >-
+          Attach the packages to the tag's release, drafting one if it has none.
+        type: boolean
+        default: false
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ github.event.inputs.tag || github.ref }}
 
 permissions:
   contents: read
 
 jobs:
+  # The tag has to agree with project(VERSION ...), because that is what names
+  # every package -- CPACK_PACKAGE_FILE_NAME and the snap's version are both
+  # built from PROJECT_VERSION, so a mismatch produces BayesTS-0.0.1-*.zip for
+  # tag v0.2.0 and nobody notices until someone downloads it. Checked once,
+  # before any of the builds below spends an hour on it.
+  check-tag:
+    name: check tag
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      # The tag reaches the script through the environment rather than being
+      # pasted into it, so a dispatched tag name cannot inject shell.
+      - name: Check the tag matches project(VERSION)
+        env:
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          declared=$(sed -n 's/^ *VERSION \([0-9][0-9.]*\).*/\1/p' CMakeLists.txt | head -1)
+          echo "CMakeLists declares $declared, tag is $TAG"
+          if [ "$TAG" != "v$declared" ]; then
+            echo "::error::tag $TAG does not match project(VERSION $declared);" \
+                 "bump CMakeLists.txt or retag."
+            exit 1
+          fi
+
   package:
     name: package / ${{ matrix.name }}
+    needs: check-tag
     runs-on: ${{ matrix.runs-on }}
     strategy:
       fail-fast: false
@@ -43,22 +76,6 @@ jobs:
       - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.inputs.tag || github.ref }}
-
-      # The tag has to agree with project(VERSION ...), because that is what
-      # names the archive -- CPACK_PACKAGE_FILE_NAME is built from
-      # PROJECT_VERSION, so a mismatch produces BayesTS-0.0.1-*.zip for tag
-      # v0.2.0 and nobody notices until someone downloads it.
-      - name: Check the tag matches project(VERSION)
-        shell: bash
-        run: |
-          declared=$(sed -n 's/^ *VERSION \([0-9][0-9.]*\).*/\1/p' CMakeLists.txt | head -1)
-          tag="${{ github.event.inputs.tag || github.ref_name }}"
-          echo "CMakeLists declares $declared, tag is $tag"
-          if [ "$tag" != "v$declared" ]; then
-            echo "::error::tag $tag does not match project(VERSION $declared);" \
-                 "bump CMakeLists.txt or retag."
-            exit 1
-          fi
 
       - name: Set up dependencies (Linux)
         id: deps
@@ -127,6 +144,8 @@ jobs:
             ctest --test-dir build/bin/release --output-on-failure
           cmake --build build/bin/release --target package
 
+      # CPack writes a .sha256 beside every package; the patterns name them
+      # explicitly, since BayesTS-*.zip does not match BayesTS-*.zip.sha256.
       - name: Collect packages
         uses: actions/upload-artifact@v7
         with:
@@ -135,33 +154,147 @@ jobs:
             build/bin/release/BayesTS-*.zip
             build/bin/release/BayesTS-*.tar.gz
             build/bin/release/BayesTS-*.exe
+            build/bin/release/BayesTS-*.sha256
           if-no-files-found: error
+
+  # The .deb is its own job, not a third matrix entry: the Linux entry above
+  # links vcpkg's libraries, and a .deb has to link the distribution's, since
+  # its dependencies are that distribution's package names. The runner is
+  # pinned for the same reason -- ubuntu-latest moving to a new release would
+  # silently change which Ubuntu the package installs on.
+  deb:
+    name: package / deb / ubuntu 24.04
+    needs: check-tag
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      # The same list README.md gives for a Linux build, plus dpkg-dev for
+      # dpkg-shlibdeps, which is what turns the binary's sonames into the
+      # package's Depends.
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            ninja-build gfortran pkg-config dpkg-dev \
+            libarmadillo-dev libhdf5-dev libopenblas-dev
+
+      - name: Fetch HighFive
+        run: |
+          ref=$(tr -d '[:space:]' < .github/highfive-version)
+          echo "HighFive ref: $ref"
+          git clone --depth 1 --branch "$ref" \
+            https://github.com/BlueBrain/HighFive.git "$RUNNER_TEMP/highfive"
+
+      # cpack -G DEB rather than the package target: that would also write the
+      # Linux .zip and .tar.gz under the same names the vcpkg job uses, and the
+      # publish job merges every artifact into one directory.
+      - name: Configure, build and package
+        run: |
+          cmake -S . -B build/bin/release -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DHIGHFIVE_DIR="$RUNNER_TEMP/highfive" \
+            -DBAYESTS_BUILD_DOCS=OFF \
+            -DBAYESTS_BUILD_TESTS=ON \
+            -DBAYESTS_NATIVE_ARCH=OFF \
+            -DBAYESTS_BUNDLE_RUNTIME_DEPS=OFF \
+            -DBAYESTS_PACKAGE_DEB=ON
+          cmake --build build/bin/release --parallel
+          OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
+            ctest --test-dir build/bin/release --output-on-failure
+          (cd build/bin/release && cpack -G DEB)
+          dpkg-deb --info build/bin/release/bayests_*.deb
+
+      # The runner has every -dev package installed, so running the binary here
+      # would succeed whatever the .deb declares. A bare ubuntu:24.04 container
+      # has none of them: apt installs exactly what Depends names, and a missing
+      # one is a binary that cannot start. With no arguments bayests prints its
+      # usage and exits 2, so that exit code is the evidence it loaded.
+      - name: Install and run it in a clean container
+        run: |
+          docker run --rm -e DEBIAN_FRONTEND=noninteractive \
+            -v "$PWD/build/bin/release:/pkg:ro" ubuntu:24.04 bash -c '
+              set -e
+              apt-get update -qq
+              apt-get install -y -qq --no-install-recommends /pkg/bayests_*.deb
+              set +e
+              bayests
+              status=$?
+              echo "exit=$status"
+              if [ "$status" -ne 2 ]; then
+                echo "::error::expected the usage message and exit 2, got exit $status."
+                echo "Libraries the package does not bring in:"
+                ldd /usr/bin/bayests | grep "not found"
+                exit 1
+              fi'
+
+      - name: Collect the package
+        uses: actions/upload-artifact@v7
+        with:
+          name: packages-deb
+          path: |
+            build/bin/release/bayests_*.deb
+            build/bin/release/bayests_*.deb.sha256
+          if-no-files-found: error
+
+  # snap.yml builds, installs and runs the snap, and uploads it as an artifact
+  # of this run; calling it keeps one copy of those steps.
+  snap:
+    name: package / snap
+    needs: check-tag
+    uses: ./.github/workflows/snap.yml
+    with:
+      ref: ${{ github.event.inputs.tag || github.ref }}
 
   publish:
     name: publish release
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: package
+    if: startsWith(github.ref, 'refs/tags/v') || inputs.publish
+    needs: [package, deb, snap]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v7
-
       - uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
 
-      # Drafted rather than published: the release notes should be the matching
-      # section of CHANGELOG.md, and that is a human's call to make. gh comes
-      # preinstalled on the runner, so no third-party action is involved in
-      # something that holds a write token.
-      - name: Draft the release
+      # CPack writes checksums for what it packages; the snap comes from
+      # snapcraft, which does not. Fill in whatever is missing, in the same
+      # "<hash>  <name>" format, so every file on the release has one.
+      - name: Checksum what CPack did not
+        working-directory: dist
+        run: |
+          for f in *; do
+            case "$f" in *.sha256) continue ;; esac
+            [ -e "$f.sha256" ] || sha256sum "$f" > "$f.sha256"
+          done
+          ls -l
+
+      # Upload to the tag's release when it has one, whether it was made in the
+      # web page or drafted by an earlier run; `gh release view` finds drafts
+      # too. Only when there is none is a draft created, rather than a published
+      # release: its notes should be the matching section of CHANGELOG.md, and
+      # that is a human's call to make. gh comes preinstalled on the runner, so
+      # no third-party action is involved in something that holds a write token.
+      - name: Attach the packages
+        working-directory: dist
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
-          ls -l dist
-          gh release create "${{ github.ref_name }}" dist/* \
-            --draft \
-            --title "BayesTS ${{ github.ref_name }}" \
-            --notes "Draft. Replace this with the ${{ github.ref_name }} section of CHANGELOG.md before publishing."
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG exists; uploading to it."
+            gh release upload "$TAG" * --clobber
+          else
+            echo "No release for $TAG; drafting one."
+            gh release create "$TAG" * \
+              --draft \
+              --verify-tag \
+              --title "BayesTS $TAG" \
+              --notes "Draft. Replace this with the $TAG section of CHANGELOG.md before publishing."
+          fi

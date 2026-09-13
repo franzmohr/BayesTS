@@ -861,6 +861,34 @@ Produces `BayesTS-0.1.0-src.zip` and `.tar.gz`. The ignore list drops the build
 tree, `.git/`, `CMakeUserPresets.json` and every `*.h5`, since model files are
 derived data and run to hundreds of megabytes.
 
+**Debian package (Linux)**
+
+A `.deb` is built only when asked for. Its dependencies are package names, worked
+out from the libraries the binary loads, so it is only correct for a build
+against the distribution's own libraries — the one *Linux* above describes, not
+a vcpkg one. Add the switch to that configure and ask CPack for the `DEB`
+generator alone:
+
+```bash
+sudo apt install dpkg-dev
+
+cmake -S . -B build/bin/linux-deb -G Ninja \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DHIGHFIVE_DIR="$HOME/src/highfive" \
+    -DBAYESTS_BUILD_DOCS=OFF \
+    -DBAYESTS_PACKAGE_DEB=ON
+cmake --build build/bin/linux-deb
+(cd build/bin/linux-deb && cpack -G DEB)
+
+sudo apt install ./build/bin/linux-deb/bayests_0.1.0_ubuntu24.04_amd64.deb
+```
+
+The file name carries the distribution and release it was built on, because the
+dependencies are that release's package names: `libhdf5-103-1t64` exists on
+Ubuntu 24.04 and on nothing older. On another release apt refuses the package
+with unmet dependencies instead of installing a binary that cannot start. It
+installs `/usr/bin/bayests`, and uninstalls with `sudo apt remove bayests`.
+
 **Snap package (Linux)**
 
 `snap/snapcraft.yaml` builds `bayests` as a strictly confined snap for amd64 and
@@ -909,6 +937,33 @@ The `stage-packages` sonames — `libarmadillo12`, `libhdf5-103-1t64` — are th
 of `core24`, meaning Ubuntu 24.04, and are what a base bump breaks first. A name
 that no longer exists fails at pull with *package not found*; `ldd
 prime/usr/bin/bayests` and `dpkg -S` on what it names give the replacements.
+
+**Releases on GitHub**
+
+Pushing a tag `v<version>` runs `.github/workflows/release.yml`. It refuses a
+tag that differs from `project(VERSION ...)`, then builds, tests and packages:
+
+| Job | Files |
+| --- | --- |
+| Windows (MSYS2) | `BayesTS-<version>-Windows-AMD64.zip`, `.tar.gz`, `.exe` |
+| Linux (vcpkg) | `BayesTS-<version>-Linux-x86_64.zip`, `.tar.gz` |
+| Debian package (Ubuntu 24.04) | `bayests_<version>_ubuntu24.04_amd64.deb` |
+| Snap (`snap.yml`) | `bayests_<version>_amd64.snap` |
+
+Each file is attached with a `.sha256` beside it. Before the `.deb` is accepted,
+it is installed into a clean `ubuntu:24.04` container and run there. That
+container has none of the build's libraries, so a dependency the package fails to
+declare fails the job. The snap is installed and run the same way by `snap.yml`.
+
+If the tag already has a release, the files are uploaded to it, replacing any of
+the same name. Otherwise the workflow creates a draft titled `BayesTS
+v<version>`. Replace its notes with the version's `CHANGELOG.md` section, then
+publish it. Nothing is published unless every job succeeded.
+
+To build and attach the packages for a tag that already exists, run the workflow
+from the Actions tab with that tag and *publish* ticked. It builds the tag's own
+source, so a tag older than one of the packages — `v0.1.0` has no `.deb` switch —
+fails that job and attaches nothing.
 
 **Portable binaries and `-march=native`**
 

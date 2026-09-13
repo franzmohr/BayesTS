@@ -739,6 +739,48 @@ if(WIN32)
     endif()
 else()
     set(CPACK_GENERATOR "TGZ;ZIP")
+
+    # A .deb names its dependencies as the distribution's packages, derived
+    # from the sonames the binary loads, so it is only right when the binary
+    # was linked against those packages -- the libarmadillo-dev and
+    # libhdf5-dev build. Linked against vcpkg it would either depend on
+    # libraries no package provides or declare nothing about them, and a
+    # configure cannot tell which kind of build it is looking at. Hence a
+    # switch rather than a default.
+    option(BAYESTS_PACKAGE_DEB
+        "Also package a .deb (only for a build against the distribution's own libraries)" OFF)
+
+    if(BAYESTS_PACKAGE_DEB)
+        find_program(BAYESTS_DPKG_SHLIBDEPS dpkg-shlibdeps)
+        if(NOT BAYESTS_DPKG_SHLIBDEPS)
+            message(FATAL_ERROR
+                "BAYESTS_PACKAGE_DEB needs dpkg-shlibdeps to work out the "
+                "package's dependencies: apt install dpkg-dev")
+        endif()
+        execute_process(COMMAND dpkg --print-architecture
+            OUTPUT_VARIABLE _bayests_deb_arch
+            OUTPUT_STRIP_TRAILING_WHITESPACE)
+        cmake_host_system_information(RESULT _bayests_distro_id
+            QUERY DISTRIB_ID)
+        cmake_host_system_information(RESULT _bayests_distro_version
+            QUERY DISTRIB_VERSION_ID)
+
+        list(APPEND CPACK_GENERATOR "DEB")
+        set(CPACK_DEBIAN_PACKAGE_NAME "bayests")
+        set(CPACK_DEBIAN_PACKAGE_MAINTAINER "Franz X. Mohr <franz.x.mohr@outlook.com>")
+        set(CPACK_DEBIAN_PACKAGE_SECTION "science")
+        set(CPACK_DEBIAN_PACKAGE_HOMEPAGE "https://github.com/franzmohr/BayesTS")
+        set(CPACK_DEBIAN_PACKAGE_ARCHITECTURE "${_bayests_deb_arch}")
+        set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
+
+        # The dependencies are one release's package names -- libhdf5-103-1t64
+        # exists on Ubuntu 24.04 and on nothing older -- so the file says which
+        # release it was built on. Anywhere else apt refuses it with unmet
+        # dependencies, rather than installing a binary that cannot start.
+        set(CPACK_DEBIAN_FILE_NAME
+            "bayests_${PROJECT_VERSION}_${_bayests_distro_id}${_bayests_distro_version}_${_bayests_deb_arch}.deb")
+        message(STATUS "Debian package: ${CPACK_DEBIAN_FILE_NAME}")
+    endif()
 endif()
 
 #####################################################################

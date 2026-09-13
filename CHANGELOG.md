@@ -128,6 +128,21 @@ Dates are ISO. Versions follow the `project(VERSION)` in `CMakeLists.txt`.
 
 ### Changed
 
+- **A release carries every package, not only the source.** `release.yml` used
+  to create a new draft release with the packages attached. A release made in the
+  web page for the same tag stayed empty beside it. The workflow now uploads to
+  the tag's release when one exists, and drafts one only when none does. It also
+  attaches a `.sha256` for every file, which the upload used to leave behind. Two
+  packages are new:
+  - a `.deb`, built on Ubuntu 24.04 against the distribution's libraries. It is
+    installed and run in a clean container before it is accepted. Build one
+    yourself with `-DBAYESTS_PACKAGE_DEB=ON`, which is off by default because a
+    vcpkg build would produce a package with the wrong dependencies.
+  - the snap, built by `snap.yml`, which `release.yml` now calls.
+
+  A manual run can attach the packages to a tag's existing release. No sampler is
+  touched, so draws are unchanged by construction.
+
 - **The Windows installer upgrades in place, under one start menu folder.** It
   used to propose `%ProgramFiles%\BayesTS` even when an earlier version was
   installed elsewhere, because it removed that version — and the registry entry
