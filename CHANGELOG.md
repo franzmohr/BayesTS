@@ -137,6 +137,20 @@ Dates are ISO. Versions follow the `project(VERSION)` in `CMakeLists.txt`.
 
 ### Fixed
 
+- **The two golden tests over one multi-model fixture no longer race under
+  `ctest -j`.** `golden.VarNormalGamma-multi_submodels_US` and `_JP` run
+  `bayests_golden` over the same file, and each staged its copy at
+  `<temp>/bayests_golden/<file name>` — the same path — so one could overwrite
+  the copy the other had open, and HDF5 failed with "unable to synchronously
+  open file". Intermittent in parallel, never serially. The same clash was
+  waiting for two recorded fixtures sharing a basename, or two build trees
+  testing at once.
+
+  Each invocation now stages into a directory of its own under
+  `<temp>/bayests_golden/`, removed when the run passes and kept, with its path
+  printed, when it fails. The fixture is still only read. Test harness only: no
+  sampler is touched and draws are unchanged.
+
 - **The local Docker harness copies out the packages it just built**, and not
   whatever else is lying in the build tree. `docker/ci.sh` globbed
   `*.tar.gz`, `*.zip` and `*.sha256` out of the Release build directory; with

@@ -46,7 +46,9 @@
 #include <cstdlib>
 #include <filesystem>
 #include <iostream>
+#include <random>
 #include <string>
+#include <system_error>
 #include <vector>
 
 namespace
@@ -147,13 +149,40 @@ int forecast_horizon(const ModelFile &file)
     return get_attribute_int(file, "/model", "h");
 }
 
+// A scratch directory of this invocation's own, under `parent`.
+//
+// ctest -j runs several of these at once, and two of them can be handed the same
+// file name: both golden tests of a multi-model fixture read one file under
+// different groups, and two recorded fixtures may share a basename. Staged into
+// a directory they shared, one process's copy_file() overwrites the file the
+// other has open, and HDF5 fails to open it -- intermittently, and never
+// serially. create_directory() refuses a name that already exists, so a clash
+// draws another name rather than sharing one. The name comes from
+// std::random_device, which leaves Armadillo's stream alone.
+std::filesystem::path make_scratch_directory(const std::filesystem::path &parent)
+{
+    std::filesystem::create_directories(parent);
+    std::random_device device;
+    for (;;)
+    {
+        char name[32];
+        std::snprintf(name, sizeof name, "run-%08x%08x", static_cast<unsigned>(device()),
+                      static_cast<unsigned>(device()));
+        std::filesystem::path scratch = parent / name;
+        if (std::filesystem::create_directory(scratch))
+        {
+            return scratch;
+        }
+    }
+}
+
 // The fixtures carry a full /posterior group, and every entry point returns
-// early when its output already exists. Copy the fixture and clear them.
+// early when its output already exists. Copy the fixture and clear them. The
+// copy is what gets written; the fixture itself is only read.
 std::filesystem::path stage_fixture(const std::filesystem::path &fixture,
                                     const std::filesystem::path &scratch,
                                     const std::string &group)
 {
-    std::filesystem::create_directories(scratch);
     std::filesystem::path staged = scratch / fixture.filename();
     std::filesystem::copy_file(fixture, staged,
                                std::filesystem::copy_options::overwrite_existing);
@@ -333,8 +362,17 @@ int main(int argc, char *argv[])
         return 2;
     }
 
-    const std::filesystem::path scratch =
-        std::filesystem::temp_directory_path() / "bayests_golden";
+    std::filesystem::path scratch;
+    try
+    {
+        scratch = make_scratch_directory(std::filesystem::temp_directory_path() /
+                                         "bayests_golden");
+    }
+    catch (const std::exception &e)
+    {
+        std::cerr << "Error creating a scratch directory: " << e.what() << '\n';
+        return 1;
+    }
 
     int failures = 0;
     for (const std::string &fixture : fixtures)
@@ -348,6 +386,18 @@ int main(int argc, char *argv[])
             std::cerr << "Error processing " << fixture << ": " << e.what() << '\n';
             ++failures;
         }
+    }
+
+    // A directory per run would pile up, so a clean one is removed. A failed one
+    // is kept: what the model wrote into the copy is the evidence.
+    if (failures == 0)
+    {
+        std::error_code ignored;
+        std::filesystem::remove_all(scratch, ignored);
+    }
+    else
+    {
+        std::cerr << "Staged copies kept in " << scratch.string() << '\n';
     }
     return failures == 0 ? 0 : 1;
 }
