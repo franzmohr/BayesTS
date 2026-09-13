@@ -197,6 +197,31 @@ Dates are ISO. Versions follow the `project(VERSION)` in `CMakeLists.txt`.
 
 ### Changed
 
+- **The time-varying models hold their Psi path and error precisions one block
+  per period.** All four time-varying models with a covariance block kept Psi as
+  a `(k tt)` square block diagonal. `VarTvpStochvol` and `VecTvpStochvol` also
+  kept the error precision and the volatilities that way, formed
+  `Psi' Omega Psi` over the whole diagonal as a dense product on every draw, and
+  scored their BVS candidates against a `(k tt)` square quadratic form. At
+  `k = 6`, `tt = 500` each such matrix is 72 MB of mostly zeros, and the product
+  is of order `(k tt)^3` a draw. All three are now `k x k` blocks stacked per
+  period, `stacked_identity()` in `model_support.h`, the layout `VarTvpGamma`
+  already used for its precision. The product is `tt` small ones, and the
+  quadratic forms are sums over periods.
+
+  *Draws are unchanged* for `VarTvpGamma` and `VecTvpGamma`: their fingerprints
+  are byte-identical, since only where Psi is stored moved. *Draws change by a
+  rounding error* for `VarTvpStochvol` and `VecTvpStochvol` with a covariance
+  block, where the product is now summed block by block. The worst relative
+  difference over their four fixtures is 6.7e-13. Without a covariance block they
+  are byte-identical.
+
+- **The README says `seed` fixes the draws on a single thread only.** The table
+  of `/model` attributes said a seed "fixes the run's draws". The program uses
+  every core unless told otherwise, and the samplers are only reproducible with
+  `OMP_NUM_THREADS=1` and `OPENBLAS_NUM_THREADS=1`. The agent documentation
+  already said so.
+
 - **A release carries every package, not only the source.** `release.yml` used
   to create a new draft release with the packages attached. A release made in the
   web page for the same tag stayed empty beside it. The workflow now uploads to
@@ -268,6 +293,111 @@ Dates are ISO. Versions follow the `project(VERSION)` in `CMakeLists.txt`.
   covers both spellings, the precedence when a file has both, and that refusal.
 
 ### Fixed
+
+- **BVS draws its inclusion indicators from their posterior.** `bvs_sweep()`
+  set an indicator to one when `l1 - l0` exceeded the log of a uniform, which is
+  inclusion with probability `min(1, exp(l1 - l0))` rather than
+  `exp(l1) / (exp(l0) + exp(l1))`. It also visited a position only with the
+  prior probability of the state it was already in, and scored every candidate
+  against the mask as it stood before the sweep began. The chain that made did
+  not have the posterior as its stationary distribution. At a prior inclusion
+  probability of 0.5 and a likelihood ratio of one, a position once included
+  stayed in for ever, where the posterior is 0.5. At a prior of 0.1 it spent
+  53% of its draws included, where the posterior is 10%. The rule came over
+  from bvartools' original `bvs.cpp`.
+
+  Each indicator is now drawn from its full conditional (Korobilis, 2013): every
+  selected position in every sweep, in random order, conditioned on the mask as
+  it stands at that point, including the positions visited earlier in the same
+  sweep. The logistic is taken in logs, so a log likelihood difference in the
+  hundreds cannot overflow. `unit.bvs` runs the sweep against a likelihood whose
+  posterior over two dependent indicators is known in closed form. Both scopes
+  reproduce that four-cell table to within 0.006, and a flat likelihood returns
+  its prior.
+
+  *Draws change* for every model configured with `varsel = bvs`: the six VARs,
+  the two quantile VARs and the six VECs that offer it, on the coefficients and,
+  where there is one, on the covariance block. The indicators, and through the
+  mask every block drawn after them, now follow the posterior they are named
+  for. Of the 91 fixtures, the 22 that select by BVS moved and the other 69 are
+  byte-identical. That comparison covers this entry and the next one together.
+  bvartools vendors `core/algorithms/bvs.h` and has to take the same change.
+
+- **BVS over the covariance block ignored the data in the four
+  constant-coefficient models that have one.** `VarNormalGamma`,
+  `VarNormalStochvol`, `VecNormalGamma` and `VecNormalStochvol` copied the psi
+  block's regressors before the chain started, while they were still zero, and
+  scored every selection candidate against that copy. Every candidate had the
+  same likelihood, so the indicators were a function of the prior alone. The
+  psi draw also ignored them and was only masked afterwards. The four
+  time-varying models, which keep the copy per draw, were not affected.
+
+  The regressors are now kept once they hold the current draw's errors, and the
+  psi draw is made against them masked by the indicators, as the coefficient
+  block in the same files already was. In `unit.bvs`, against errors whose
+  correlation the data leave no doubt about, a prior inclusion probability of
+  0.1 now gives a posterior inclusion of 1.000. Against independent errors a
+  prior of 0.5 now gives 0.029. Both models used to return their prior.
+
+  *Draws change* for those four models configured with both `bvs` and a
+  covariance block (`gamma+covar` or `sv+covar`).
+
+- **The time-varying models scored every period of their log likelihood under
+  the last period's error precision.** `VarTvpStochvol` and `VecTvpStochvol`
+  always, and `VarTvpGamma` and `VecTvpGamma` when a covariance block makes the
+  precision drift. Their readers handed the log likelihood the precision of
+  period `tt` alone, and every observation was scored under it. That is the
+  likelihood of a model whose volatility or covariance does not move, not of
+  the model that was estimated, so a WAIC or LOO computed from
+  `/posterior/loglik` compared the wrong thing. The stochastic volatility DFMs
+  and the constant-coefficient stochastic volatility models already scored each
+  period under its own precision.
+
+  The readers now pass the whole stored path, and each period is scored under
+  its own block. The forecast still starts from the last period, as it should.
+  A precision of a height that is neither one matrix nor one per period is
+  refused rather than silently truncated by a reshape.
+
+  *Draws are unchanged*; the log likelihood changes. Across the fixtures only
+  `/posterior/loglik` moved: substantively in the 14 `VarTvpStochvol` and
+  `VecTvpStochvol` fixtures and the four `*TvpGamma` ones with a covariance
+  block, by a relative difference of up to 1.2 in a summary statistic.
+
+- **The determinant term of the Gaussian log likelihoods no longer underflows.**
+  Thirteen samplers formed `-log(det(Sigma)) / 2` by inverting the precision and
+  taking the log of the determinant of the result. That is a product of `k`
+  variances, and it reaches zero, and the log minus infinity, once `k` and the
+  scale of the data are modest together. It is now `log|Sigma^-1| / 2` through a
+  Cholesky in logs, `half_log_det_precision()` in `model_support.h`, which also
+  refuses a precision that is not positive definite by name.
+
+  *Draws are unchanged*; the log likelihood changes by a rounding error. In the
+  24 fixtures this entry moves on its own, `/posterior/loglik` differs by at most
+  2.2e-16 relative. It was measured in the same comparison as the previous
+  entry, whose fixtures it also touches.
+
+- **SSVS includes a coefficient far from zero instead of excluding it.**
+  `ssvs_sweep()` formed the spike and slab densities at the current draw and
+  divided one by their sum. For a coefficient many slab widths from zero both
+  are zero in double precision. The inclusion probability was then NaN, the
+  draw against it failed, and the coefficient the data most want in was
+  excluded, its prior precision set to the spike's. The log odds are now formed
+  in logs and put through the same logistic BVS uses,
+  `inclusion_probability()` in `core/algorithms/inclusion_probability.h`.
+  `unit.ssvs` checks the inclusion frequency against the closed form, and that a
+  coefficient at 50 slab widths is included in every sweep.
+
+  The sweep also visited the indicators in a fresh random order. Given the
+  coefficients they are independent, so the order changed nothing but which
+  uniform went to which position, and cost a permutation per draw. They are now
+  drawn in the order listed.
+
+  *Draws change* for the four models configured with `varsel = ssvs`
+  (`VarNormalWishart`, `VarNormalGamma`, `VecNormalWishart`, `VecNormalGamma`).
+  Where no density underflowed, only the assignment of random numbers to
+  positions differs and the posterior is the same. Where one did, the
+  coefficient is now included as it should be. Of the 91 fixtures, the five that
+  select by SSVS moved and the other 86 are byte-identical.
 
 - **A cointegration prior matrix that is not symmetric is refused.** A constant
   VEC checked only that `/priors/beta/p_tau_inv` was `k_beta` square, so a
