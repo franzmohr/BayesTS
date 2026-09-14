@@ -302,17 +302,57 @@ std::string get_attribute_string(const ModelFile &file, const std::string &group
 	}
 }
 
-// Get double attribute from group
+// Get boolean attribute from group
 bool get_attribute_bool(const ModelFile &file, const std::string &group_name, const std::string &attr_name)
 {
 	try {
 		HighFive::Group group = file.getGroup(group_name);
 		HighFive::Attribute attr = group.getAttribute(attr_name);
+		const HighFive::DataType type = attr.getDataType();
+
+		// HDF5 has no boolean type, so the encoding is read rather than assumed.
+		// h5py and HighFive write an enumeration with the members FALSE and TRUE;
+		// R's hdf5r writes a logical as an enumeration over an unsigned byte with
+		// a third member, NA. Converted through HighFive's bool, that enumeration
+		// came back false whatever it held, so /model/structural = TRUE from
+		// bvartools reached the samplers as false. An enumeration is therefore
+		// read in its own type and decided by the name of its member.
+		if (type.getClass() == HighFive::DataTypeClass::Enum) {
+			if (type.getSize() > sizeof(long long)) {
+				throw std::runtime_error("enumeration of " + std::to_string(type.getSize()) +
+				                         " bytes is too wide for a boolean");
+			}
+			std::vector<unsigned char> raw(type.getSize(), 0);
+			if (H5Aread(attr.getId(), type.getId(), raw.data()) < 0) {
+				throw std::runtime_error("its value could not be read");
+			}
+			char member[32];
+			if (H5Tenum_nameof(type.getId(), raw.data(), member, sizeof(member)) < 0) {
+				throw std::runtime_error("its value is not a member of its enumeration");
+			}
+			const std::string name(member);
+			if (name == "TRUE") {
+				return true;
+			}
+			if (name == "FALSE") {
+				return false;
+			}
+			throw std::runtime_error("its value is '" + name + "', which is neither TRUE nor FALSE");
+		}
+
+		// An integer, as a writer without a boolean at hand stores one.
+		if (type.getClass() == HighFive::DataTypeClass::Integer) {
+			long long value;
+			attr.read(value);
+			return value != 0;
+		}
+
 		bool value;
 		attr.read(value);
 		return value;
 	}
-	catch (const HighFive::Exception &e) {
+	// HighFive's exceptions and the refusals above alike.
+	catch (const std::exception &e) {
 		throw std::runtime_error("Failed to read boolean attribute '" + attr_name +
 		                         "' from group '" + file.resolve(group_name) + "': " + std::string(e.what()));
 	}
