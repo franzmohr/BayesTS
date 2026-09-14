@@ -27,56 +27,6 @@ Dates are ISO. Versions follow the `project(VERSION)` in `CMakeLists.txt`.
 New entries go here, under an `### Added`, `### Changed` or `### Fixed`
 heading, and move down into a version section when one is cut.
 
-### Fixed
-
-- **A time-varying coefficient path leaves its starting values.** Every
-  time-varying block drew its path with the simulation smoother centred on the
-  previous draw of the state before the sample, `a0`, with the random walk's own
-  innovation variance as the prior covariance of the first period, then drew
-  that variance, then `a0` given the path. Each step is a valid conditional, but
-  together they tie the first period and `a0` to each other with the innovation
-  variance, and a path meant to move slowly has a small one. At a prior rate of
-  1e-12 the chain could not move the level of a path at all: two chains of
-  `VarTvpGamma` started at 0 and at 5 ended exactly 5 apart, and what the
-  samplers reported as the posterior of the coefficients was the starting path.
-  A time-varying VEC kept its loadings where the host had initialised them while
-  its cointegration vectors moved, which in the global VEC models of a downstream
-  package left sub-models without error correction and the solved models
-  explosive.
-
-  The path is now drawn with `a0` integrated out of the first period's prior,
-  `N(mu_0, V_0 + Sigma)`, and `a0` is drawn from its conditional on that path
-  before the innovation variance, which conditions on it. The order is part of
-  the fix: this is a partially collapsed Gibbs sampler, which preserves the
-  posterior only in that order. The smoother itself is unchanged.
-  `initial_state_variance()` in `src/core/models/model_support.h` sets it out.
-  It covers the coefficient and covariance blocks of `VarTvpAld`, `VarTvpGamma`,
-  `VarTvpStochvol`, `VarTvpWishart`, `VecTvpGamma`, `VecTvpStochvol` and
-  `VecTvpWishart`, and the loadings and transition of `DfmTvpGamma` and
-  `DfmTvpStochvol` through `draw_random_walk_state()`, which now draws the state
-  before the sample first. The cointegration block, whose innovation variance is
-  fixed at the identity, and the log-volatilities are not changed.
-
-  **The prior precision of the state before the sample must now be positive
-  definite** for every time-varying block (`/priors/a`, `/priors/psi`,
-  `/priors/lambda`), since the draw takes its inverse. `validate()` refuses a
-  zero, singular or indefinite one. `agents/` says so.
-
-  **Draws change** for every time-varying model and for nothing else. Verified
-  with `record_fingerprints.sh` before and after on the same machine and build:
-  43 of 91 fixtures moved, every one of them a `VarTvp*` (18), `VecTvp*` (21) or
-  `DfmTvp*` (4) fixture, and all 48 fixtures of constant-coefficient models are
-  unchanged. The new numbers are the right ones because the old ones did not
-  depend on the data where the innovation variance was small: the new
-  `unit.tvp_initial_state` runs `VarTvpGamma` with its covariance block and
-  `VecTvpWishart` from starts 5 apart and requires the posterior means to agree
-  to 0.25 and, for the VAR, to lie within 0.25 of the coefficients the data were
-  simulated from. Against the previous core it fails all seven of its checks
-  that concern the draw or the refusal.
-
-  **Downstream:** the vendored core in bvartools needs the refresh, and the
-  DFM subset vendored by dfmtools does too.
-
 ## 0.2.0 — 2026-09-14
 
 ### Added
@@ -364,6 +314,54 @@ heading, and move down into a version section when one is cut.
   covers both spellings, the precedence when a file has both, and that refusal.
 
 ### Fixed
+
+- **A time-varying coefficient path leaves its starting values.** Every
+  time-varying block drew its path with the simulation smoother centred on the
+  previous draw of the state before the sample, `a0`, with the random walk's own
+  innovation variance as the prior covariance of the first period, then drew
+  that variance, then `a0` given the path. Each step is a valid conditional, but
+  together they tie the first period and `a0` to each other with the innovation
+  variance, and a path meant to move slowly has a small one. At a prior rate of
+  1e-12 the chain could not move the level of a path at all: two chains of
+  `VarTvpGamma` started at 0 and at 5 ended exactly 5 apart, and what the
+  samplers reported as the posterior of the coefficients was the starting path.
+  A time-varying VEC kept its loadings where the host had initialised them while
+  its cointegration vectors moved, which in the global VEC models of a downstream
+  package left sub-models without error correction and the solved models
+  explosive.
+
+  The path is now drawn with `a0` integrated out of the first period's prior,
+  `N(mu_0, V_0 + Sigma)`, and `a0` is drawn from its conditional on that path
+  before the innovation variance, which conditions on it. The order is part of
+  the fix: this is a partially collapsed Gibbs sampler, which preserves the
+  posterior only in that order. The smoother itself is unchanged.
+  `initial_state_variance()` in `src/core/models/model_support.h` sets it out.
+  It covers the coefficient and covariance blocks of `VarTvpAld`, `VarTvpGamma`,
+  `VarTvpStochvol`, `VarTvpWishart`, `VecTvpGamma`, `VecTvpStochvol` and
+  `VecTvpWishart`, and the loadings and transition of `DfmTvpGamma` and
+  `DfmTvpStochvol` through `draw_random_walk_state()`, which now draws the state
+  before the sample first. The cointegration block, whose innovation variance is
+  fixed at the identity, and the log-volatilities are not changed.
+
+  **The prior precision of the state before the sample must now be positive
+  definite** for every time-varying block (`/priors/a`, `/priors/psi`,
+  `/priors/lambda`), since the draw takes its inverse. `validate()` refuses a
+  zero, singular or indefinite one. `agents/` says so.
+
+  **Draws change** for every time-varying model and for nothing else. Verified
+  with `record_fingerprints.sh` before and after on the same machine and build:
+  43 of 91 fixtures moved, every one of them a `VarTvp*` (18), `VecTvp*` (21) or
+  `DfmTvp*` (4) fixture, and all 48 fixtures of constant-coefficient models are
+  unchanged. The new numbers are the right ones because the old ones did not
+  depend on the data where the innovation variance was small: the new
+  `unit.tvp_initial_state` runs `VarTvpGamma` with its covariance block and
+  `VecTvpWishart` from starts 5 apart and requires the posterior means to agree
+  to 0.25 and, for the VAR, to lie within 0.25 of the coefficients the data were
+  simulated from. Against the previous core it fails all seven of its checks
+  that concern the draw or the refusal.
+
+  **Downstream:** the vendored core in bvartools needs the refresh, and the
+  DFM subset vendored by dfmtools does too.
 
 - **A boolean attribute written from R is read as what it holds.** HDF5 has no
   boolean type. h5py and HighFive store one as an enumeration with the members
