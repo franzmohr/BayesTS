@@ -116,6 +116,32 @@ VarTvpStochvolDraws read_forecast_coefficients(const ModelFile &file,
     }
     draws.u_sigma_inv = read_precision(file, input.spec, input.train.periods(input.spec.k), true);
 
+    // Simulating the states forward reads, on top of the period they start
+    // from, how far each random walk moves per period and the two halves the
+    // precision is rebuilt from at every horizon.
+    if (input.spec.forecast_states == ForecastStates::simulate)
+    {
+        const arma::uword k = static_cast<arma::uword>(input.spec.k);
+        const arma::uword last = last_sample_period(input.train.periods(input.spec.k));
+
+        if (nparams > 0)
+        {
+            read_draws_if_present(file, "/posterior/a/sigma", draws.a_sigma);
+            read_draws_if_present(file, "/posterior/a/lambda", draws.a_lambda);
+        }
+        if (input.use_psi() && dataset_has_data(file, "/posterior/psi/coeffs"))
+        {
+            draws.psi = read_draws_at_period(file, "/posterior/psi/coeffs", last, k * k);
+            read_draws_if_present(file, "/posterior/psi/sigma", draws.psi_sigma);
+            read_draws_if_present(file, "/posterior/psi/lambda", draws.psi_lambda);
+        }
+        if (dataset_has_data(file, "/posterior/u_omega_inv/coeffs"))
+        {
+            draws.u_omega_inv = read_draws_at_period(file, "/posterior/u_omega_inv/coeffs", last, k);
+        }
+        read_draws_if_present(file, "/posterior/u_sigma_inv/sigma", draws.h_sigma);
+    }
+
     return draws;
 }
 
@@ -145,6 +171,7 @@ void write_coefficients(const ModelFile &file, const VarTvpStochvolDraws &draws)
 
     write_draws(file, "/posterior/u_omega_inv/coeffs", draws.u_omega_inv);
     write_draws(file, "/posterior/u_sigma_inv/coeffs", draws.u_sigma_inv);
+    write_draws(file, "/posterior/u_sigma_inv/sigma", draws.h_sigma);
 }
 
 } // namespace bayests::hdf5_io::var_tvp_stochvol

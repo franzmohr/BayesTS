@@ -143,9 +143,23 @@ void print_report(const std::string &algorithm, const ModelCheck &check)
 		std::cout << "  variable selection: " << bayests::to_string(spec.varsel) << "\n";
 		std::cout << "  structural: " << (spec.structural ? "yes" : "no") << "\n";
 	}
+	// The models that read forecast_states. The rest hold their states whatever
+	// it says, or have none to hold, so naming a choice for them would describe a
+	// forecast they do not make.
+	const bool reads_forecast_states =
+		algorithm == "VarTvpWishart" || algorithm == "VarTvpGamma" ||
+		algorithm == "VarTvpStochvol" || algorithm == "VarNormalStochvol" ||
+		algorithm == "DfmNormalStochvol" || algorithm == "DfmTvpGamma" ||
+		algorithm == "DfmTvpStochvol";
 	std::cout << "  forecast: "
-	          << (spec.h > 0 ? "h = " + std::to_string(spec.h) : std::string("none asked for"))
-	          << "\n";
+	          << (spec.h > 0 ? "h = " + std::to_string(spec.h) : std::string("none asked for"));
+	if (spec.h > 0 && reads_forecast_states)
+	{
+		std::cout << (spec.forecast_states == bayests::ForecastStates::hold
+		                  ? ", states held at the last sample period"
+		                  : ", states simulated forward");
+	}
+	std::cout << "\n";
 	std::cout << "  chain: " << spec.iterations << " draws kept after " << spec.burnin
 	          << " burn-in";
 	if (spec.thin > 1)

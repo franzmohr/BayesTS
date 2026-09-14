@@ -122,6 +122,20 @@ VarNormalStochvolDraws read_forecast_coefficients(const ModelFile &file,
                                                  last_sample_period(tt), k * k);
     }
 
+    // Simulating the volatility forward starts from the last in-sample
+    // log-volatility, which is the diagonal of that period's precision, and
+    // steps by the variance of its innovations.
+    if (input.spec.forecast_states == ForecastStates::simulate)
+    {
+        if (dataset_has_data(file, "/posterior/u_omega_inv/coeffs"))
+        {
+            const arma::uword k = static_cast<arma::uword>(input.spec.k);
+            const arma::uword last = last_sample_period(input.train.periods(input.spec.k));
+            draws.u_omega_inv = read_draws_at_period(file, "/posterior/u_omega_inv/coeffs", last, k);
+        }
+        read_draws_if_present(file, "/posterior/u_sigma_inv/sigma", draws.h_sigma);
+    }
+
     return draws;
 }
 
@@ -147,6 +161,7 @@ void write_coefficients(const ModelFile &file, const VarNormalStochvolDraws &dra
     }
     write_draws(file, "/posterior/u_omega_inv/coeffs", draws.u_omega_inv);
     write_draws(file, "/posterior/u_sigma_inv/coeffs", draws.u_sigma_inv);
+    write_draws(file, "/posterior/u_sigma_inv/sigma", draws.h_sigma);
 }
 
 } // namespace bayests::hdf5_io::var_normal_stochvol

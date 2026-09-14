@@ -136,6 +136,19 @@ arma::mat read_draws(const ModelFile &file, const std::string &dataset);
 arma::mat read_draws_at_period(const ModelFile &file, const std::string &dataset,
                                arma::uword period, arma::uword width);
 
+/// read_draws() where the dataset may not be there, leaving `out` alone if it is
+/// not.
+bool read_draws_if_present(const ModelFile &file, const std::string &dataset, arma::mat &out);
+
+/// Throws, naming the file, when a stochastic volatility model is asked to
+/// simulate its volatility forward from a posterior that does not hold the
+/// variance of the log-volatility innovations -- one drawn before `dataset` was
+/// written. The sampler would refuse the same draws, but could not say which
+/// file or what to do about it. A factor model asks twice, once for each of its
+/// two volatility groups.
+void require_log_volatility_variances(const ModelFile &file, const VarSpec &spec,
+                                      const std::string &dataset = "/posterior/u_sigma_inv/sigma");
+
 /// The posterior precision as a forecast or a likelihood wants it. When the
 /// precision moves with time the stored path is cut to its last in-sample
 /// period, `k` by `k` wide; when it does not, every draw is one matrix and the

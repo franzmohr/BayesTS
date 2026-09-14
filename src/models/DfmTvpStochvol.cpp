@@ -89,6 +89,10 @@ void DfmTvpStochvol::forecast(const ModelLocation &location_arg)
     }
 
     const bayests::DfmTvpStochvolInput input = io::read_input(file);
+    bayests::hdf5_io::require_log_volatility_variances(file, input.spec,
+                                                       "/posterior/u_sigma_inv/sigma");
+    bayests::hdf5_io::require_log_volatility_variances(file, input.spec,
+                                                       "/posterior/v_sigma_inv/sigma");
 
     // The loadings and the transition move with time, so the forecast
     // starts from the last in-sample period of each. The two volatility

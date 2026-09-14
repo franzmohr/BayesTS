@@ -104,6 +104,27 @@ VarTvpGammaDraws read_forecast_coefficients(const ModelFile &file,
     }
     draws.u_sigma_inv = read_precision(file, input.spec, input.train.periods(input.spec.k), input.use_psi());
 
+    // Simulating the states forward reads, on top of the period they start
+    // from, how far each random walk moves per period and -- where Psi moves the
+    // precision -- the diagonal it is rebuilt around at every horizon.
+    if (input.spec.forecast_states == ForecastStates::simulate)
+    {
+        if (nparams > 0)
+        {
+            read_draws_if_present(file, "/posterior/a/sigma", draws.a_sigma);
+            read_draws_if_present(file, "/posterior/a/lambda", draws.a_lambda);
+        }
+        if (input.use_psi() && dataset_has_data(file, "/posterior/psi/coeffs"))
+        {
+            const arma::uword k = static_cast<arma::uword>(input.spec.k);
+            const arma::uword last = last_sample_period(input.train.periods(input.spec.k));
+            draws.psi = read_draws_at_period(file, "/posterior/psi/coeffs", last, k * k);
+            read_draws_if_present(file, "/posterior/psi/sigma", draws.psi_sigma);
+            read_draws_if_present(file, "/posterior/psi/lambda", draws.psi_lambda);
+            read_draws_if_present(file, "/posterior/u_omega_inv/coeffs", draws.u_omega_inv);
+        }
+    }
+
     return draws;
 }
 
