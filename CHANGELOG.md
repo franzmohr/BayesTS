@@ -328,23 +328,50 @@ Dates are ISO. Versions follow the `project(VERSION)` in `CMakeLists.txt`.
   `v_inv = 4` and 1000 replications, the true `|Pi|` had a mean rank of 0.39
   among the posterior draws with a restricted constant, 0.31 with a restricted
   constant and trend, and 0.42 with one unmodelled random walk, against 0.50
-  (chi-square p from 1e-16 to 1e-101); with `k_beta = k` it was calibrated. The
-  normal draw is now a Metropolis–Hastings proposal, kept with probability
-  `min(1, h(B*) / h(B))` for that factor `h`, in the new `accept_coint_draw()` in
-  `core/models/vec_support.h`, with the log determinants taken through the thin
-  SVD. The new `unit.coint_jacobian` compares the posterior means of `Pi` and
-  `|Pi|` from `VecNormalWishart` and `VecKlgs2010`, in a one-equation model with a
-  restricted constant, with an exact integration on a grid: they agree within
-  1.6 Monte Carlo standard errors, where the posterior without the factor is 34
-  to 107 away. Rerun on the corrected sampler, the calibration above gives mean
-  ranks between 0.49 and 0.51 for every statistic in all four configurations,
-  with the smallest chi-square p 0.10. *Draws change* for every constant VEC with
-  `k_beta > k`: the
-  fingerprint comparison over the full suite moves exactly the 19 constant-VEC
-  fixtures, all of which restrict a constant to the cointegration space, and
-  leaves the other 72 unchanged. With `k_beta = k` no random number is drawn and
-  the draws are bit-identical, checked through bvartools from the same seed for
-  `VecNormalWishart` and `VecNormalGamma`. `VecNormalGamma` still leaves the
+  (chi-square p from 1e-16 to 1e-101); with `k_beta = k` it was calibrated.
+
+  The draw is now exact. Before every draw of `B` the loadings are given the
+  `k_beta - k` rows they lack, drawn from
+  `N(0, c^{-1} (beta' Q beta)^{-1} kron gamma^{-1} I)` independently of
+  everything else — `c = v` and `Q = P_tau^{-1}` under a proper prior, `c = 1`
+  and `Q = I` under the flat one — so that `alpha` and `beta` have the same
+  number of rows and Proposition 1 holds as written. `B` is then normal given the
+  augmented `A`, the data enter through its first `k` rows, and the auxiliary
+  rows are discarded after the draw. This is the new `augment_loadings()` in
+  `core/models/vec_support.h`, called by all four samplers. `unit.coint_jacobian`
+  compares the posterior means of `Pi` and `|Pi|` from `VecNormalWishart` and
+  `VecKlgs2010`, in a one-equation model with a restricted constant, with an
+  exact integration on a grid, under a proper and under the flat prior: they
+  agree within 3.6 Monte Carlo standard errors, where the posterior without the
+  factor is 34 to 164 away. Rerun on the new draw, the calibration above gives
+  mean ranks between 0.49 and 0.51 for every statistic in the three
+  configurations with `k_beta > k`, with the smallest chi-square p 0.07.
+
+  As first committed, the normal draw was instead a Metropolis–Hastings proposal
+  corrected by that factor, in `accept_coint_draw()`. It was right in
+  distribution and kept so few proposals on real models that the chains barely
+  moved: on the 26 country models of Dees, di Mauro, Pesaran and Smith (2007) as
+  the bgvars GVEC vignette sets them up, with `k_beta - k` from four to seven,
+  the median model repeated `beta` in 92% of its draws and one never left its
+  starting values in 10,000. The new `unit.coint_dees_us` runs `VecNormalWishart`
+  and `VecKlgs2010` on the US model of that paper (`k = 6`, `k_beta = 10`, rank
+  2, flat priors; the data are in `test/dees2007_us.h`, written by
+  `test/make_dees2007_us.R`). `beta` now moves in every draw, where it repeated in
+  62% of them; the median effective sample size of the elements of `Pi` is about
+  1,000 of 5,000 draws, where it was 682 of 10,000; the two samplers agree within
+  1.6 Monte Carlo standard errors; and the paper's Table B11 effects of foreign
+  output and inflation lie inside the 90% posterior intervals. What does not
+  improve is the slowest element, `Pi`'s column on the restricted trend, which
+  mixes no faster per draw than before, with a first-order autocorrelation of
+  0.9. Scaling the auxiliary rows by anything from 1e-4 to 1e4 did not change
+  that either.
+
+  *Draws change* for every constant VEC with `k_beta > k`: the fingerprint
+  comparison over the full suite moves exactly the 19 constant-VEC fixtures, all
+  of which restrict a constant to the cointegration space, and leaves the other
+  72 unchanged. All 301 tests pass. With `k_beta = k` no random number is drawn
+  and the draws are bit-identical, checked through bvartools from the same seed
+  for `VecNormalWishart` and `VecNormalGamma`. `VecNormalGamma` still leaves the
   cointegration space prior out of its precision draw, as documented there.
 
 - **The constant VECs no longer stop partway through a chain with

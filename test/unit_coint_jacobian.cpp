@@ -9,7 +9,8 @@
 // coordinates the prior carries |B' P_tau^-1 B|^(-(k_beta - k)/2) besides the
 // normal kernel B is drawn from, a factor of one only when k_beta = k. Without it
 // a model with a restricted constant, trend or unmodelled variable overstates
-// |Pi|; accept_coint_draw() in src/core/models/vec_support.h puts it back.
+// |Pi|. augment_loadings() in src/core/models/vec_support.h gives the loadings
+// the k_beta - k rows they lack, which makes the normal draw exact.
 //
 // The smallest model the factor matters in has one endogenous variable and a
 // constant restricted to the cointegration space: k = 1, k_beta = 2, rank 1, so
@@ -21,13 +22,18 @@
 //
 //     p(Pi | y)  proportional to  |Pi|^-1 (S + v |Pi|^2 + SSR(Pi))^(-(df + T + 1) / 2).
 //
+// Both branches of augment_loadings() are covered: v = 1, a proper prior, and
+// v = 0, the flat prior on alpha with a uniform prior on the space, for which
+// the samplers still count the rank into the Wishart's degrees of freedom and
+// the same density holds without the v |Pi|^2.
+//
 // The posterior means of both elements and of |Pi| from VecNormalWishart and
 // VecKlgs2010 are compared with the grid's, within five Monte Carlo standard
-// errors from batch means. The same posterior without the |Pi|^-1 -- what the
-// samplers drew before -- is checked to be more than ten away, so that the test
-// would have failed then. The sample is short and only weakly mean reverting,
-// which puts the origin, where the factor matters most, well inside the
-// posterior.
+// errors from batch means. For v = 1 the same posterior without the |Pi|^-1 --
+// what the samplers drew before any correction -- is checked to be more than ten
+// away, so that the test would have failed then. The sample is short and only
+// weakly mean reverting, which puts the origin, where the factor matters most,
+// well inside the posterior.
 
 #include "bayests/vec_klgs_2010.h"
 #include "bayests/vec_normal_wishart.h"
@@ -41,7 +47,6 @@ namespace
 
 constexpr int kTT = 30;          // periods
 constexpr int kKBeta = 2;        // the level and the restricted constant
-constexpr double kV = 1.0;       // cointegration space prior shrinkage v
 constexpr double kDf = 3.0;      // Wishart degrees of freedom
 constexpr double kScale = 0.1;   // Wishart scale S
 constexpr int kIterations = 60000;
@@ -107,14 +112,14 @@ bayests::VarSpec make_spec()
     return spec;
 }
 
-template <typename Input> void fill_common(Input &in, const Sample &s)
+template <typename Input> void fill_common(Input &in, const Sample &s, double v)
 {
     in.spec = make_spec();
     in.train.y = s.y;
     in.train.w = s.w;
     in.a_prior.mu = arma::vec(1, arma::fill::zeros);
     in.a_prior.v_inv = arma::mat(1, 1, arma::fill::zeros);
-    in.beta_prior.v_inv = kV;
+    in.beta_prior.v_inv = v;
     in.beta_prior.p_tau_inv = arma::eye<arma::mat>(kKBeta, kKBeta);
     in.u_sigma_prior.df = kDf;
     in.u_sigma_prior.scale = arma::mat(1, 1, arma::fill::value(kScale));
@@ -123,25 +128,25 @@ template <typename Input> void fill_common(Input &in, const Sample &s)
     in.initial.u_sigma_inv = arma::mat(1, 1, arma::fill::ones);
 }
 
-bayests::VecNormalWishartInput make_sur(const Sample &s)
+bayests::VecNormalWishartInput make_sur(const Sample &s, double v)
 {
     bayests::VecNormalWishartInput in;
-    fill_common(in, s);
+    fill_common(in, s, v);
     // The loading column holds (beta' w_t) for the starting beta, the lagged level.
     in.train.z = s.w.col(0);
     return in;
 }
 
-bayests::VecKlgs2010Input make_compact(const Sample &s)
+bayests::VecKlgs2010Input make_compact(const Sample &s, double v)
 {
     bayests::VecKlgs2010Input in;
-    fill_common(in, s);
+    fill_common(in, s, v);
     return in;
 }
 
 /// Posterior means of pi_1, pi_2 and |Pi| on a grid, with or without the
 /// Jacobian factor |Pi|^-1.
-arma::vec exact_means(const Sample &s, bool jacobian)
+arma::vec exact_means(const Sample &s, double v, bool jacobian)
 {
     const arma::mat ww = arma::trans(s.w) * s.w;
     const arma::vec b_hat = arma::solve(ww, arma::trans(s.w) * s.y);
@@ -168,7 +173,7 @@ arma::vec exact_means(const Sample &s, bool jacobian)
                 const arma::vec u = {-half + (i + 0.5) * step, -half + (j + 0.5) * step};
                 const arma::vec pi = b_hat + l_inv_t * u;
                 const double norm = arma::norm(pi);
-                double log_w = -exponent * std::log(kScale + kV * norm * norm + ssr0 + arma::dot(u, u));
+                double log_w = -exponent * std::log(kScale + v * norm * norm + ssr0 + arma::dot(u, u));
                 if (jacobian)
                 {
                     log_w -= std::log(norm);
@@ -214,7 +219,7 @@ void chain_means(const arma::mat &a, const arma::mat &beta, arma::vec &means, ar
 }
 
 void compare(const std::string &model, const arma::mat &a, const arma::mat &beta,
-             const arma::vec &exact, const arma::vec &without)
+             const arma::vec &exact, const arma::vec &without, bool require_separation)
 {
     arma::vec means, se;
     chain_means(a, beta, means, se);
@@ -227,8 +232,15 @@ void compare(const std::string &model, const arma::mat &a, const arma::mat &beta
               std::abs(z_exact) < 5.0,
               "chain " + std::to_string(means(i)) + ", exact " + std::to_string(exact(i)) +
                   ", z " + std::to_string(z_exact));
-        check(model + ": and not the one without the Jacobian", std::abs(z_without) > 10.0,
-              "without the Jacobian " + std::to_string(without(i)) + ", z " + std::to_string(z_without));
+        if (require_separation)
+        {
+            check(model + ": and not the one without the Jacobian", std::abs(z_without) > 10.0,
+                  "without the Jacobian " + std::to_string(without(i)) + ", z " + std::to_string(z_without));
+        }
+        else
+        {
+            std::cout << "         without the Jacobian " << without(i) << ", z " << z_without << "\n";
+        }
     }
 }
 
@@ -239,20 +251,25 @@ int main()
     const Sample sample = make_sample();
     bayests::NullReporter reporter;
 
-    const arma::vec exact = exact_means(sample, true);
-    const arma::vec without = exact_means(sample, false);
+    for (const double v : {1.0, 0.0})
+    {
+        const std::string prior = "v = " + std::to_string(static_cast<int>(v));
+        const arma::vec exact = exact_means(sample, v, true);
+        const arma::vec without = exact_means(sample, v, false);
+        const bool require_separation = v > 0.0;
 
-    std::cout << "VecNormalWishart, k = 1, k_beta = 2:\n";
-    arma::arma_rng::set_seed(kSeed);
-    const bayests::VecNormalWishartDraws sur =
-        bayests::VecNormalWishartSampler{}.draw_coefficients(make_sur(sample), reporter);
-    compare("VecNormalWishart", sur.a, sur.beta, exact, without);
+        std::cout << "VecNormalWishart, k = 1, k_beta = 2, " << prior << ":\n";
+        arma::arma_rng::set_seed(kSeed);
+        const bayests::VecNormalWishartDraws sur =
+            bayests::VecNormalWishartSampler{}.draw_coefficients(make_sur(sample, v), reporter);
+        compare("VecNormalWishart, " + prior, sur.a, sur.beta, exact, without, require_separation);
 
-    std::cout << "VecKlgs2010, k = 1, k_beta = 2:\n";
-    arma::arma_rng::set_seed(kSeed + 1);
-    const bayests::VecKlgs2010Draws compact =
-        bayests::VecKlgs2010Sampler{}.draw_coefficients(make_compact(sample), reporter);
-    compare("VecKlgs2010", compact.a, compact.beta, exact, without);
+        std::cout << "VecKlgs2010, k = 1, k_beta = 2, " << prior << ":\n";
+        arma::arma_rng::set_seed(kSeed + 1);
+        const bayests::VecKlgs2010Draws compact =
+            bayests::VecKlgs2010Sampler{}.draw_coefficients(make_compact(sample, v), reporter);
+        compare("VecKlgs2010, " + prior, compact.a, compact.beta, exact, without, require_separation);
+    }
 
     std::cout << (failures == 0 ? "all as expected\n" : "SOMETHING IS WRONG\n");
     return failures == 0 ? 0 : 1;

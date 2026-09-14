@@ -12,7 +12,8 @@
 //
 // How the comparison is made exact. Both samplers consume the RNG in the same
 // order and in the same amounts -- n_a standard normals for the coefficient
-// block, n_beta for the cointegration block, then the Wishart -- so seeding both
+// block, (k_beta - k) * rank for the auxiliary loadings of the cointegration
+// block and n_beta for the block itself, then the Wishart -- so seeding both
 // with the same value makes the two chains the same chain, and the only
 // differences left are the last bits of a differently associated matrix product.
 // A single draw is compared rather than a long chain for that reason: a Gibbs
