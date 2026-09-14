@@ -310,6 +310,26 @@ Dates are ISO. Versions follow the `project(VERSION)` in `CMakeLists.txt`.
 
 ### Fixed
 
+- **The constant VECs no longer stop partway through a chain with
+  `sqrtmat_sympd(): transformation failed`.** Every draw is split into a
+  semi-orthogonal factor and a scale, `alpha (alpha' alpha)^{-1/2}` and
+  `Beta (Beta' Beta)^{1/2}`, and both were computed from the eigendecomposition
+  of the cross product. That squares the condition number: a full-rank
+  `VecNormalWishart` with BVS on real data (k = 6, rank 6, k_beta = 12) drew a
+  loading matrix whose `alpha' alpha` had eigenvalues from 1e-16 to 259, and
+  Armadillo refuses any that rounds below zero — one of those models stopped at
+  draw 346, another at draw 4680, of 6000. One that rounded just above zero was
+  inverted into a factor that was not semi-orthogonal, silently. Both factors
+  now come from the thin SVD, `X = U S V'`, as `U V'` and `V S V'`: the same
+  matrices, resolved to working precision, in `reparameterise_alpha()` and the
+  new `normalise_beta()` in `core/models/vec_support.h`. `VecNormalWishart`,
+  which spelt both out inline, now calls them like `VecNormalGamma`,
+  `VecNormalStochvol` and `VecKlgs2010`. Both models run to completion.
+  *Draws change by a rounding error* in those four models: the fingerprint
+  comparison over the full suite moves exactly their 19 fixtures, by at most a
+  relative 1.2e-13 (`VecNormalStochvol-structural`), and leaves the other 72
+  unchanged.
+
 - **`OPENBLAS_NUM_THREADS` is respected.** The binary set the OpenBLAS thread
   count to the OpenMP one on every start, overwriting the variable, so
   `OPENBLAS_NUM_THREADS=1` on its own still ran BLAS on every core; only
