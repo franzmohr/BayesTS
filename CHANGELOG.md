@@ -24,6 +24,11 @@ Dates are ISO. Versions follow the `project(VERSION)` in `CMakeLists.txt`.
 
 ## Unreleased
 
+New entries go here, under an `### Added`, `### Changed` or `### Fixed`
+heading, and move down into a version section when one is cut.
+
+## 0.2.0 — 2026-09-14
+
 ### Added
 
 - **`/model/thin`, which keeps one draw in `thin` after the burn-in.** Every
@@ -831,9 +836,6 @@ Dates are ISO. Versions follow the `project(VERSION)` in `CMakeLists.txt`.
   than read from the mounted checkout, so editing it does nothing until
   `docker build` runs again. That rebuild is seconds — the `COPY` is after the
   vcpkg layer.
-
-New entries go here, under an `### Added`, `### Changed` or `### Fixed`
-heading, and move down into a version section when one is cut.
 
 ## 0.1.0 — 2026-09-12
 
