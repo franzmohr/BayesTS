@@ -149,6 +149,8 @@ void print_report(const std::string &algorithm, const ModelCheck &check)
 	const bool reads_forecast_states =
 		algorithm == "VarTvpWishart" || algorithm == "VarTvpGamma" ||
 		algorithm == "VarTvpStochvol" || algorithm == "VarNormalStochvol" ||
+		algorithm == "VecTvpWishart" || algorithm == "VecTvpGamma" ||
+		algorithm == "VecTvpStochvol" || algorithm == "VecNormalStochvol" ||
 		algorithm == "DfmNormalStochvol" || algorithm == "DfmTvpGamma" ||
 		algorithm == "DfmTvpStochvol";
 	std::cout << "  forecast: "

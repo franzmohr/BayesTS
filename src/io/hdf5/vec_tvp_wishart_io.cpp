@@ -119,6 +119,22 @@ VecTvpWishartDraws read_forecast_coefficients(const ModelFile &file,
         draws.u_sigma_inv = read_draws(file, "/posterior/u_sigma_inv/coeffs");
     }
 
+    // Simulating the states forward reads how far the coefficients move per
+    // period and which of them selection left out, and the cointegration state
+    // equation's rho where the chain drew it.
+    if (input.spec.forecast_states == ForecastStates::simulate)
+    {
+        if (n_a > 0)
+        {
+            read_draws_if_present(file, "/posterior/a/sigma", draws.a_sigma);
+            read_draws_if_present(file, "/posterior/a/lambda", draws.a_lambda);
+        }
+        if (n_beta > 0)
+        {
+            read_draws_if_present(file, "/posterior/beta/rho", draws.rho);
+        }
+    }
+
     return draws;
 }
 

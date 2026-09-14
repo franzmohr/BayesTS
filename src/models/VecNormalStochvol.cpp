@@ -89,6 +89,7 @@ void VecNormalStochvol::forecast(const ModelLocation &location_arg)
     }
 
     const bayests::VecNormalStochvolInput input = io::read_input(file);
+    bayests::hdf5_io::require_log_volatility_variances(file, input.spec);
     const bayests::VecNormalStochvolDraws draws = io::read_forecast_coefficients(file, input);
 
     bayests::NullReporter reporter;

@@ -29,6 +29,38 @@ heading, and move down into a version section when one is cut.
 
 ### Changed
 
+- **VEC forecasts simulate their states forward too.** `VecTvpWishart`,
+  `VecTvpGamma`, `VecTvpStochvol` and `VecNormalStochvol` read
+  `/model/forecast_states` like the VARs and factor models. Under `simulate`, the
+  default, each draw's loadings and short-run coefficients take a step of their
+  random walk per horizon (a BVS-excluded one staying at zero), the cointegration
+  vectors a step of their state equation `beta = rho (I_r kron P_tau) beta + eta`,
+  `eta ~ N(0, I)` -- with the chain's `rho` where it was drawn and the prior's
+  otherwise -- and Psi and the log-volatilities steps of theirs. A VEC forecast is
+  its level VAR's, and the level coefficients are not linear in those states
+  (`A_1 = A_0 + alpha beta' + Gamma_1`), so the level VAR is rebuilt from the
+  stepped states at every horizon rather than converted once;
+  `core::simulate_vec_forecast()` in `core/models/vec_support.h` does that for all
+  four. `/data/forecast/x` stays in the level layout. `hold` is the old forecast,
+  converted once and simulated by `VarNormalWishartSampler`, exactly as before.
+  `VecKlgs2010`, `VecNormalWishart` and `VecNormalGamma` have nothing that drifts.
+
+  A host calling `forecast()` directly has to hand over, besides the last-period
+  `a` and `beta`, `a_sigma`, `a_lambda`, `rho` where drawn, and as the model has
+  them the last-period `psi`, `psi_sigma`, `psi_lambda`, `u_omega_inv` and
+  `h_sigma` -- or set `hold`.
+
+  **Draws change**, in `/posterior/forecast` only, for those four models with
+  `h > 0` under `simulate`. Verified with the fingerprint comparison on one build:
+  with the default temporarily `hold`, no VEC fixture moved against the
+  recordings taken before the change; switching to `simulate` moved exactly the
+  23 forecasting fixtures of the four models (beside the 20 VAR and factor model
+  ones the default already moved), in the forecast alone, and none of the four
+  new VEC `-hold` rows. `unit.forecast_states` checks the simulated VEC forecast
+  against closed-form moments: the variance a drifting cointegration vector and a
+  drifting loading add at the first horizon, the mean `rho` and a drawn `rho`
+  imply, and the volatility accumulated by a VEC with no cointegration.
+
 - **Time-varying VAR and factor model forecasts simulate their states forward.**
   `VarTvpWishart`, `VarTvpGamma`, `VarTvpStochvol` and `VarNormalStochvol` used
   to forecast from each draw's coefficients, Psi and volatilities at the last

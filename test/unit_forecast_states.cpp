@@ -26,7 +26,15 @@
 ///     with variance s, on a unit factor, gives Var(x_2) = i s, while the fixed
 ///     loading of the first series stays at one;
 ///   - a factor model's transition: a coefficient that is a random walk from
-///     zero with variance s, from a zero last factor, gives Var(f_2) = 1 + 2 s.
+///     zero with variance s, from a zero last factor, gives Var(f_2) = 1 + 2 s;
+///   - a VEC's cointegration vector: one series with a unit loading, so the
+///     level VAR is y_t = (1 + alpha beta_t) y_{t-1}, from a last level of 10 and
+///     beta_{T+1} = rho beta_T + eta, gives mean 10 (1 + rho beta_T) and variance
+///     100 at the first horizon;
+///   - a VEC's loading: alpha a random walk from zero with variance s against
+///     beta_T = 1 gives Var(y_{T+1}) = 100 s (1 + 1);
+///   - a VEC's log-volatility: no cointegration and no lags, so y_t = y_{t-1} +
+///     u_t from zero, gives E[y_{T+i}^2] = sum_{j <= i} exp(j s / 2).
 ///
 /// These are statistical statements. Each is checked to 5 percent with enough
 /// draws that the Monte Carlo standard error is about 1 percent or less, and
@@ -40,6 +48,9 @@
 #include "bayests/var_tvp_gamma.h"
 #include "bayests/var_tvp_stochvol.h"
 #include "bayests/var_tvp_wishart.h"
+#include "bayests/vec_normal_stochvol.h"
+#include "bayests/vec_tvp_stochvol.h"
+#include "bayests/vec_tvp_wishart.h"
 
 #include <cmath>
 #include <cstdio>
@@ -363,6 +374,110 @@ void factor_coefficients_drift()
     check_close("held, Var(x_1) at horizon 2 stays 1", arma::var(held.row(2)), 1.0);
 }
 
+void vec_coefficients_drift()
+{
+    std::printf("VecTvpWishart: a cointegration vector and a loading that drift\n");
+
+    constexpr arma::uword draws = 40000;
+
+    // One series of rank one and no lagged differences: the level VAR is the
+    // single block A_1 = 1 + alpha beta, and the last level is 10.
+    bayests::VecTvpWishartInput input;
+    input.spec.k = 1;
+    input.spec.p = 1;
+    input.spec.rank = 1;
+    input.spec.k_beta = 1;
+    input.spec.h = 1;
+    input.forecast.x = arma::mat(1, 1, arma::fill::value(10.0));
+    input.beta_prior.rho = 1.0;
+
+    bayests::VecTvpWishartDraws posterior;
+    posterior.u_sigma_inv = arma::mat(1, draws, arma::fill::value(1e8));
+
+    bayests::NullReporter reporter;
+    const auto run = [&]() {
+        return bayests::VecTvpWishartSampler{}.forecast(input, posterior, reporter).values;
+    };
+
+    // The cointegration vector alone, from zero, under a unit loading.
+    posterior.a = arma::ones<arma::mat>(1, draws);
+    posterior.a_sigma = arma::zeros<arma::mat>(1, draws);
+    posterior.beta = arma::zeros<arma::mat>(1, draws);
+    const arma::mat beta_moves = run();
+    check_close("beta: E[y] at horizon 1 is 10", arma::mean(beta_moves.row(0)), 10.0);
+    check_close("beta: Var(y) at horizon 1 is 100", arma::var(beta_moves.row(0)), 100.0);
+
+    // rho reaches the step: from beta_T = 2 at rho = 0.5 the mean is 10 (1 + 1).
+    input.beta_prior.rho = 0.5;
+    posterior.beta = arma::mat(1, draws, arma::fill::value(2.0));
+    check_close("beta: rho 0.5 from 2 puts E[y] at 20", arma::mean(run().row(0)), 20.0);
+
+    // A rho the chain drew overrides the prior's.
+    posterior.rho = arma::mat(1, draws, arma::fill::value(1.0));
+    check_close("beta: a drawn rho of 1 from 2 puts E[y] at 30", arma::mean(run().row(0)), 30.0);
+    posterior.rho.reset();
+    input.beta_prior.rho = 1.0;
+
+    // The loading, from zero, against beta_T = 1 that also takes its unit step.
+    posterior.a = arma::zeros<arma::mat>(1, draws);
+    posterior.a_sigma = arma::mat(1, draws, arma::fill::value(0.5));
+    posterior.beta = arma::ones<arma::mat>(1, draws);
+    check_close("alpha: Var(y) at horizon 1 is 100 s (1 + 1)", arma::var(run().row(0)), 100.0);
+
+    input.spec.forecast_states = ForecastStates::hold;
+    check("held, Var(y) at horizon 1 is the error's alone", arma::var(run().row(0)) < 1e-3);
+}
+
+/// Both stochastic volatility VECs: one series, no cointegration and no lags,
+/// so the level VAR is a random walk and the forecast accumulates the volatility.
+template <typename Sampler, typename Input, typename Draws>
+void vec_volatility_drifts(const char *name)
+{
+    std::printf("%s: a log-volatility that is a random walk\n", name);
+
+    constexpr int h = 2;
+    constexpr arma::uword draws = 100000;
+    constexpr double s = 0.3;
+
+    Input input;
+    input.spec.k = 1;
+    input.spec.h = h;
+    input.forecast.x = arma::zeros<arma::mat>(h, 1);
+
+    Draws posterior;
+    posterior.u_omega_inv = arma::ones<arma::mat>(1, draws);
+    posterior.u_sigma_inv = posterior.u_omega_inv;
+    posterior.h_sigma = arma::mat(1, draws, arma::fill::value(s));
+
+    bayests::NullReporter reporter;
+    const arma::mat simulated = Sampler{}.forecast(input, posterior, reporter).values;
+    double expected = 0.0;
+    for (int i = 0; i < h; i++)
+    {
+        expected += std::exp((i + 1) * s / 2);
+        check_close("E[y^2] at horizon " + std::to_string(i + 1),
+                    arma::mean(arma::square(simulated.row(i))), expected);
+    }
+
+    input.spec.forecast_states = ForecastStates::hold;
+    check_close("held, E[y^2] at the last horizon is h",
+                arma::mean(arma::square(Sampler{}.forecast(input, posterior, reporter).values.row(h - 1))),
+                static_cast<double>(h));
+
+    posterior.h_sigma.reset();
+    input.spec.forecast_states = ForecastStates::simulate;
+    bool refused = false;
+    try
+    {
+        Sampler{}.forecast(input, posterior, reporter);
+    }
+    catch (const std::invalid_argument &)
+    {
+        refused = true;
+    }
+    check("simulated, a posterior without h_sigma is refused", refused);
+}
+
 } // namespace
 
 int main()
@@ -381,6 +496,11 @@ int main()
     factor_volatilities_drift<bayests::DfmTvpStochvolSampler, bayests::DfmTvpStochvolInput,
                               bayests::DfmTvpStochvolDraws>("DfmTvpStochvol");
     factor_coefficients_drift();
+    vec_coefficients_drift();
+    vec_volatility_drifts<bayests::VecNormalStochvolSampler, bayests::VecNormalStochvolInput,
+                          bayests::VecNormalStochvolDraws>("VecNormalStochvol");
+    vec_volatility_drifts<bayests::VecTvpStochvolSampler, bayests::VecTvpStochvolInput,
+                          bayests::VecTvpStochvolDraws>("VecTvpStochvol");
 
     if (failures > 0)
     {

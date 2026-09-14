@@ -593,6 +593,16 @@ bayests_add_model_fixture(VecTvpStochvol-bvs-covar VecTvpStochvol bvs  1 0 4)
 bayests_add_model_fixture(VecTvpStochvol-rho       VecTvpStochvol none 0 0 4 --coint-rho)
 bayests_add_model_fixture(VecTvpStochvol-rho-ptau  VecTvpStochvol none 0 0 4 --coint-rho --coint-p-tau)
 
+# The held forecast of the four VECs whose states drift, for the reason the
+# time-varying VARs and factor models have -hold rows: every other row takes the
+# simulated default, and these must not move when it does. The configurations
+# that read the most -- selection, a covariance block, and a drawn rho over an
+# informative P_tau where the cointegration space moves.
+bayests_add_model_fixture(VecNormalStochvol-bvs-covar-hold VecNormalStochvol bvs  1 0 4 --hold-states)
+bayests_add_model_fixture(VecTvpWishart-rho-ptau-hold      VecTvpWishart     none 0 0 4 --coint-rho --coint-p-tau --hold-states)
+bayests_add_model_fixture(VecTvpGamma-bvs-covar-hold       VecTvpGamma       bvs  1 0 4 --hold-states)
+bayests_add_model_fixture(VecTvpStochvol-rho-ptau-hold     VecTvpStochvol    none 0 0 4 --coint-rho --coint-p-tau --hold-states)
+
 #####################################################################
 # Recorded model files
 #

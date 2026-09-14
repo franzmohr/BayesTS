@@ -34,8 +34,8 @@
 //     --hold-states
 //                 writes /model/forecast_states = "hold", so the forecast keeps
 //                 the last in-sample states rather than simulating them forward.
-//                 Refused for any model but the time-varying VARs and factor
-//                 models that read it.
+//                 Refused for any model but the time-varying VARs, VECs and
+//                 factor models that read it.
 //
 // The VECs are written from a different set of dimensions and a different
 // regressor layout than the VAR models -- differences with an error correction
@@ -1770,10 +1770,13 @@ int main(int argc, char *argv[])
     }
     if (hold_states && model != "VarTvpWishart" && model != "VarTvpGamma" &&
         model != "VarTvpStochvol" && model != "VarNormalStochvol" &&
-        model != "DfmNormalStochvol" && model != "DfmTvpGamma" && model != "DfmTvpStochvol")
+        model != "VecTvpWishart" && model != "VecTvpGamma" && model != "VecTvpStochvol" &&
+        model != "VecNormalStochvol" && model != "DfmNormalStochvol" &&
+        model != "DfmTvpGamma" && model != "DfmTvpStochvol")
     {
-        std::cerr << "Only the time-varying VARs and factor models read forecast_states: expected "
-                     "one of VarTvpWishart, VarTvpGamma, VarTvpStochvol, VarNormalStochvol, "
+        std::cerr << "Only the models whose states drift read forecast_states: expected one of "
+                     "VarTvpWishart, VarTvpGamma, VarTvpStochvol, VarNormalStochvol, "
+                     "VecTvpWishart, VecTvpGamma, VecTvpStochvol, VecNormalStochvol, "
                      "DfmNormalStochvol, DfmTvpGamma, DfmTvpStochvol\n";
         return 2;
     }
@@ -1905,13 +1908,19 @@ int main(int argc, char *argv[])
                 write_vec_tvp_coint_p_tau(file);
             }
 
+            if (hold_states)
+            {
+                write_attribute<std::string>(file, "/model", "forecast_states", "hold");
+            }
+
             // coint_p_tau only when set, so the line every existing fixture
             // prints stays the one its recorded fingerprints were taken from.
             std::cout << "wrote " << dest.string() << group_suffix << " (" << model << ", varsel=" << varsel
                       << ", covar=" << covar << ", structural=" << structural << ", h=" << h
                       << ", k=" << kK << ", tt=" << kTT << ", rank=" << kVecRank
                       << ", nparams=" << nparams << ", coint_rho=" << coint_rho
-                      << (coint_p_tau ? ", coint_p_tau=1" : "") << ")\n";
+                      << (coint_p_tau ? ", coint_p_tau=1" : "")
+                      << (hold_states ? ", forecast_states=hold" : "") << ")\n";
             return 0;
         }
 
