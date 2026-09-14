@@ -89,6 +89,7 @@ void VecTvpStochvol::forecast(const ModelLocation &location_arg)
     }
 
     const bayests::VecTvpStochvolInput input = io::read_input(file);
+    bayests::hdf5_io::require_log_volatility_variances(file, input.spec);
 
     // The coefficients, the cointegration vectors and the precision all move
     // with time, so the forecast starts from the last in-sample period of

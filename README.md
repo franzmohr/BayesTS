@@ -331,7 +331,7 @@ each file in place.
 | `check` | Nothing: reads and validates each model the way a run would, reports how the file was read, and writes nothing |
 | `posterior` | All three of the below, in the order coefficients, log likelihood, forecasts |
 | `coefficients` | Posterior draws of the coefficients and the error precision |
-| `forecasts` | One forecast path per posterior draw. A time-varying VAR or factor model starts from its coefficients and volatilities in the last sample period and simulates their random walks forward, one step per horizon, unless `/model/forecast_states` is `hold`. The VECs still hold them at the last sample period for every horizon |
+| `forecasts` | One forecast path per posterior draw. A time-varying VAR, VEC or factor model starts from its coefficients and volatilities in the last sample period and simulates their random walks forward, one step per horizon, unless `/model/forecast_states` is `hold`. A VEC steps its cointegration vectors by their state equation too and rebuilds its level VAR at every horizon |
 | `loglik` | Pointwise log likelihood, draws × periods |
 
 Every command takes `--group <path>`, the group a model's tree hangs under inside
@@ -444,7 +444,7 @@ written for a simpler model still describes a valid one.
 
 | Location | Contents |
 | --- | --- |
-| `/model` (attributes) | `algorithm`, `k` endogenous variables, `iterations` kept, `burnin` discarded; optional `thin` (keep one draw in `thin` after the burn-in, default 1), `p`, `m`, `s`, `n` (lags, exogenous variables, their lags, deterministic terms), `h` forecast horizon, `forecast_states` (`simulate`, the default, or `hold`: whether the forecast of a time-varying VAR or factor model carries its random walks over the horizon or keeps them at the last sample period), `varsel` (`none`, `ssvs`, `bvs`), `structural`, `error`, `seed` (a non-negative whole number that fixes the run's draws on a single thread — set `OMP_NUM_THREADS=1` and `OPENBLAS_NUM_THREADS=1`, since the program otherwise uses every core and the draws then vary with the thread count); `rank`, `k_beta`, `n_restricted` for a VEC, `n_factors` for a factor model and `n_obs_factors` for a FAVAR |
+| `/model` (attributes) | `algorithm`, `k` endogenous variables, `iterations` kept, `burnin` discarded; optional `thin` (keep one draw in `thin` after the burn-in, default 1), `p`, `m`, `s`, `n` (lags, exogenous variables, their lags, deterministic terms), `h` forecast horizon, `forecast_states` (`simulate`, the default, or `hold`: whether the forecast of a model with time-varying coefficients or volatilities carries its random walks over the horizon or keeps them at the last sample period), `varsel` (`none`, `ssvs`, `bvs`), `structural`, `error`, `seed` (a non-negative whole number that fixes the run's draws on a single thread — set `OMP_NUM_THREADS=1` and `OPENBLAS_NUM_THREADS=1`, since the program otherwise uses every core and the draws then vary with the thread count); `rank`, `k_beta`, `n_restricted` for a VEC, `n_factors` for a factor model and `n_obs_factors` for a FAVAR |
 | `/data/train/y`, `/data/train/z` | Endogenous variables and the regressor matrix, `(tt k)` rows by `nparams` columns |
 | `/data/train/w` | A VEC's error correction term, `tt` rows by `k_beta` columns |
 | `/data/train/x` | The regressors in the compact layout, `tt` rows by one column each; read by `VecKlgs2010` in place of `z` |

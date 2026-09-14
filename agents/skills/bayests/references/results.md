@@ -14,7 +14,7 @@ A run writes back into the same file, under `/posterior` (or under
 | `/posterior/psi/lambda` | `(k*k, iterations)` | The same widening applies |
 | `/posterior/psi/sigma` | `(k(k-1)/2, iterations)` | But **not** here: the random walk's innovation variances are one per *free* element |
 | `/posterior/u_sigma_inv/coeffs` | `(k*k, iterations)`, or `(k*k*tt, iterations)` when the precision moves with time | `coefficients`. One vectorised precision matrix per draw. **This is the dataset every stage checks for** |
-| `/posterior/u_sigma_inv/sigma` | `(k, iterations)` | `coefficients`, for every stochastic volatility model — `VarNormalStochvol`, `VarTvpStochvol`, `VecNormalStochvol`, `VecTvpStochvol`, `DfmNormalStochvol` and `DfmTvpStochvol`: the variance of the log-volatility innovations, one per variable. A VAR or factor model forecast under `forecast_states = simulate` steps the volatility by it, so such a posterior drawn before it was written has to be re-drawn or forecast with `hold`. The VECs store it but still hold their volatility |
+| `/posterior/u_sigma_inv/sigma` | `(k, iterations)` | `coefficients`, for every stochastic volatility model — `VarNormalStochvol`, `VarTvpStochvol`, `VecNormalStochvol`, `VecTvpStochvol`, `DfmNormalStochvol` and `DfmTvpStochvol`: the variance of the log-volatility innovations, one per variable. A forecast under `forecast_states = simulate` steps the volatility by it, so a posterior drawn before it was written has to be re-drawn or forecast with `hold` |
 | `/posterior/v_sigma_inv/sigma` | `(n_factors, iterations)` | The same for a stochastic volatility factor model's factor innovations |
 | `/posterior/u_omega_inv/coeffs` | `(k, iterations)` for the gamma models; `(k*tt, iterations)` for the stochastic volatility and `*Ald` models | `coefficients`, for the VARs and VECs other than the Wishart ones: the **diagonal** of the precision, which is the part actually drawn. For the two `*Ald` models it is the precision of the normal mixture the sampler draws through, `1 / (tau^2 w_t u_scale)` period by period with `tau^2 = 2 / (q (1 - q))` at `quantile` `q`, and moves with the latent scales `w_t` rather than with any volatility |
 | `/posterior/u_scale/coeffs` | `(k, iterations)` | `coefficients`, for the two `*Ald` models: the scale of the asymmetric Laplace, one per equation. **`loglik` reads it**, since the density depends on it and not on the mixture precision |
@@ -37,9 +37,11 @@ and `Stochvol` algorithms — starts its forecast from the **last in-sample
 period** of each draw. What happens after that depends on the model and on
 `/model/forecast_states`.
 
-**The four time-varying VARs** (`VarTvpWishart`, `VarTvpGamma`,
-`VarTvpStochvol`, `VarNormalStochvol`) **and the three drifting factor models**
-(`DfmNormalStochvol`, `DfmTvpGamma`, `DfmTvpStochvol`) read the attribute:
+**Every model with something that drifts** reads the attribute: the four
+time-varying VARs (`VarTvpWishart`, `VarTvpGamma`, `VarTvpStochvol`,
+`VarNormalStochvol`), the four time-varying VECs (`VecTvpWishart`,
+`VecTvpGamma`, `VecTvpStochvol`, `VecNormalStochvol`) and the three drifting
+factor models (`DfmNormalStochvol`, `DfmTvpGamma`, `DfmTvpStochvol`):
 
 - `simulate`, the default: each draw's random walks take one step per horizon,
   before the observation that step generates. The coefficients step by
@@ -62,8 +64,15 @@ model, `/posterior/v_sigma_inv/sigma`) — drawn by an older BayesTS — makes
 `forecasts` exit 1 under `simulate`. Delete `/posterior` and run again, or set
 the attribute to `hold`.
 
-**The VECs** still hold every state at period `tt` whatever the attribute says,
-with the narrower intervals described under `hold`. `DfmNormalGamma` and
+**A VEC simulates in levels.** Under `simulate` its loadings and short-run
+coefficients step by `/posterior/a/sigma`, its cointegration vectors by their
+state equation `beta_t = rho (I_r kron P_tau) beta_{t-1} + eta_t`,
+`eta_t ~ N(0, I)` — with `/posterior/beta/rho` where the chain drew `rho` and
+`/priors/beta/rho` otherwise, and `/priors/beta/p_tau` — and the level VAR they
+imply is rebuilt at every horizon. `/data/forecast/x` is in the level layout
+either way.
+
+`VecKlgs2010`, `VecNormalWishart`, `VecNormalGamma`, `DfmNormalGamma` and
 `FavarNormalWishart` have nothing that drifts, so the attribute changes nothing
 for them.
 

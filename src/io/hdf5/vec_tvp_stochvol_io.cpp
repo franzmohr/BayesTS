@@ -135,6 +135,37 @@ VecTvpStochvolDraws read_forecast_coefficients(const ModelFile &file,
     }
     draws.u_sigma_inv = read_precision(file, input.spec, tt, true);
 
+    // Simulating the states forward reads how far each random walk moves per
+    // period, which coefficients selection left out, the cointegration state
+    // equation's rho where the chain drew it, and the last period of Psi and of
+    // the log-volatilities the precision is rebuilt from.
+    if (input.spec.forecast_states == ForecastStates::simulate)
+    {
+        const arma::uword k = static_cast<arma::uword>(input.spec.k);
+        if (n_a > 0)
+        {
+            read_draws_if_present(file, "/posterior/a/sigma", draws.a_sigma);
+            read_draws_if_present(file, "/posterior/a/lambda", draws.a_lambda);
+        }
+        if (n_beta > 0)
+        {
+            read_draws_if_present(file, "/posterior/beta/rho", draws.rho);
+        }
+        if (input.use_psi() && dataset_has_data(file, "/posterior/psi/coeffs"))
+        {
+            draws.psi = read_draws_at_period(file, "/posterior/psi/coeffs", last_sample_period(tt),
+                                             k * k);
+            read_draws_if_present(file, "/posterior/psi/sigma", draws.psi_sigma);
+            read_draws_if_present(file, "/posterior/psi/lambda", draws.psi_lambda);
+        }
+        if (dataset_has_data(file, "/posterior/u_omega_inv/coeffs"))
+        {
+            draws.u_omega_inv = read_draws_at_period(file, "/posterior/u_omega_inv/coeffs",
+                                                     last_sample_period(tt), k);
+        }
+        read_draws_if_present(file, "/posterior/u_sigma_inv/sigma", draws.h_sigma);
+    }
+
     return draws;
 }
 
