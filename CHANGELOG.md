@@ -310,6 +310,43 @@ Dates are ISO. Versions follow the `project(VERSION)` in `CMakeLists.txt`.
 
 ### Fixed
 
+- **The constant VECs sample the posterior of their cointegration space prior
+  when the cointegration term has more rows than the model has equations.**
+  `VecNormalWishart`, `VecNormalGamma`, `VecNormalStochvol` and `VecKlgs2010`
+  use the collapsed Gibbs sampler of Koop, León-González and Strachan (2010):
+  draw `alpha` given `beta`, change to `A = alpha (alpha' alpha)^{-1/2}` and
+  `B = beta (alpha' alpha)^{1/2}`, draw `B` given `A` from a normal. The paper
+  derives that normal for `alpha` and `beta` with the same number of rows `n`
+  (Proposition 1 and its proof), and its Section 4 notes that the algorithm does
+  not apply when the dimensions differ. With deterministic terms restricted to
+  the cointegration space or unmodelled variables in it, `k_beta > k`: the
+  exponents of the MACG density of `beta` and of the normaliser of
+  `alpha | beta` no longer cancel, nor do the two polar Jacobians, and the prior
+  in `(A, B)` is the normal kernel times `|B' P_tau^{-1} B|^{-(k_beta - k)/2}`.
+  Drawing from the normal alone overstated `|Pi|`. In a simulation-based
+  calibration of `VecNormalWishart` with `k = 2`, rank one, `T = 40`,
+  `v_inv = 4` and 1000 replications, the true `|Pi|` had a mean rank of 0.39
+  among the posterior draws with a restricted constant, 0.31 with a restricted
+  constant and trend, and 0.42 with one unmodelled random walk, against 0.50
+  (chi-square p from 1e-16 to 1e-101); with `k_beta = k` it was calibrated. The
+  normal draw is now a Metropolis–Hastings proposal, kept with probability
+  `min(1, h(B*) / h(B))` for that factor `h`, in the new `accept_coint_draw()` in
+  `core/models/vec_support.h`, with the log determinants taken through the thin
+  SVD. The new `unit.coint_jacobian` compares the posterior means of `Pi` and
+  `|Pi|` from `VecNormalWishart` and `VecKlgs2010`, in a one-equation model with a
+  restricted constant, with an exact integration on a grid: they agree within
+  1.6 Monte Carlo standard errors, where the posterior without the factor is 34
+  to 107 away. Rerun on the corrected sampler, the calibration above gives mean
+  ranks between 0.49 and 0.51 for every statistic in all four configurations,
+  with the smallest chi-square p 0.10. *Draws change* for every constant VEC with
+  `k_beta > k`: the
+  fingerprint comparison over the full suite moves exactly the 19 constant-VEC
+  fixtures, all of which restrict a constant to the cointegration space, and
+  leaves the other 72 unchanged. With `k_beta = k` no random number is drawn and
+  the draws are bit-identical, checked through bvartools from the same seed for
+  `VecNormalWishart` and `VecNormalGamma`. `VecNormalGamma` still leaves the
+  cointegration space prior out of its precision draw, as documented there.
+
 - **The constant VECs no longer stop partway through a chain with
   `sqrtmat_sympd(): transformation failed`.** Every draw is split into a
   semi-orthogonal factor and a scale, `alpha (alpha' alpha)^{-1/2}` and
