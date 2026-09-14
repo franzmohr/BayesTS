@@ -217,6 +217,13 @@ VarSpec read_spec(const ModelFile &file, const char *covar_error)
         optional_attribute_string(file, "/model", "varsel", "none"));
     spec.structural = optional_attribute_bool(file, "/model", "structural", false);
 
+    // Absent from every file written before the choice existed. Those files
+    // forecast as `hold` then and read as `simulate` now: the predictive
+    // distribution of the model the file estimates is what a forecast is for,
+    // and `hold` is there to be asked for. See ForecastStates.
+    spec.forecast_states = forecast_states_from_string(
+        optional_attribute_string(file, "/model", "forecast_states", "simulate"));
+
     if (covar_error != nullptr)
     {
         spec.covar = optional_attribute_string(file, "/model", "error", "") == covar_error;
@@ -324,6 +331,31 @@ arma::mat read_draws_at_period(const ModelFile &file, const std::string &dataset
     return arma::trans(stored.cols(period * width, (period + 1) * width - 1));
 }
 
+bool read_draws_if_present(const ModelFile &file, const std::string &dataset, arma::mat &out)
+{
+    if (!dataset_has_data(file, dataset))
+    {
+        return false;
+    }
+    out = read_draws(file, dataset);
+    return true;
+}
+
+void require_log_volatility_variances(const ModelFile &file, const VarSpec &spec,
+                                      const std::string &dataset)
+{
+    if (spec.forecast_states != ForecastStates::simulate || dataset_has_data(file, dataset))
+    {
+        return;
+    }
+    throw std::runtime_error(
+        "'" + file.resolve(dataset) +
+        "' is missing: simulating the volatility forward over the forecast horizon needs the "
+        "variance of the log-volatility innovations, and these coefficients were drawn by a "
+        "BayesTS that did not store it. Delete /posterior and run coefficients again, or set "
+        "/model/forecast_states to \"hold\" to forecast from the last in-sample volatility");
+}
+
 arma::mat read_precision(const ModelFile &file, const VarSpec &spec, arma::uword tt,
                          bool time_varying)
 {
@@ -373,7 +405,7 @@ bool is_model_attribute(const std::string &name)
         "algorithm", "k",         "iterations", "burnin",       "thin",       "p",
         "m",         "s",         "h",          "quantile",     "n",
         "rank",      "k_beta",    "n_restricted", "n_factors",  "n_obs_factors",
-        "varsel",    "structural", "error",     "seed",
+        "varsel",    "structural", "error",     "seed",       "forecast_states",
     };
     return names.count(name) > 0;
 }

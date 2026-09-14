@@ -126,6 +126,14 @@ DfmNormalStochvolDraws read_forecast_coefficients(const ModelFile &file,
                                                  static_cast<arma::uword>(input.spec.n_factors));
     }
 
+    // Simulating the two volatilities forward steps each by the variance of its
+    // log-volatility innovations.
+    if (input.spec.forecast_states == ForecastStates::simulate)
+    {
+        read_draws_if_present(file, "/posterior/u_sigma_inv/sigma", draws.u_h_sigma);
+        read_draws_if_present(file, "/posterior/v_sigma_inv/sigma", draws.v_h_sigma);
+    }
+
     return draws;
 }
 
@@ -150,6 +158,8 @@ void write_coefficients(const ModelFile &file, const DfmNormalStochvolDraws &dra
 
     write_draws(file, "/posterior/u_sigma_inv/coeffs", draws.u_sigma_inv);
     write_draws(file, "/posterior/v_sigma_inv/coeffs", draws.v_sigma_inv);
+    write_draws(file, "/posterior/u_sigma_inv/sigma", draws.u_h_sigma);
+    write_draws(file, "/posterior/v_sigma_inv/sigma", draws.v_h_sigma);
 }
 
 } // namespace bayests::hdf5_io::dfm_normal_stochvol

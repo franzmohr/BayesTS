@@ -162,6 +162,19 @@ DfmTvpStochvolDraws read_forecast_coefficients(const ModelFile &file,
 
     read_common(file, draws);
 
+    // Simulating the states forward steps each random walk by the variance of
+    // its innovations: the loadings, the transition and both log-volatilities.
+    if (input.spec.forecast_states == ForecastStates::simulate)
+    {
+        read_draws_if_present(file, "/posterior/lambda/sigma", draws.lambda_sigma);
+        if (input.use_a())
+        {
+            read_draws_if_present(file, "/posterior/a/sigma", draws.a_sigma);
+        }
+        read_draws_if_present(file, "/posterior/u_sigma_inv/sigma", draws.u_h_sigma);
+        read_draws_if_present(file, "/posterior/v_sigma_inv/sigma", draws.v_h_sigma);
+    }
+
     return draws;
 }
 
@@ -191,6 +204,8 @@ void write_coefficients(const ModelFile &file, const DfmTvpStochvolDraws &draws)
 
     write_draws(file, "/posterior/u_sigma_inv/coeffs", draws.u_sigma_inv);
     write_draws(file, "/posterior/v_sigma_inv/coeffs", draws.v_sigma_inv);
+    write_draws(file, "/posterior/u_sigma_inv/sigma", draws.u_h_sigma);
+    write_draws(file, "/posterior/v_sigma_inv/sigma", draws.v_h_sigma);
 }
 
 } // namespace bayests::hdf5_io::dfm_tvp_stochvol

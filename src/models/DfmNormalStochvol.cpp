@@ -89,9 +89,13 @@ void DfmNormalStochvol::forecast(const ModelLocation &location_arg)
     }
 
     const bayests::DfmNormalStochvolInput input = io::read_input(file);
+    bayests::hdf5_io::require_log_volatility_variances(file, input.spec,
+                                                       "/posterior/u_sigma_inv/sigma");
+    bayests::hdf5_io::require_log_volatility_variances(file, input.spec,
+                                                       "/posterior/v_sigma_inv/sigma");
 
-    // The terminal period of each volatility path is all the forecast holds
-    // the volatility at, so it is all that is read.
+    // The terminal period of each volatility path is where the forecast starts
+    // the volatility from, so it is all of the path that is read.
     const bayests::DfmNormalStochvolDraws draws = io::read_forecast_coefficients(file, input);
 
     bayests::NullReporter reporter;

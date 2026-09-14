@@ -155,8 +155,10 @@ keeps the `k` idiosyncratic variances from jointly absorbing a shock every serie
 felt at once. Both error groups take the `offset`/`shape`/`rate`/`mu`/`v_inv`
 priors `VarNormalStochvol` takes, at the width of the series and of the factors
 respectively, and `/posterior/u_sigma_inv/coeffs` widens from `k` per draw to
-`k·tt`. The forecast holds both volatilities at their last in-sample value, as
-every stochastic volatility model here does.
+`k·tt`. The forecast starts both volatilities from their last in-sample value
+and, unless `/model/forecast_states` is `hold`, simulates their random walks
+forward, as the stochastic volatility VARs do; `/posterior/u_sigma_inv/sigma` and
+`/posterior/v_sigma_inv/sigma` carry the steps.
 
 `DfmTvpGamma` moves the drift the other way round: the errors stay
 homoskedastic and it is the coefficients that follow random walks — every free
@@ -180,9 +182,10 @@ beside `mu`/`v_inv` on the state before the sample — and `/initial/lambda` and
 `/posterior/lambda/coeffs` widens from `k·n_factors` per draw to
 `k·n_factors·tt`, one vectorised loading matrix per period, and
 `/posterior/a/coeffs` the same way; `lambda/sigma` and `a/sigma` carry the two
-state variances. The forecast holds both at their last in-sample period, as every
-time-varying model here does, while the pointwise log likelihood scores every
-period under its own `Lambda_t`.
+state variances. The forecast starts both from their last in-sample period and,
+unless `/model/forecast_states` is `hold`, simulates their random walks forward --
+the free loadings only, the identifying block staying fixed -- while the
+pointwise log likelihood scores every period under its own `Lambda_t`.
 
 Two things in the numerics are worth knowing about. The factor path needed no new
 algorithm — `chan_jeliazkov_2009` already took a measurement matrix and a
@@ -328,7 +331,7 @@ each file in place.
 | `check` | Nothing: reads and validates each model the way a run would, reports how the file was read, and writes nothing |
 | `posterior` | All three of the below, in the order coefficients, log likelihood, forecasts |
 | `coefficients` | Posterior draws of the coefficients and the error precision |
-| `forecasts` | One forecast path per posterior draw. A model whose coefficients or volatilities move with time forecasts from their values in the last sample period, held for every horizon rather than simulated forward |
+| `forecasts` | One forecast path per posterior draw. A time-varying VAR or factor model starts from its coefficients and volatilities in the last sample period and simulates their random walks forward, one step per horizon, unless `/model/forecast_states` is `hold`. The VECs still hold them at the last sample period for every horizon |
 | `loglik` | Pointwise log likelihood, draws × periods |
 
 Every command takes `--group <path>`, the group a model's tree hangs under inside
@@ -441,7 +444,7 @@ written for a simpler model still describes a valid one.
 
 | Location | Contents |
 | --- | --- |
-| `/model` (attributes) | `algorithm`, `k` endogenous variables, `iterations` kept, `burnin` discarded; optional `thin` (keep one draw in `thin` after the burn-in, default 1), `p`, `m`, `s`, `n` (lags, exogenous variables, their lags, deterministic terms), `h` forecast horizon, `varsel` (`none`, `ssvs`, `bvs`), `structural`, `error`, `seed` (a non-negative whole number that fixes the run's draws on a single thread — set `OMP_NUM_THREADS=1` and `OPENBLAS_NUM_THREADS=1`, since the program otherwise uses every core and the draws then vary with the thread count); `rank`, `k_beta`, `n_restricted` for a VEC, `n_factors` for a factor model and `n_obs_factors` for a FAVAR |
+| `/model` (attributes) | `algorithm`, `k` endogenous variables, `iterations` kept, `burnin` discarded; optional `thin` (keep one draw in `thin` after the burn-in, default 1), `p`, `m`, `s`, `n` (lags, exogenous variables, their lags, deterministic terms), `h` forecast horizon, `forecast_states` (`simulate`, the default, or `hold`: whether the forecast of a time-varying VAR or factor model carries its random walks over the horizon or keeps them at the last sample period), `varsel` (`none`, `ssvs`, `bvs`), `structural`, `error`, `seed` (a non-negative whole number that fixes the run's draws on a single thread — set `OMP_NUM_THREADS=1` and `OPENBLAS_NUM_THREADS=1`, since the program otherwise uses every core and the draws then vary with the thread count); `rank`, `k_beta`, `n_restricted` for a VEC, `n_factors` for a factor model and `n_obs_factors` for a FAVAR |
 | `/data/train/y`, `/data/train/z` | Endogenous variables and the regressor matrix, `(tt k)` rows by `nparams` columns |
 | `/data/train/w` | A VEC's error correction term, `tt` rows by `k_beta` columns |
 | `/data/train/x` | The regressors in the compact layout, `tt` rows by one column each; read by `VecKlgs2010` in place of `z` |
@@ -453,7 +456,7 @@ written for a simpler model still describes a valid one.
 | `/priors/beta` | A VEC only: `p_tau_inv`, the prior precision of the cointegration space, and for the time-varying three `mu`/`v_inv` over beta before the sample and the state autoregression `rho`. `rho_min`/`rho_max`, given together, make `rho` a drawn parameter with that uniform prior instead of a fixed one, and `rho` the value the chain starts at. `p_tau`, `k_beta` square, symmetric with eigenvalues in [0, 1], is the transition of the state equation with `rho` taken out -- Koop, Leon-Gonzalez and Strachan's informative marginal prior, which centres the space on the one `p_tau` has an eigenvalue of one along; absent, the transition is `rho` alone |
 | `/priors/lambda`, `/priors/v_sigma` | A factor model only: normal `mu`/`v_inv` over the free loadings, and `shape`/`rate` for the factor innovation precisions. Under `DfmTvpGamma` the loading group is a state equation instead, `shape`/`rate` on the innovation variance beside `mu`/`v_inv` on the state before the sample, and `/priors/a` reads the same way. Under `FavarNormalWishart` the `v_sigma` group is `df`/`scale` rather than `shape`/`rate`, its state innovation precision being a matrix |
 | `/initial/…` | Starting values: `a`, `psi`, `u_sigma_inv`, `u_omega_inv`, `h`, the `*_init` states and the `*_lambda`, `*_sigma_inv` blocks the samplers that need them read; `beta` for a VEC; `lambda`, `v_sigma_inv` and, under stochastic volatility, `u_h`/`v_h` for a DFM; `lambda` and `a` are paths under `DfmTvpGamma`, beside `lambda_sigma_inv`, `lambda_init`, `a_sigma_inv` and `a_init`; under `FavarNormalWishart` `v_sigma_inv` is an `n_state` square matrix rather than a diagonal |
-| `/posterior/…` | Written by the run: `a/coeffs`, `a/lambda`, `a/sigma`, the matching `psi/…`, `u_sigma_inv/coeffs`, `u_omega_inv/coeffs`, `forecast` and `loglik`; `u_scale/coeffs`, the asymmetric Laplace scale, for the two `*Ald` models; `beta/coeffs` for a VEC, and `beta/rho` where a time-varying one put a prior on the state autoregression; `lambda/coeffs`, `factors/coeffs` and `v_sigma_inv/coeffs` for a factor model, plus `lambda/sigma` where the loadings drift. Under `FavarNormalWishart` `factors/coeffs` holds the unobserved factors alone, `v_sigma_inv/coeffs` is `n_state` squared per draw, and `forecast` is `h * (k + n_obs_factors)` rows rather than `h * k` |
+| `/posterior/…` | Written by the run: `a/coeffs`, `a/lambda`, `a/sigma`, the matching `psi/…`, `u_sigma_inv/coeffs`, `u_omega_inv/coeffs`, `forecast` and `loglik`; `u_sigma_inv/sigma`, the variance of the log-volatility innovations, for every stochastic volatility model, with `v_sigma_inv/sigma` beside it for a factor model's factor innovations; `u_scale/coeffs`, the asymmetric Laplace scale, for the two `*Ald` models; `beta/coeffs` for a VEC, and `beta/rho` where a time-varying one put a prior on the state autoregression; `lambda/coeffs`, `factors/coeffs` and `v_sigma_inv/coeffs` for a factor model, plus `lambda/sigma` where the loadings drift. Under `FavarNormalWishart` `factors/coeffs` holds the unobserved factors alone, `v_sigma_inv/coeffs` is `n_state` squared per draw, and `forecast` is `h * (k + n_obs_factors)` rows rather than `h * k` |
 
 Two conventions are worth knowing before writing a file by hand. The first is
 which way round the matrices are stored, and it is worth stating twice, because

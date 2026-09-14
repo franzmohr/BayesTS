@@ -31,6 +31,11 @@
 //                 same file can be read back by `bayests <command> --group`, so
 //                 a run over a nested model is comparable to one over a model at
 //                 the root.
+//     --hold-states
+//                 writes /model/forecast_states = "hold", so the forecast keeps
+//                 the last in-sample states rather than simulating them forward.
+//                 Refused for any model but the time-varying VARs and factor
+//                 models that read it.
 //
 // The VECs are written from a different set of dimensions and a different
 // regressor layout than the VAR models -- differences with an error correction
@@ -1647,7 +1652,7 @@ int main(int argc, char *argv[])
     {
         std::cerr << "Usage: " << argv[0]
                   << " <dest.h5> <model> <none|ssvs|bvs> <covar 0|1> <structural 0|1> <h>"
-                     " [group] [append] [--coint-rho] [--coint-p-tau]\n";
+                     " [group] [append] [--coint-rho] [--coint-p-tau] [--hold-states]\n";
         return 2;
     }
 
@@ -1666,6 +1671,7 @@ int main(int argc, char *argv[])
     bool append = false;
     bool coint_rho = false;
     bool coint_p_tau = false;
+    bool hold_states = false;
     bool bare_group_seen = false;
 
     for (int i = 7; i < argc; i++)
@@ -1675,6 +1681,13 @@ int main(int argc, char *argv[])
         if (token == "--coint-rho")
         {
             coint_rho = true;
+        }
+        else if (token == "--hold-states")
+        {
+            // /model/forecast_states = "hold": the forecast from the last
+            // in-sample states that every row forecast before simulating them
+            // forward became the default.
+            hold_states = true;
         }
         else if (token == "--coint-p-tau")
         {
@@ -1753,6 +1766,15 @@ int main(int argc, char *argv[])
     if (varsel != "none" && varsel != "ssvs" && varsel != "bvs")
     {
         std::cerr << "Unknown variable selection scheme: " << varsel << '\n';
+        return 2;
+    }
+    if (hold_states && model != "VarTvpWishart" && model != "VarTvpGamma" &&
+        model != "VarTvpStochvol" && model != "VarNormalStochvol" &&
+        model != "DfmNormalStochvol" && model != "DfmTvpGamma" && model != "DfmTvpStochvol")
+    {
+        std::cerr << "Only the time-varying VARs and factor models read forecast_states: expected "
+                     "one of VarTvpWishart, VarTvpGamma, VarTvpStochvol, VarNormalStochvol, "
+                     "DfmNormalStochvol, DfmTvpGamma, DfmTvpStochvol\n";
         return 2;
     }
     if (coint_rho && model != "VecTvpWishart" && model != "VecTvpGamma" &&
@@ -1847,10 +1869,15 @@ int main(int argc, char *argv[])
                 write_dfm_normal_gamma(file, h, x);
             }
 
+            if (hold_states)
+            {
+                write_attribute<std::string>(file, "/model", "forecast_states", "hold");
+            }
+
             std::cout << "wrote " << dest.string() << group_suffix << " (" << model << ", h=" << h
                       << ", k=" << kDfmK << ", tt=" << kTT << ", n_factors=" << kDfmN
                       << ", p=" << kDfmP << ", n_lambda=" << kDfmNLambda << ", n_a=" << kDfmNA
-                      << ")\n";
+                      << (hold_states ? ", forecast_states=hold" : "") << ")\n";
             return 0;
         }
 
@@ -1893,6 +1920,11 @@ int main(int argc, char *argv[])
 
         write_common(file, model, varsel, covar, structural, h, layout, series, z_train);
 
+        if (hold_states)
+        {
+            write_attribute<std::string>(file, "/model", "forecast_states", "hold");
+        }
+
         if (model == "VarNormalWishart")
         {
             write_var_normal_wishart(file, varsel, layout);
@@ -1928,7 +1960,8 @@ int main(int argc, char *argv[])
 
         std::cout << "wrote " << dest.string() << group_suffix << " (" << model << ", varsel=" << varsel
                   << ", covar=" << covar << ", structural=" << structural << ", h=" << h
-                  << ", k=" << kK << ", tt=" << kTT << ", nparams=" << layout.nparams << ")\n";
+                  << ", k=" << kK << ", tt=" << kTT << ", nparams=" << layout.nparams
+                  << (hold_states ? ", forecast_states=hold" : "") << ")\n";
     }
     catch (const std::exception &e)
     {

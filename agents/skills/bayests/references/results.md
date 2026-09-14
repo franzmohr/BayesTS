@@ -14,6 +14,8 @@ A run writes back into the same file, under `/posterior` (or under
 | `/posterior/psi/lambda` | `(k*k, iterations)` | The same widening applies |
 | `/posterior/psi/sigma` | `(k(k-1)/2, iterations)` | But **not** here: the random walk's innovation variances are one per *free* element |
 | `/posterior/u_sigma_inv/coeffs` | `(k*k, iterations)`, or `(k*k*tt, iterations)` when the precision moves with time | `coefficients`. One vectorised precision matrix per draw. **This is the dataset every stage checks for** |
+| `/posterior/u_sigma_inv/sigma` | `(k, iterations)` | `coefficients`, for every stochastic volatility model — `VarNormalStochvol`, `VarTvpStochvol`, `VecNormalStochvol`, `VecTvpStochvol`, `DfmNormalStochvol` and `DfmTvpStochvol`: the variance of the log-volatility innovations, one per variable. A VAR or factor model forecast under `forecast_states = simulate` steps the volatility by it, so such a posterior drawn before it was written has to be re-drawn or forecast with `hold`. The VECs store it but still hold their volatility |
+| `/posterior/v_sigma_inv/sigma` | `(n_factors, iterations)` | The same for a stochastic volatility factor model's factor innovations |
 | `/posterior/u_omega_inv/coeffs` | `(k, iterations)` for the gamma models; `(k*tt, iterations)` for the stochastic volatility and `*Ald` models | `coefficients`, for the VARs and VECs other than the Wishart ones: the **diagonal** of the precision, which is the part actually drawn. For the two `*Ald` models it is the precision of the normal mixture the sampler draws through, `1 / (tau^2 w_t u_scale)` period by period with `tau^2 = 2 / (q (1 - q))` at `quantile` `q`, and moves with the latent scales `w_t` rather than with any volatility |
 | `/posterior/u_scale/coeffs` | `(k, iterations)` | `coefficients`, for the two `*Ald` models: the scale of the asymmetric Laplace, one per equation. **`loglik` reads it**, since the density depends on it and not on the mixture precision |
 | `/posterior/beta/coeffs` | `(k_beta*rank, iterations)`, widened over `tt` for a time-varying VEC | `coefficients`, for a VEC of positive rank |
@@ -28,18 +30,42 @@ A run writes back into the same file, under `/posterior` (or under
 A factor model's `u_sigma_inv` is diagonal by assumption, so it stores `k` per
 draw rather than `k*k`, and `k*tt` where it moves with time.
 
-## What a forecast holds fixed
+## What a forecast does with drifting states
 
 Every model whose coefficients or error precision move with time — the `Tvp`
-and `Stochvol` algorithms, VAR, VEC and DFM alike — forecasts from the **last
-in-sample period** of each draw: the coefficients, loadings, `beta` and
-volatilities at period `tt`, held there for all `h` horizons. The random walks
-are **not** simulated forward. The spread of `/posterior/forecast` therefore
-carries parameter uncertainty and the future errors at the period-`tt`
-precision, but not the further drift the model allows over the horizon, so its
-intervals are narrower than the model implies — most visibly at long horizons
-of a stochastic volatility model. Read them as conditional on the end of the
-sample, not as the full predictive distribution.
+and `Stochvol` algorithms — starts its forecast from the **last in-sample
+period** of each draw. What happens after that depends on the model and on
+`/model/forecast_states`.
+
+**The four time-varying VARs** (`VarTvpWishart`, `VarTvpGamma`,
+`VarTvpStochvol`, `VarNormalStochvol`) **and the three drifting factor models**
+(`DfmNormalStochvol`, `DfmTvpGamma`, `DfmTvpStochvol`) read the attribute:
+
+- `simulate`, the default: each draw's random walks take one step per horizon,
+  before the observation that step generates. The coefficients step by
+  `/posterior/a/sigma`, `Psi` by `/posterior/psi/sigma`, a factor model's free
+  loadings by `/posterior/lambda/sigma`, and the log-volatilities by
+  `/posterior/u_sigma_inv/sigma` and, for the factor innovations,
+  `/posterior/v_sigma_inv/sigma`. A coefficient or `Psi` element that BVS
+  excluded stays at zero, and so does a factor model's identifying block of
+  loadings. `/posterior/forecast` is then the predictive distribution of the
+  estimated model, and its spread widens with the horizon.
+- `hold`: the states stay at period `tt` for all `h` horizons. The spread
+  carries parameter uncertainty and future errors at the period-`tt` precision,
+  but not the drift the model allows over the horizon. Read it as conditional on
+  no drift after the end of the sample. Every forecast was this before the
+  attribute existed.
+
+A file with no `forecast_states` reads as `simulate`. A stochastic volatility
+model whose posterior lacks `/posterior/u_sigma_inv/sigma` (or, for a factor
+model, `/posterior/v_sigma_inv/sigma`) — drawn by an older BayesTS — makes
+`forecasts` exit 1 under `simulate`. Delete `/posterior` and run again, or set
+the attribute to `hold`.
+
+**The VECs** still hold every state at period `tt` whatever the attribute says,
+with the narrower intervals described under `hold`. `DfmNormalGamma` and
+`FavarNormalWishart` have nothing that drifts, so the attribute changes nothing
+for them.
 
 ## The `mcmc` attributes
 

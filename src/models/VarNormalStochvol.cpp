@@ -89,6 +89,7 @@ void VarNormalStochvol::forecast(const ModelLocation &location_arg)
     }
 
     const bayests::VarNormalStochvolInput input = io::read_input(file);
+    bayests::hdf5_io::require_log_volatility_variances(file, input.spec);
 
     // The volatility moves with time, so the forecast starts from the last
     // in-sample period rather than from the whole stored path.

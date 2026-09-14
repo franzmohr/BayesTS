@@ -104,6 +104,14 @@ VarTvpWishartDraws read_forecast_coefficients(const ModelFile &file,
         draws.u_sigma_inv = read_draws(file, "/posterior/u_sigma_inv/coeffs");
     }
 
+    // Simulating the coefficients forward reads how far each of them moves per
+    // period, and which of them selection left out.
+    if (nparams > 0 && input.spec.forecast_states == ForecastStates::simulate)
+    {
+        read_draws_if_present(file, "/posterior/a/sigma", draws.a_sigma);
+        read_draws_if_present(file, "/posterior/a/lambda", draws.a_lambda);
+    }
+
     return draws;
 }
 

@@ -27,6 +27,90 @@ Dates are ISO. Versions follow the `project(VERSION)` in `CMakeLists.txt`.
 New entries go here, under an `### Added`, `### Changed` or `### Fixed`
 heading, and move down into a version section when one is cut.
 
+### Changed
+
+- **Time-varying VAR and factor model forecasts simulate their states forward.**
+  `VarTvpWishart`, `VarTvpGamma`, `VarTvpStochvol` and `VarNormalStochvol` used
+  to forecast from each draw's coefficients, Psi and volatilities at the last
+  sample period, held for all `h` horizons, and `DfmNormalStochvol`,
+  `DfmTvpGamma` and `DfmTvpStochvol` did the same with their loadings,
+  transition and two volatilities. That is the forecast of a model whose
+  drift stops where the sample does, not of the model estimated, and it is wrong
+  in more than width:
+  - its intervals left out the drift;
+  - a held log-volatility understated the expected variance at every step past
+    the first, since `E[exp(h_{T+i})] = exp(h_T + i sigma / 2)`;
+  - past `h = 1` the point forecast moved as well, because the mean of a
+    product of drifting coefficient matrices is not the product of held ones.
+
+  Each draw's random walks now take one step per horizon, before the observation
+  that step generates, by the innovation variances the chain drew for them. A
+  coefficient or a Psi element BVS excluded stays at zero, and only a factor
+  model's free loadings move -- the identifying block does not, in the forecast
+  as in the sample. The VECs still hold their states, and follow separately.
+  `DfmNormalGamma` and `FavarNormalWishart` have nothing that drifts.
+
+  `/model/forecast_states` chooses between the two: `simulate`, the default, or
+  `hold`, which reproduces the old forecast exactly. The attribute is new, so
+  every existing file now reads as `simulate`. A host calling `forecast()`
+  directly gets `simulate` too from `VarSpec::forecast_states`. It then has to
+  hand over the draws each sampler's header lists — `a_sigma`, `a_lambda`,
+  `psi`, `psi_sigma`, `psi_lambda`, `u_omega_inv`, `h_sigma`, and for a factor
+  model `lambda_sigma`, `u_h_sigma` and `v_h_sigma`, as the model has them — or
+  set `hold`, which reads what it always read. `bayests check` prints
+  which of the two a forecast will use.
+
+  **Draws change**, in `/posterior/forecast` only, and only for those seven
+  models with `h > 0` under `simulate`. Verified with the fingerprint comparison
+  on one build, in two steps, first for the VARs and then for the factor models:
+  - With the default temporarily `hold`, every existing fixture was unchanged
+    against the recording taken before the change, but for the new
+    `u_sigma_inv/sigma` line of the two stochastic volatility factor models,
+    which went from `absent` to written. So the held forecast is the old one
+    digit for digit, and storing the variances moves nothing.
+  - Flipping the default to `simulate` then moved exactly the 20 forecasting
+    fixtures of the seven models, in `/posterior/forecast` alone. The seven new
+    `-hold` rows and every `-nofcst` row stayed put.
+
+  `unit.forecast_states` checks the closed-form moments of the simulated
+  forecast to 5 percent: `i s` for a drifting intercept, `1 + i s` for a
+  drifting Psi element, `exp(i s / 2)` for a drifting log-volatility, and no
+  spread from a coefficient BVS excluded; for the factor models, `exp(i s / 2)`
+  through either volatility, `i s` for a drifting free loading with the
+  identifying one unmoved, and `1 + 2 s` for a drifting transition at the
+  second horizon. On the generator's fixtures run to
+  2000 draws, the forecast standard deviation of the first variable at `h = 4`
+  grows by 3 to 12 percent:
+
+  | Fixture | Held | Simulated |
+  | --- | --- | --- |
+  | `VarNormalStochvol-plain` | 1.64 | 1.70 |
+  | `VarTvpGamma-bvs-covar` | 1.63 | 1.78 |
+  | `VarTvpWishart-plain` | 1.96 | 2.18 |
+  | `VarTvpStochvol-covar` | 2.19 | 2.45 |
+
+### Added
+
+- **`VecNormalStochvol` and `VecTvpStochvol` write `/posterior/u_sigma_inv/sigma`
+  too**, `k` per draw and `h_sigma` on their draws structs, so every stochastic
+  volatility model's posterior now carries the variance of its log-volatility
+  innovations. A VEC's forecast still holds its volatility at the last in-sample
+  period and does not read it. **Draws are unchanged**: recorded before and
+  after on the same build, the 14 stochastic volatility VEC fixtures moved only
+  in that dataset, which went from `absent` to written, and the other 84 did not
+  move at all.
+
+- **`/posterior/u_sigma_inv/sigma`, the variance of the log-volatility
+  innovations**, `k` per draw, written by `VarTvpStochvol` and
+  `VarNormalStochvol` and kept in `h_sigma` on their draws structs, and by
+  `DfmNormalStochvol` and `DfmTvpStochvol` as `u_h_sigma`, beside
+  **`/posterior/v_sigma_inv/sigma`**, `n_factors` per draw, as `v_h_sigma`. The
+  chain always drew them and threw them away; simulating the volatility forward
+  steps by them. A file whose coefficients were drawn before it was stored makes
+  `forecasts` exit 1 under `simulate`, naming the dataset and saying to delete
+  `/posterior` and run again or to set `forecast_states` to `hold`. Storing it
+  draws nothing, so the chain's draws are unchanged: see the verification above.
+
 ## 0.2.0 — 2026-09-14
 
 ### Added

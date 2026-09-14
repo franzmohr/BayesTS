@@ -89,6 +89,7 @@ void VarTvpStochvol::forecast(const ModelLocation &location_arg)
     }
 
     const bayests::VarTvpStochvolInput input = io::read_input(file);
+    bayests::hdf5_io::require_log_volatility_variances(file, input.spec);
 
     // Both the coefficients and the precision move with time, so the
     // forecast starts from the last in-sample period of each.

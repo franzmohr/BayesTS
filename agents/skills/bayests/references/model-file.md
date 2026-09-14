@@ -43,6 +43,7 @@ seen from R.
 | `burnin` | int | *required* | Draws discarded before the first kept one |
 | `thin` | int | 1 | Keep one draw in `thin` after the burn-in, the last of each block. The chain runs `burnin + iterations * thin` draws and every result still holds `iterations`. At least 1 |
 | `p` | int | 0 | Lags. For a factor model, the lag order of the transition. For a VEC, a **level** order |
+| `forecast_states` | string | `simulate` | `simulate` or `hold`. Whether the forecast of a time-varying VAR or factor model carries its random walks over the horizon or keeps them at the last sample period — see `results.md`, *What a forecast does with drifting states*. The VECs hold whatever it says. Any other spelling throws |
 | `m` | int | 0 | Exogenous variables |
 | `s` | int | 0 | Lags of the exogenous variables. For a VEC, a **level** order |
 | `n` | int | 0 | Deterministic terms entering unrestricted |

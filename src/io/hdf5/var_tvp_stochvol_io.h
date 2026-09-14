@@ -26,8 +26,10 @@ VarTvpStochvolDraws read_loglik_coefficients(const ModelFile &file,
                                              const VarTvpStochvolInput &input);
 
 /// Reads posterior draws for the forecast: the last in-sample period of both
-/// the coefficient path and the precision, which is what a forecast carries
-/// forward.
+/// the coefficient path and the precision, which is where a forecast starts.
+/// Under forecast_states = simulate also the innovation variances and
+/// inclusion indicators of every random walk, and the last period of Psi and
+/// of u_omega_inv, which the precision is rebuilt from at every horizon.
 VarTvpStochvolDraws read_forecast_coefficients(const ModelFile &file,
                                                const VarTvpStochvolInput &input);
 

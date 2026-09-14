@@ -145,6 +145,17 @@ DfmTvpGammaDraws read_forecast_coefficients(const ModelFile &file, const DfmTvpG
 
     read_common(file, draws);
 
+    // Simulating the loadings and the transition forward steps each by the
+    // variance of its state innovations.
+    if (input.spec.forecast_states == ForecastStates::simulate)
+    {
+        read_draws_if_present(file, "/posterior/lambda/sigma", draws.lambda_sigma);
+        if (input.use_a())
+        {
+            read_draws_if_present(file, "/posterior/a/sigma", draws.a_sigma);
+        }
+    }
+
     return draws;
 }
 

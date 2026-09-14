@@ -181,6 +181,7 @@ void write_coefficients(const ModelFile &file, const VecTvpStochvolDraws &draws)
 
     write_draws(file, "/posterior/u_omega_inv/coeffs", draws.u_omega_inv);
     write_draws(file, "/posterior/u_sigma_inv/coeffs", draws.u_sigma_inv);
+    write_draws(file, "/posterior/u_sigma_inv/sigma", draws.h_sigma);
 }
 
 } // namespace bayests::hdf5_io::vec_tvp_stochvol

@@ -89,6 +89,11 @@ constexpr const char *kOutputs[] = {
     "/posterior/u_scale/coeffs",
     "/posterior/u_omega_inv/coeffs",
     "/posterior/u_sigma_inv/coeffs",
+    // The variance of the log-volatility innovations, which a forecast steps the
+    // volatility by. Written by the stochastic volatility VARs and factor
+    // models, and for the factor innovations of the latter by the one after it.
+    "/posterior/u_sigma_inv/sigma",
+    "/posterior/v_sigma_inv/sigma",
     "/posterior/loglik",
     "/posterior/forecast",
 };
