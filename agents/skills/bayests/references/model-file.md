@@ -99,7 +99,7 @@ A factor model needs neither: the horizon alone drives its forecast.
 | Group | Datasets | Read by |
 | --- | --- | --- |
 | `/priors/a` | `mu` `(1, nparams)`, `v_inv` `(nparams, nparams)` | Every constant-coefficient model |
-| `/priors/a` | `shape`, `rate`, `mu`, `v_inv` | Every time-varying model: `shape`/`rate` on the innovation precision of the random walk, `mu`/`v_inv` on the state before the sample |
+| `/priors/a` | `shape`, `rate`, `mu`, `v_inv` | Every time-varying model: `shape`/`rate` on the innovation precision of the random walk, `mu`/`v_inv` on the state before the sample. `v_inv` must be positive definite -- the samplers integrate that state out of the first period's prior, which takes its inverse -- so a flat prior of zeros is refused. The same holds for `/priors/psi` and `/priors/lambda` |
 | `/priors/a` | `inprior` `(1, nparams)`, `include` (one-based ints), `tau0`, `tau1` | Added when `varsel` is on. `tau0`/`tau1` for `ssvs` only |
 | `/priors/psi` | The same shapes at width `k(k-1)/2` | The models with a covariance block switched on. Every `psi` vector, here and under `/initial`, is the strict lower triangle of `Psi` **row by row** — `(1,0) (2,0) (2,1) (3,0) ...` — not column by column as R's `m[lower.tri(m)]` gives it. The two orders agree up to `k = 3`, so a writer that gets it wrong still passes on three variables |
 | `/priors/u_sigma` | `df` (scalar), `scale` `(k, k)` | The Wishart models |
