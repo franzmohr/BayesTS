@@ -27,6 +27,33 @@ Dates are ISO. Versions follow the `project(VERSION)` in `CMakeLists.txt`.
 New entries go here, under an `### Added`, `### Changed` or `### Fixed`
 heading, and move down into a version section when one is cut.
 
+### Fixed
+
+- **A boolean attribute written from R is read as what it holds.** HDF5 has no
+  boolean type. h5py and HighFive store one as an enumeration with the members
+  FALSE and TRUE, while R's hdf5r stores a logical as an enumeration over an
+  unsigned byte with a third member, NA. Read through HighFive's conversion to
+  `bool`, the R enumeration came back false whatever it held, so
+  `/model/structural = TRUE` written by bvartools reached the samplers as false.
+  - A structural VAR ran with its contemporaneous columns as ordinary
+    regressors, and `bayests check` reported `structural: no`.
+  - A structural VEC was refused, because its `z` had `k(k-1)/2` columns more
+    than its dimensions describe.
+
+  `get_attribute_bool()` now reads an enumeration in its own type and decides by
+  the name of its member, reads an integer as non-zero, and refuses R's NA.
+  `unit.bool_attributes` covers HighFive's encoding, R's (NA included) and
+  integers.
+
+  *Draws are unchanged* for every file whose booleans were written by h5py or
+  HighFive: the fingerprint comparison over the full suite (91 fixtures, 1,564
+  fingerprints) found none moved. *Draws change* for structural models written
+  from R, which now run as structural.
+  - Structural VARs: the coefficient and error precision draws are those of the
+    same regression either way, since the flag only splits `A_0` off for the
+    forecast. So the forecasts change, and the chains do not.
+  - Structural VECs: they run at all.
+
 ## 0.2.0 — 2026-09-14
 
 ### Added

@@ -150,6 +150,17 @@ if(OpenMP_CXX_FOUND)
     target_link_libraries(bayests_unit_read_path PRIVATE OpenMP::OpenMP_CXX)
 endif()
 
+# On the io layer too: that a boolean attribute reads the same whichever
+# encoding its writer chose, R's logical with its NA member among them.
+add_executable(bayests_unit_bool_attributes unit_bool_attributes.cpp)
+
+target_link_libraries(bayests_unit_bool_attributes PRIVATE bayests_hdf5_helper)
+target_link_libraries(bayests_unit_bool_attributes PRIVATE bayests_warnings)
+
+if(OpenMP_CXX_FOUND)
+    target_link_libraries(bayests_unit_bool_attributes PRIVATE OpenMP::OpenMP_CXX)
+endif()
+
 #####################################################################
 # Tests
 #
@@ -239,7 +250,7 @@ foreach(_unit vec_to_var forecast_lags forecast_regressors_io stochvol kalman ch
               inverse_gaussian truncated_normal identification
               vec_klgs_2010 vec_tvp_coint coint_prior_symmetry coint_jacobian coint_dees_us dfm_normal_gamma dfm_normal_stochvol
               dfm_tvp_gamma dfm_tvp_stochvol favar_normal_wishart var_ald thin model_group bvs ssvs
-              input_values var_normal_stochvol read_path)
+              input_values var_normal_stochvol read_path bool_attributes)
     add_test(NAME "unit.${_unit}" COMMAND "bayests_unit_${_unit}")
     set_tests_properties("unit.${_unit}" PROPERTIES
         ENVIRONMENT_MODIFICATION "${_bayests_test_env_mod}")

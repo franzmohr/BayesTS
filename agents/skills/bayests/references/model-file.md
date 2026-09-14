@@ -48,7 +48,7 @@ seen from R.
 | `n` | int | 0 | Deterministic terms entering unrestricted |
 | `h` | int | 0 | Forecast horizon. Absent or 0 means no forecast was asked for |
 | `varsel` | string | `none` | `none`, `ssvs` or `bvs`. Any other spelling throws |
-| `structural` | bool | false | Move the last `k(k-1)/2` entries of `a` to contemporaneous coefficients |
+| `structural` | bool | false | Move the last `k(k-1)/2` entries of `a` to contemporaneous coefficients. Read from an HDF5 boolean enumeration (h5py, HighFive, or an R logical, whose NA is refused) or an integer (non-zero is true) |
 | `error` | string | `""` | Descriptive, except for `gamma+covar` and `sv+covar` — see below |
 | `quantile` | double | 0.5 | The quantile an `*Ald` model estimates. Must lie in `(0, 1)`. Ignored by every other model |
 | `rank` | int | 0 | A VEC's cointegration rank. Zero means "not a cointegrated model" |
