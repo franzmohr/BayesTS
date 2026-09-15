@@ -1193,7 +1193,7 @@ the samplers are under development and the numbers a release produces are a
 property of that release:
 
 > Mohr, F. X. (2026). *BayesTS: Bayesian time series estimation in C++*.
-> Version 0.1.0. Zenodo. <https://doi.org/10.5281/zenodo.22722532>
+> Version 0.2.0. Zenodo. <https://doi.org/10.5281/zenodo.22765348>
 
 Every release is archived, and each gets its own DOI. The one above is the
 **version** DOI and is what a paper should cite, because it resolves to the
