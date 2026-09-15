@@ -291,7 +291,7 @@ heading, and move down into a version section when one is cut.
   that step generates, by the innovation variances the chain drew for them. A
   coefficient or a Psi element BVS excluded stays at zero, and only a factor
   model's free loadings move -- the identifying block does not, in the forecast
-  as in the sample. The VECs still hold their states, and follow separately.
+  as in the sample. The VEC forecasts do the same, as the entry above describes.
   `DfmNormalGamma` and `FavarNormalWishart` have nothing that drifts.
 
   `/model/forecast_states` chooses between the two: `simulate`, the default, or
