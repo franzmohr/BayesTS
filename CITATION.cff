@@ -26,8 +26,8 @@ identifiers:
     value: 10.5281/zenodo.22722531
     description: Concept DOI, resolving to the latest release
   - type: doi
-    value: 10.5281/zenodo.22722532
-    description: Version DOI for 0.1.0
+    value: 10.5281/zenodo.22765348
+    description: Version DOI for 0.2.0
 keywords:
   - Bayesian VAR
   - vector autoregression
