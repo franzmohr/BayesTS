@@ -34,11 +34,20 @@ extern "C" {
 int main(int argc, char* argv[]) {
 
 #ifdef _OPENMP
-    // Get number of available processors
+    // One thread unless OMP_NUM_THREADS asks for more. The OpenMP default is
+    // every logical core, and the OpenBLAS count below follows it: on an
+    // 8-core, 16-thread Ryzen that ran a 264-coefficient VarNormalGamma 9 times
+    // slower than one thread, the BLAS threads fighting over the physical
+    // cores. A Gibbs sweep is mostly small factorisations that threading does
+    // not pay for, and the samplers only reproduce single-threaded anyway, so
+    // throughput comes from running models side by side rather than from
+    // threading one.
+    const char *omp_env = std::getenv("OMP_NUM_THREADS");
+    if (omp_env == nullptr || *omp_env == '\0')
+    {
+        omp_set_num_threads(1);
+    }
     int num_threads = omp_get_max_threads();
-
-    // Set OpenMP threads (for Armadillo parallel operations)
-    omp_set_num_threads(num_threads);
 
     std::cout << "OpenMP threads: " << num_threads << std::endl;
 

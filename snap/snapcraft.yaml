@@ -54,14 +54,11 @@ apps:
     plugs:
       - home
       - removable-media
-    # The threads are deliberately not pinned here. test/ runs every sampler
-    # with OMP_NUM_THREADS=1 because a multi-threaded BLAS reassociates
-    # floating-point reductions and the fingerprints would not reproduce -- but
-    # that is a property of the comparison, not of the tool, and forcing it on
-    # every user would quietly make the sampler single-threaded. Anyone who
-    # needs bit-identical draws sets the two variables in their own shell:
+    # The threads are deliberately not pinned here. The binary already runs one
+    # thread when OMP_NUM_THREADS is unset, and setting it in the snap's
+    # environment would take away the one way a user has to ask for more:
     #
-    #     OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 bayests ...
+    #     OMP_NUM_THREADS=4 bayests ...
 
 parts:
   # Header-only, so there is nothing to build: the snap needs the tree at the

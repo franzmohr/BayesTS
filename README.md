@@ -1086,10 +1086,9 @@ configuration you should see:
 
 ### Controlling the thread count
 
-By default the program uses all available cores, detected at startup and
-reported on the console. `OMP_NUM_THREADS` overrides it, and sets the OpenBLAS
-thread count too unless `OPENBLAS_NUM_THREADS` is set, which then decides
-OpenBLAS's alone. That last part holds for an OpenBLAS built with pthreads, as
+By default the program runs one thread, reported on the console at startup.
+`OMP_NUM_THREADS` overrides it, and sets the OpenBLAS thread count too unless
+`OPENBLAS_NUM_THREADS` is set, which then decides OpenBLAS's alone. That last part holds for an OpenBLAS built with pthreads, as
 vcpkg's and Ubuntu's default are. One built with OpenMP, as MSYS2's is, ignores
 `OPENBLAS_NUM_THREADS` and follows `OMP_NUM_THREADS` only. The startup line
 names which kind was loaded, as in `OpenBLAS threads: 1 (pthreads)`:
@@ -1115,28 +1114,28 @@ export OMP_NUM_THREADS=4
 ./bayests posterior model.h5
 ```
 
-The count can also be fixed in the code, in [src/bayests.cpp](src/bayests.cpp):
-
-```cpp
-#ifdef _OPENMP
-    omp_set_num_threads(4);  // Use 4 threads instead of auto-detection
-    std::cout << "OpenMP enabled: Using 4 threads" << std::endl;
-#endif
-```
-
 ### Performance expectations
 
-Speedup depends on the matrix size, the number of physical cores and the
-operation — matrix multiplication and linear solves benefit most:
+A Gibbs sweep is mostly small factorisations, where threading costs more than it
+saves, so one thread is the default and many models are best run side by side,
+one process each, rather than one model threaded. From a POSIX shell:
 
-- **Small matrices** (< 100x100): minimal speedup, overhead dominates
-- **Medium matrices** (100x100 to 1000x1000): 2-4x on 4-8 cores
-- **Large matrices** (> 1000x1000): 4-8x on 8+ cores
+```bash
+ls models/*.h5 | xargs -P 8 -I{} ./bayests posterior {}
+```
 
-Multi-threading can be *slower* with very small matrices, on systems with
-limited memory bandwidth, or when hyperthreading gives more logical cores than
-physical ones. Reducing `OMP_NUM_THREADS` to the number of physical cores is
-the fix.
+Give `-P` the number of physical cores, and each process a file of its own:
+two processes writing to groups of the same file fail. Measured on an 8-core,
+16-thread Ryzen 7 7700, eight `VarTvpStochvol` runs took 33 s one after
+another and 6 s side by side.
+
+Threading one run pays, if at all, only for large coefficient blocks, and only
+up to a few threads. A 264-coefficient `VarNormalGamma` ran fastest with
+`OPENBLAS_NUM_THREADS=4`, about 1.4x faster than one thread; eight threads were
+no faster than one, and sixteen — one per logical core, the old default — were
+3 to 9 times slower. Hyperthreading makes that worse: never ask for more
+threads than there are physical cores. Samplers are only reproducible
+single-threaded, so a threaded run does not repeat its draws.
 
 ### Troubleshooting
 
@@ -1144,14 +1143,14 @@ the fix.
 `gcc --version` for a recent enough compiler (>= 9.0); under MSYS2 the runtime
 is `pacman -S mingw-w64-x86_64-openmp`.
 
-*Single-threaded despite OpenMP being found.* Check that OpenBLAS itself is
-multi-threaded (`vcpkg list | grep openblas`), look for the OpenMP message in
-the console output at startup, and try setting `OMP_NUM_THREADS` explicitly. To
-confirm threading is working, watch CPU usage during a run, or compare timings:
+*Single-threaded despite OpenMP being found.* That is the default; set
+`OMP_NUM_THREADS`. If the startup lines still report one thread, check that
+OpenBLAS itself is multi-threaded (`vcpkg list | grep openblas`). To see whether
+threading helps a given model, compare timings:
 
 ```bash
 OMP_NUM_THREADS=1 ./bayests posterior model.h5
-OMP_NUM_THREADS=8 ./bayests posterior model.h5
+OMP_NUM_THREADS=4 ./bayests posterior model.h5
 ```
 
 ### References
