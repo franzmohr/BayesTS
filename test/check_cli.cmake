@@ -79,6 +79,33 @@ else()
     message(STATUS "skipped: the binary does not report an OpenBLAS threading model")
 endif()
 
+# With neither variable set the binary runs one thread, not one per logical core.
+# Unset rather than inherited, since this test's own environment pins both. Every
+# OpenBLAS agrees here: a pthreads build is set to the OpenMP count, an OpenMP
+# build follows it and a serial one is 1 regardless.
+execute_process(
+    COMMAND "${CMAKE_COMMAND}" -E env --unset=OMP_NUM_THREADS --unset=OPENBLAS_NUM_THREADS "${BAYESTS}"
+    OUTPUT_VARIABLE _default_out
+    ERROR_QUIET)
+if(_default_out MATCHES "OpenMP threads: ([0-9]+)")
+    if(CMAKE_MATCH_1 STREQUAL "1")
+        message(STATUS "ok: OpenMP defaults to one thread")
+    else()
+        message(STATUS "FAIL: with OMP_NUM_THREADS unset OpenMP ran ${CMAKE_MATCH_1} threads")
+        math(EXPR _failures "${_failures} + 1")
+    endif()
+else()
+    message(STATUS "skipped: the binary does not report an OpenMP thread count")
+endif()
+if(_default_out MATCHES "OpenBLAS threads: ([0-9]+)")
+    if(CMAKE_MATCH_1 STREQUAL "1")
+        message(STATUS "ok: OpenBLAS defaults to one thread")
+    else()
+        message(STATUS "FAIL: with both variables unset OpenBLAS ran ${CMAKE_MATCH_1} threads")
+        math(EXPR _failures "${_failures} + 1")
+    endif()
+endif()
+
 # A directory holding the model beside a link to a directory that does not
 # exist. The link is skipped with a warning -- nothing behind it was missed --
 # and the model is still checked. This is the case that ended in std::terminate.

@@ -29,6 +29,25 @@ heading, and move down into a version section when one is cut.
 
 ### Changed
 
+- **`bayests` runs one thread unless `OMP_NUM_THREADS` says otherwise.** It
+  used to take OpenMP's default, one thread per logical core, and hand the same
+  count to OpenBLAS. On an 8-core, 16-thread Ryzen 7 7700 that made a
+  264-coefficient `VarNormalGamma` 9 times slower than one thread (143 s against
+  16.5 s) and a 588-coefficient one 1.8 times slower, the BLAS threads
+  contending for the physical cores. The one small model timed, the
+  `VarTvpStochvol-plain` fixture, was 8% faster threaded.
+  `OMP_NUM_THREADS` and `OPENBLAS_NUM_THREADS` work as before, so a run that sets
+  either is unaffected. The README now recommends running models side by side,
+  one process each, which on the same machine took eight `VarTvpStochvol` runs
+  from 33 s to 6 s. `cli.refusals` checks the one-thread default.
+
+  *Draws are unchanged* for any run that sets both variables, which covers every
+  test and fingerprint recording; no sampler is touched. A run that set neither
+  used to draw with a multi-threaded BLAS, whose draws were not reproducible from
+  one run to the next; it now gets the single-threaded chain, the one the
+  fingerprints record. Hosts embedding the core are unaffected: this is the
+  command line's `main()`, which is not vendored.
+
 - **VEC forecasts simulate their states forward too.** `VecTvpWishart`,
   `VecTvpGamma`, `VecTvpStochvol` and `VecNormalStochvol` read
   `/model/forecast_states` like the VARs and factor models. Under `simulate`, the
