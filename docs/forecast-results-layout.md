@@ -1,18 +1,21 @@
 # Grouping the forecast results under `/posterior/forecast`
 
-A design note, written before the change. It proposes turning the single
-dataset `/posterior/forecast` into a group holding the three things a forecast
-produces, and says what that costs in both repositories that write this format.
+A design note, written before the change and kept as the argument for it. It
+turns the single dataset `/posterior/forecast` into a group holding the three
+things a forecast produces, and says what that costs in both repositories that
+write this format.
 
-Nothing below is implemented yet. `/posterior/forecast` is still a dataset.
+**Implemented.** `bayests` writes `/posterior/forecast/forecasts`, and bvartools
+writes and reads the group with `errors` beside it. `loglik` is a reserved name
+that nothing writes yet, and the two questions at the end are still open.
 
 ## What changes
 
-| Now | Proposed | Holds |
+| Was | Is | Holds |
 | --- | --- | --- |
 | `/posterior/forecast` | `/posterior/forecast/forecasts` | The simulated paths, one per draw |
-| `posterior$forecast_errors` (bvartools only) | `/posterior/forecast/errors` | Realised minus forecast, one per draw |
-| — | `/posterior/forecast/loglik` | The log predictive density of the realised observation, one per draw per horizon |
+| `/posterior/forecast_errors` (bvartools only) | `/posterior/forecast/errors` | Realised minus forecast, one per draw |
+| — | `/posterior/forecast/loglik` | Reserved: the log predictive density of the realised observation, one per draw per horizon |
 | `/posterior/loglik` | `/posterior/loglik` | Unchanged: the in-sample pointwise log likelihood |
 
 In HDF5 dataspace terms, one row per quantity and one column per draw:
@@ -135,7 +138,10 @@ stale. Storing it is defensible, since it is what the forecast criteria
 summarise and recomputing it on every read of a folder is not free either. It
 should be a decision.
 
-## What the change touches
+## What the change touched
+
+All of this is done except step 5's second half -- bvartools has no `loglik` in
+the group to write, because nothing computes one there yet.
 
 **BayesTS**
 
@@ -163,8 +169,16 @@ should be a decision.
 ## Migration
 
 A file written before the change has a dataset where a new reader expects a
-group, and HDF5 tells the two apart, so a reader can support both. The writers
-cannot: they pick one. The format is one release old, so the cheapest honest
-answer is to require a rerun of `bayests forecasts` and say so in the changelog,
-rather than carrying a compatibility branch through both repositories for files
-that take minutes to regenerate.
+group, and HDF5 tells the two apart, so a reader could support both. The writers
+cannot: they pick one. The format was one release old, so the answer taken is a
+rerun of `bayests forecasts`, said so in the changelog, rather than a
+compatibility branch through both repositories for files that take minutes to
+regenerate.
+
+`write_forecast()` unlinks a dataset it finds at the group's path before
+creating the group, which is what makes that rerun work rather than fail on the
+name -- HDF5 will not put a dataset below a dataset. Unlinking frees the name
+and not the space, so a file whose forecast was large is worth passing through
+`h5repack`. An object in an R session is migrated the same way, by
+`add_posterior_forecasts()`, and bvartools says so when it meets the old layout
+instead of reading it as a model that was never forecast.
