@@ -13,7 +13,7 @@
 /// Nothing else pins that. A file carrying only the old spelling would otherwise
 /// read as "no forecast regressors", which is not an error: the signal term drops
 /// out and every horizon comes from the error distribution alone, written to
-/// /posterior/forecast and reported as a success. The compaction is exact -- it
+/// /posterior/forecast/forecasts and reported as a success. The compaction is exact -- it
 /// is a subscript, not an average -- so the equality below is an identity rather
 /// than a tolerance.
 

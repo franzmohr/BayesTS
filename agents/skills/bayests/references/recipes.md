@@ -331,8 +331,8 @@ is why **variable selection may not reach them**: restrict `include` to
 positions above `k*rank`.
 
 `/posterior/beta/coeffs` is `(k_beta*rank, iterations)`, and
-`/posterior/forecast` is in levels like the regressors that drive it — its first
-horizon sits near `L[-1]`, not near zero. The regressor width, 7 here, is the
+`/posterior/forecast/forecasts` is in levels like the regressors that drive it — its
+first horizon sits near `L[-1]`, not near zero. The regressor width, 7 here, is the
 level layout's; `/data/train/z` carries 3 per equation after the loadings.
 
 ## A factor model

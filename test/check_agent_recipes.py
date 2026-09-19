@@ -195,7 +195,7 @@ class Checker:
             "/posterior/a/coeffs": (nparams, it),
             "/posterior/u_sigma_inv/coeffs": (k * k, it),
             "/posterior/u_omega_inv/coeffs": (k, it),
-            "/posterior/forecast": (h * k, it),
+            "/posterior/forecast/forecasts": (h * k, it),
             "/posterior/loglik": (tt, it),
         })
 
@@ -288,7 +288,7 @@ class Checker:
         expect_shapes(d / "var.h5", {
             "/posterior/a/coeffs": (nparams * tt, it),
             "/posterior/a/sigma": (nparams, it),
-            "/posterior/forecast": (h * k, it),
+            "/posterior/forecast/forecasts": (h * k, it),
             "/posterior/loglik": (tt, it),
         })
 
@@ -311,12 +311,12 @@ class Checker:
             "/posterior/a/coeffs": (nparams, it),
             "/posterior/beta/coeffs": (ns["k_beta"] * ns["rank"], it),
             "/posterior/u_sigma_inv/coeffs": (k * k, it),
-            "/posterior/forecast": (h * k, it),
+            "/posterior/forecast/forecasts": (h * k, it),
             "/posterior/loglik": (tt, it),
         })
 
         # In levels: the first horizon sits by the last level, not by zero.
-        first = read(d / "vec.h5", "/posterior/forecast")[:k].mean(axis=1)
+        first = read(d / "vec.h5", "/posterior/forecast/forecasts")[:k].mean(axis=1)
         last = ns["L"][-1]
         if np.max(np.abs(first - last)) > 0.5 * np.min(np.abs(last)):
             raise AssertionError(
@@ -335,7 +335,7 @@ class Checker:
             "/posterior/factors/coeffs": (n_factors * tt, it),
             "/posterior/u_sigma_inv/coeffs": (k, it),
             "/posterior/v_sigma_inv/coeffs": (n_factors, it),
-            "/posterior/forecast": (h * k, it),
+            "/posterior/forecast/forecasts": (h * k, it),
             "/posterior/loglik": (tt, it),
         })
 
@@ -490,7 +490,7 @@ class Checker:
         self.posterior(d, "var.h5")
         expect_shapes(d / "var.h5", {
             "/posterior/a/coeffs": (nparams, it),
-            "/posterior/forecast": (h * k, it),
+            "/posterior/forecast/forecasts": (h * k, it),
             "/posterior/loglik": (tt, it),
         })
         with h5py.File(d / "var.h5", "r") as f:

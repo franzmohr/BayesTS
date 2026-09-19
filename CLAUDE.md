@@ -263,7 +263,8 @@ Two traps:
   `bayests_golden` catches each of the three so that all of them are attempted
   and the fingerprints printed either way. It fails a fixture whose *stage*
   produced nothing — no draws, no
-  `/posterior/loglik`, or no `/posterior/forecast` where `h` is positive — which
+  `/posterior/loglik`, or no `/posterior/forecast/forecasts` where `h` is positive —
+  which
   catches an input the sampler rejected outright. It cannot catch a model that
   wrote some of its datasets and not others: `absent` is the right fingerprint
   for a dataset another model owns, and only a per-model table could tell those

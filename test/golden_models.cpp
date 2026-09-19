@@ -95,7 +95,7 @@ constexpr const char *kOutputs[] = {
     "/posterior/u_sigma_inv/sigma",
     "/posterior/v_sigma_inv/sigma",
     "/posterior/loglik",
-    "/posterior/forecast",
+    "/posterior/forecast/forecasts",
 };
 
 // A few order-sensitive reductions. Printed at full double precision: the
@@ -141,7 +141,7 @@ void report(const ModelFile &file, const std::string &dataset, bool present)
 /// than by the draw. Everything else there comes out of draw_coefficients, and
 /// which of those a given model writes depends on the model.
 constexpr const char *kLoglik = "/posterior/loglik";
-constexpr const char *kForecast = "/posterior/forecast";
+constexpr const char *kForecast = "/posterior/forecast/forecasts";
 
 /// The horizon the file asks for. Absent means zero, which is what a fixture
 /// written with h=0 carries -- no forecast regressors and no attribute.

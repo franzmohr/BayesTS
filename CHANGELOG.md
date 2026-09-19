@@ -27,6 +27,50 @@ Dates are ISO. Versions follow the `project(VERSION)` in `CMakeLists.txt`.
 New entries go here, under an `### Added`, `### Changed` or `### Fixed`
 heading, and move down into a version section when one is cut.
 
+### Changed
+
+- **The forecast paths move from `/posterior/forecast` to
+  `/posterior/forecast/forecasts`**, turning that path from a dataset into a
+  group. **This breaks readers that name the old path**, and every one of them
+  has to be changed; there is no compatibility branch.
+
+  The group is the place for everything the forecast periods produce. `bayests`
+  writes one member, `forecasts`, and reserves two for a host that holds the
+  observations those periods realised: `errors`, realised minus forecast, and
+  `loglik`, the log predictive density of the realised observation — the joint
+  density of the `k` variables of one horizon, so that it sums over horizons to
+  a log predictive likelihood. One dataset could not carry those: the eighteen
+  model front-ends ask *have I forecast?* by looking at it, and there was
+  nowhere to ask *have I scored?*. The leaves are named after what they hold
+  rather than one of them being `draws`, since all three are draws.
+
+  `/posterior/loglik` does not move. It is a different statistic and not the
+  same one over other periods: it evaluates each in-sample observation under
+  states that have already seen it, which is what WAIC and PSIS-LOO want and
+  what a forecast score must not do.
+
+  **Migrating a file is a rerun of `bayests forecasts`.** It replaces the old
+  dataset with the group rather than failing on the name collision. Unlinking
+  frees the name and not the space, so a file whose forecast was large is worth
+  passing through `h5repack` afterwards.
+
+  **Draws are unchanged.** Nothing in `src/core/` computes differently; the
+  change is in `src/io/hdf5/` and the guards above it. All 1957 fingerprints
+  over the 103 fixtures were recorded before and after on the same release
+  build, and the two recordings are identical once the renamed label and its
+  column padding are normalised away. The 103 lines that differ are the
+  forecast rows of each fixture -- 79 written, 24 `absent` where the fixture
+  asks for no horizon -- and every number on them is unchanged.
+
+- **`/posterior/forecast/forecasts` and `/posterior/loglik` now carry the
+  `start`, `end` and `thin` attributes** that every dataset under
+  `/posterior/<block>/` already had. They are draws of the same chain at the
+  same thinning, and the two writers of this format disagreed about it —
+  bvartools wrote the attributes on all of its posterior datasets, `bayests` on
+  the block ones alone. An R session reading a file written by either now gets
+  the same `mcmc` object. **Draws are unchanged**; this adds three attributes
+  and touches no value.
+
 ## 0.2.0 — 2026-09-15
 
 ### Added

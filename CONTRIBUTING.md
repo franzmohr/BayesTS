@@ -161,7 +161,8 @@ what it was asked; `bayests_golden` catches each of the three, so that all of
 them are attempted and the fingerprints are printed whatever happened -- what a
 fixture wrote before it failed is most of the evidence for why. It fails a
 fixture whose whole stage came back empty — no posterior draws, no
-`/posterior/loglik`, or no `/posterior/forecast` where `h` is positive — which
+`/posterior/loglik`, or no `/posterior/forecast/forecasts` where `h` is positive —
+which
 is what an input the sampler rejected outright looks like, and what used to pass
 green while producing nothing at all.
 

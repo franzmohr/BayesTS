@@ -377,16 +377,37 @@ void write_draws(const ModelFile &file, const std::string &dataset, const arma::
     write_armadillo_matrix_to_hdf5(file, dataset, arma::trans(draws), true);
 }
 
+/// True when `name` is there and is a dataset rather than a group. Used to spot
+/// the legacy `/posterior/forecast` dataset, which the group has to replace.
+bool is_dataset(const ModelFile &file, const std::string &name)
+{
+    return file.exist(name) && file.file().getObjectType(file.resolve(name)) ==
+                                   HighFive::ObjectType::Dataset;
+}
+
 void write_forecast(const ModelFile &file, const ForecastDraws &forecast)
 {
     ensure_group(file, "/posterior");
-    write_armadillo_matrix_to_hdf5(file, "/posterior/forecast", arma::trans(forecast.values), false);
+
+    // Before 0.3.0 the paths were written to `/posterior/forecast` itself. A
+    // rerun of `bayests forecasts` is what migrates such a file, and it can
+    // only create the group once the dataset of that name is out of the way.
+    // Unlinking frees the name, not the space: run the file through `h5repack`
+    // to get that back.
+    if (is_dataset(file, "/posterior/forecast"))
+    {
+        file.unlink("/posterior/forecast");
+    }
+
+    ensure_group(file, "/posterior/forecast");
+    write_armadillo_matrix_to_hdf5(file, "/posterior/forecast/forecasts",
+                                   arma::trans(forecast.values), true);
 }
 
 void write_log_likelihood(const ModelFile &file, const arma::mat &loglik)
 {
     ensure_group(file, "/posterior");
-    write_armadillo_matrix_to_hdf5(file, "/posterior/loglik", loglik, false);
+    write_armadillo_matrix_to_hdf5(file, "/posterior/loglik", loglik, true);
 }
 
 } // namespace bayests::hdf5_io

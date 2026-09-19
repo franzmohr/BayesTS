@@ -24,11 +24,36 @@ A run writes back into the same file, under `/posterior` (or under
 | `/posterior/lambda/sigma` | `(n_lambda, iterations)` | `coefficients`, where the loadings drift |
 | `/posterior/factors/coeffs` | `(n_factors*tt, iterations)` | `coefficients`, for a factor model. A FAVAR stores the **unobserved** factors alone |
 | `/posterior/v_sigma_inv/coeffs` | `(n_factors, iterations)`, or `(n_factors*tt, iterations)` under stochastic volatility; `(n_state*n_state, iterations)` for a FAVAR | `coefficients`, for a factor model |
-| `/posterior/forecast` | `(h*k, iterations)`; `(h*(k + n_obs_factors), iterations)` for a FAVAR | `forecasts` |
+| `/posterior/forecast/forecasts` | `(h*k, iterations)`; `(h*(k + n_obs_factors), iterations)` for a FAVAR | `forecasts` |
 | `/posterior/loglik` | `(tt, iterations)` | `loglik` |
 
 A factor model's `u_sigma_inv` is diagonal by assumption, so it stores `k` per
 draw rather than `k*k`, and `k*tt` where it moves with time.
+
+## The `/posterior/forecast` group
+
+`forecasts` is the only member `bayests` writes. The group is the place for
+everything the forecast periods produce, and two more names are reserved for a
+host that has the observations those periods realised:
+
+| Dataset | Shape | Holds |
+| --- | --- | --- |
+| `forecasts` | `(h*k, iterations)` | The simulated paths |
+| `errors` | `(h*k, iterations)` | Realised minus forecast |
+| `loglik` | `(h, iterations)` | The log predictive density of the realised observation — the **joint** density of the `k` variables of one horizon, so that it sums over horizons to a log predictive likelihood |
+
+The leaves are named after what they hold rather than one of them being called
+`draws`, because all three are draws. `/posterior/loglik` stays outside the
+group and is a different statistic, not the same one over other periods: it
+evaluates each in-sample observation under states that have already seen it,
+which is what WAIC and PSIS-LOO want and what a forecast score must not do.
+
+`forecasts` is the input to the other two, so rewriting it invalidates them.
+Delete the group rather than one dataset in it.
+
+Before 0.3.0 the paths were a dataset at `/posterior/forecast` itself. Rerun
+`bayests forecasts`: it replaces the old dataset with the group. The name is
+freed, the space is not, so pass the file through `h5repack` to get it back.
 
 ## What a forecast does with drifting states
 
@@ -50,7 +75,7 @@ factor models (`DfmNormalStochvol`, `DfmTvpGamma`, `DfmTvpStochvol`):
   `/posterior/u_sigma_inv/sigma` and, for the factor innovations,
   `/posterior/v_sigma_inv/sigma`. A coefficient or `Psi` element that BVS
   excluded stays at zero, and so does a factor model's identifying block of
-  loadings. `/posterior/forecast` is then the predictive distribution of the
+  loadings. `/posterior/forecast/forecasts` is then the predictive distribution of the
   estimated model, and its spread widens with the horizon.
 - `hold`: the states stay at period `tt` for all `h` horizons. The spread
   carries parameter uncertainty and future errors at the period-`tt` precision,
@@ -84,7 +109,8 @@ iterations after the burn-in: `start` is `/model/thin`, `end` is
 `iterations * thin`, and `thin` is `/model/thin` again — so without thinning they
 run from 1 to `iterations`.
 
-`/posterior/forecast` and `/posterior/loglik` do **not** carry them.
+`/posterior/forecast/forecasts` and `/posterior/loglik` carry them too, and have
+since 0.3.0. Files written before that have them on the block datasets alone.
 
 ## Orientation
 
@@ -138,7 +164,7 @@ import h5py
 with h5py.File("model.h5", "r") as f:
     k = f["/model"].attrs["k"]
     h = f["/model"].attrs["h"]
-    fcst = f["/posterior/forecast"][:]       # (h*k, iterations)
+    fcst = f["/posterior/forecast/forecasts"][:]   # (h*k, iterations)
 
 fcst = fcst.reshape(h, k, -1)                # horizon, variable, draw
 ```

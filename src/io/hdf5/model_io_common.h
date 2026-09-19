@@ -161,7 +161,16 @@ arma::mat read_precision(const ModelFile &file, const VarSpec &spec, arma::uword
 
 void write_draws(const ModelFile &file, const std::string &dataset, const arma::mat &draws);
 
-/// Neither of these depends on which model produced the numbers.
+/// Neither of these depends on which model produced the numbers, and both write
+/// the `start`/`end`/`thin` attributes every other posterior dataset carries.
+///
+/// The paths go to `/posterior/forecast/forecasts`. The group is the place for
+/// everything the forecast periods produce: a host that scores the paths
+/// against what was realised writes `errors` and `loglik` beside them, which is
+/// why the leaf is named after what it holds rather than called `draws` -- all
+/// three are draws. `/posterior/loglik`, the in-sample pointwise likelihood,
+/// stays outside it: it conditions on states that have seen the observation it
+/// evaluates, which the forecast one does not.
 void write_forecast(const ModelFile &file, const ForecastDraws &forecast);
 void write_log_likelihood(const ModelFile &file, const arma::mat &loglik);
 

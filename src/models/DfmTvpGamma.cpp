@@ -83,7 +83,7 @@ void DfmTvpGamma::forecast(const ModelLocation &location_arg)
     }
 
     // Stop if forecasts are already available in the object
-    if (dataset_has_data(file, "/posterior/forecast"))
+    if (dataset_has_data(file, "/posterior/forecast/forecasts"))
     {
         return;
     }
