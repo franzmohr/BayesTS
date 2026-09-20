@@ -168,7 +168,10 @@ void print_report(const std::string &algorithm, const ModelCheck &check)
 	// model is refused for good, its regressors holding the contemporaneous
 	// observations and its density the Jacobian of A_0.
 	const bool can_be_scored =
-		!spec.structural && (algorithm == "VarNormalWishart" || algorithm == "VarNormalGamma");
+		!spec.structural &&
+		(algorithm == "VarNormalWishart" || algorithm == "VarNormalGamma" ||
+		 algorithm == "VarNormalStochvol" || algorithm == "VarTvpWishart" ||
+		 algorithm == "VarTvpGamma" || algorithm == "VarTvpStochvol");
 	if (check.test_periods > 0)
 	{
 		std::cout << "  realised: " << check.test_periods << " period(s) in /data/test/y";

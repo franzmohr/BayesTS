@@ -344,7 +344,7 @@ arma::mat VarNormalWishartSampler::log_likelihood(const VarNormalWishartInput &i
 arma::mat VarNormalWishartSampler::predictive_log_density(const VarNormalWishartInput &input,
                                                         const VarNormalWishartDraws &coefficients) const
 {
-    core::require_scorable(input.spec, false, "VarNormalWishart");
+    core::require_scorable(input.spec, "VarNormalWishart");
     const arma::uword periods = core::scored_horizons(input.test.y, input.spec);
     const arma::mat x =
         core::realised_regressors(input.forecast.x, input.test.y, input.spec.k, input.spec.p);

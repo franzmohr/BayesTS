@@ -52,15 +52,27 @@ heading, and move down into a version section when one is cut.
   can drift apart; `unit.predictive_score` pins the two against each other by
   handing a model a stretch of its own sample as what its horizon realised.
 
-  **`VarNormalWishart` and `VarNormalGamma` today.** Every algorithm that lets
-  its coefficients or its error precision move over the horizon needs each
-  draw's state carried forward before the density can be taken, which is the
-  forecast's own machinery and is not wired into the score yet; those refuse
-  rather than return a number of the right size and the wrong meaning. `hold`
-  does not rescue them -- it would score them under a model whose drift stops
-  where the sample does. A structural model refuses for good, its regressors
-  holding the contemporaneous observations and its density the Jacobian of
-  `A_0`. `bayests check` says which side of that line a file is on.
+  **A drifting model is scored under states carried forward.** The six VARs are
+  scored today -- `VarNormalWishart`, `VarNormalGamma`, `VarNormalStochvol`,
+  `VarTvpWishart`, `VarTvpGamma` and `VarTvpStochvol` -- and for the four that
+  let something move, each draw's coefficients, log-volatilities and `Psi` take
+  one step of their random walk per scored period, before the period they belong
+  to, by the same rule a forecast carries them. `/model/forecast_states` decides
+  whether they step at all: under `hold` the sample's last state is repeated,
+  which scores the model whose drift stops where the sample does, a different
+  model from the one estimated and worth asking for only deliberately.
+
+  One state path per draw is one sample of it, which is all the density needs --
+  averaging `exp()` over draws integrates the state out with everything else the
+  posterior carries. It does mean the score is **drawn rather than computed**,
+  so two runs under `simulate` give two answers, as two forecasts do, and
+  `/model/seed` is what repeats either.
+
+  The VECs and the factor models have no entry point yet. A structural model
+  refuses for good, its regressors holding the contemporaneous observations and
+  its density the Jacobian of `A_0`, and the two quantile models never reach it,
+  having no forecast at all. `bayests check` says which side of that line a file
+  is on.
 
   The two members of the forecast group are now asked for separately, so adding
   `/data/test/y` to a file that was already forecast is enough to score it; the

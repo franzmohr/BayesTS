@@ -19,7 +19,9 @@
 /// and the two would part company.
 
 #include "bayests/var_normal_gamma.h"
+#include "bayests/var_normal_stochvol.h"
 #include "bayests/var_normal_wishart.h"
+#include "bayests/var_tvp_wishart.h"
 
 #include "core/models/predictive_score.h"
 
@@ -245,6 +247,177 @@ void test_gamma_matches_its_own_likelihood()
           "VarNormalGamma is scored as its own likelihood too");
 }
 
+
+// --- the models whose states move --------------------------------------------
+//
+// A drifting model is scored under the state each draw reaches by stepping
+// forward, so the identity above cannot be used as it stands: the scored
+// periods are not under the states the sample had. It comes back on a posterior
+// whose path happens to stand still. Then the sample's last state is the state
+// of every period, holding it reproduces them, and stepping it with a variance
+// of zero reproduces them too -- which is what says the stepping is wired to
+// the right block and arrives at the right period.
+
+/// The VAR(1) above as a time-varying model whose coefficients do not in fact
+/// vary: one period of `a` repeated over the sample.
+bayests::VarTvpWishartInput tvp_input()
+{
+    bayests::VarTvpWishartInput input;
+    const VarNormalWishartInput shape = sample_input();
+    input.spec = shape.spec;
+    input.train = shape.train;
+    return input;
+}
+
+bayests::VarTvpWishartDraws tvp_draws(arma::uword n_params, arma::uword periods,
+                                      double state_variance)
+{
+    const VarNormalWishartDraws flat = sample_draws(n_params);
+    bayests::VarTvpWishartDraws draws;
+    draws.u_sigma_inv = flat.u_sigma_inv;
+    draws.a = arma::repmat(flat.a, periods, 1);
+    draws.a_sigma = arma::mat(n_params, kDraws, arma::fill::value(state_variance));
+    return draws;
+}
+
+void test_tvp_standing_still(bool hold)
+{
+    bayests::VarTvpWishartInput input = tvp_input();
+    const arma::uword n_params = input.train.z.n_cols;
+    const bayests::VarTvpWishartSampler sampler;
+
+    // The sample under a path that repeats one set of coefficients.
+    const arma::mat full = sampler.log_likelihood(input, tvp_draws(n_params, kPeriods, 0.0));
+
+    const arma::uword periods = 3;
+    input.spec.h = static_cast<int>(periods);
+    input.spec.forecast_states =
+        hold ? bayests::ForecastStates::hold : bayests::ForecastStates::simulate;
+    input.test.y = input.train.y.tail_rows(periods);
+    input.forecast.x = input.train.x.tail_rows(periods);
+
+    // One period of those coefficients is what a forecast reader hands over.
+    const bayests::VarTvpWishartDraws forecast_draws = tvp_draws(n_params, 1, 0.0);
+    const arma::mat score = sampler.predictive_log_density(input, forecast_draws);
+
+    const std::string label = hold ? "held" : "stepped by nothing";
+    check(arma::approx_equal(score, full.tail_cols(periods), "absdiff", 1e-12),
+          "a path that stands still is scored as the likelihood of those periods (" + label + ")");
+}
+
+/// And a path that does move is scored differently, which says the steps are
+/// taken rather than merely allowed for.
+void test_tvp_moves()
+{
+    bayests::VarTvpWishartInput input = tvp_input();
+    const arma::uword n_params = input.train.z.n_cols;
+    const arma::uword periods = 3;
+
+    input.spec.h = static_cast<int>(periods);
+    input.test.y = input.train.y.tail_rows(periods);
+    input.forecast.x = input.train.x.tail_rows(periods);
+
+    const bayests::VarTvpWishartSampler sampler;
+
+    input.spec.forecast_states = bayests::ForecastStates::hold;
+    const arma::mat held = sampler.predictive_log_density(input, tvp_draws(n_params, 1, 0.0));
+
+    arma::arma_rng::set_seed(20260920);
+    input.spec.forecast_states = bayests::ForecastStates::simulate;
+    const arma::mat moved = sampler.predictive_log_density(input, tvp_draws(n_params, 1, 0.05));
+
+    check(moved.n_rows == held.n_rows && moved.n_cols == held.n_cols,
+          "a drifting score has the shape of a held one");
+    check(!arma::approx_equal(moved, held, "absdiff", 1e-8),
+          "and differs from it, the coefficients having moved");
+}
+
+/// How far the state gets, checked on the walk itself rather than through a
+/// density, where three draws of a log likelihood are too few to say anything
+/// about a direction.
+void test_carry_state_forward()
+{
+    const arma::uword n_state = 4;
+    const arma::uword draws = 2;
+    const arma::uword periods = 3;
+    const arma::mat last(n_state, draws, arma::fill::randu);
+    const arma::mat none(n_state, draws, arma::fill::zeros);
+    const arma::mat some(n_state, draws, arma::fill::value(0.25));
+
+    const auto block = [&](const arma::mat &path, arma::uword i) {
+        return arma::mat(path.rows(i * n_state, (i + 1) * n_state - 1));
+    };
+
+    const arma::mat held = bayests::core::carry_state_forward(last, none, arma::mat(), periods,
+                                                              false, "the state");
+    check(held.n_rows == n_state * periods && held.n_cols == draws,
+          "the path is one block of the state per period");
+    check(arma::approx_equal(block(held, 0), last, "absdiff", 0.0) &&
+              arma::approx_equal(block(held, periods - 1), last, "absdiff", 0.0),
+          "holding repeats the sample's last state at every period");
+
+    const arma::mat still = bayests::core::carry_state_forward(last, none, arma::mat(), periods,
+                                                               true, "the state");
+    check(arma::approx_equal(still, held, "absdiff", 0.0),
+          "and a step of variance zero is the same as holding");
+
+    // Everything switched off by selection stays where it is, whatever the
+    // variance says: BVS stores an excluded coefficient as zero in every period
+    // and a walk away from zero would put the regressor back.
+    const arma::mat off(n_state, draws, arma::fill::zeros);
+    const arma::mat masked = bayests::core::carry_state_forward(last, some, off, periods, true,
+                                                                "the state");
+    check(arma::approx_equal(masked, held, "absdiff", 0.0),
+          "and a state selection left out does not move either");
+
+    arma::arma_rng::set_seed(20260920);
+    const arma::mat walked = bayests::core::carry_state_forward(last, some, arma::mat(), periods,
+                                                                true, "the state");
+    check(!arma::approx_equal(block(walked, 0), last, "absdiff", 1e-10),
+          "the first period is already one step from the sample");
+    check(!arma::approx_equal(block(walked, 1), block(walked, 0), "absdiff", 1e-10) &&
+              !arma::approx_equal(block(walked, 2), block(walked, 1), "absdiff", 1e-10),
+          "and every period after it takes a step of its own");
+}
+
+/// The stochastic volatility model, whose log variances are the random walk.
+void test_stochvol_standing_still()
+{
+    bayests::VarNormalStochvolInput input;
+    const VarNormalWishartInput shape = sample_input();
+    input.spec = shape.spec;
+    input.train = shape.train;
+
+    const arma::uword n_params = input.train.z.n_cols;
+    const arma::uword periods = 3;
+
+    bayests::VarNormalStochvolDraws draws;
+    draws.a = sample_draws(n_params).a;
+    draws.u_omega_inv.set_size(kK, kDraws);
+    for (arma::uword j = 0; j < kDraws; j++)
+    {
+        draws.u_omega_inv.col(j) = arma::vec({1.5 + 0.25 * static_cast<double>(j), 2.25});
+    }
+    draws.h_sigma = arma::mat(kK, kDraws, arma::fill::zeros);
+
+    // The sample under that volatility, held at every period.
+    bayests::VarNormalStochvolDraws over_sample = draws;
+    over_sample.u_omega_inv = arma::repmat(draws.u_omega_inv, kPeriods, 1);
+    over_sample.u_sigma_inv = bayests::core::precision_path(over_sample.u_omega_inv, arma::mat(),
+                                                           kK, kPeriods);
+    const bayests::VarNormalStochvolSampler sampler;
+    const arma::mat full = sampler.log_likelihood(input, over_sample);
+
+    input.spec.h = static_cast<int>(periods);
+    input.test.y = input.train.y.tail_rows(periods);
+    input.forecast.x = input.train.x.tail_rows(periods);
+    draws.u_sigma_inv = bayests::core::precision_path(draws.u_omega_inv, arma::mat(), kK, 1);
+
+    const arma::mat score = sampler.predictive_log_density(input, draws);
+    check(arma::approx_equal(score, full.tail_cols(periods), "absdiff", 1e-12),
+          "a volatility that stands still is scored as the likelihood of those periods");
+}
+
 } // namespace
 
 int main()
@@ -257,6 +430,11 @@ int main()
         test_short_horizon();
         test_refusals();
         test_gamma_matches_its_own_likelihood();
+        test_tvp_standing_still(true);
+        test_tvp_standing_still(false);
+        test_tvp_moves();
+        test_carry_state_forward();
+        test_stochvol_standing_still();
     }
     catch (const std::exception &e)
     {

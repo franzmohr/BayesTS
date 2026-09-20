@@ -82,8 +82,14 @@ void VarTvpWishart::forecast(const ModelLocation &location_arg)
         return;
     }
 
-    // Stop if forecasts are already available in the object
-    if (dataset_has_data(file, "/posterior/forecast/forecasts"))
+    // Stop if forecasts are already available in the object -- unless the file
+    // carries what the horizon realised and has not been scored against it.
+    // The two members of the group are asked for separately so that adding
+    // /data/test/y to a file that was already forecast is enough to score it,
+    // rather than needing the paths thrown away first.
+    const bool scorable = dataset_has_data(file, "/data/test/y");
+    const bool scored = dataset_has_data(file, "/posterior/forecast/loglik");
+    if (dataset_has_data(file, "/posterior/forecast/forecasts") && (!scorable || scored))
     {
         return;
     }
@@ -95,10 +101,20 @@ void VarTvpWishart::forecast(const ModelLocation &location_arg)
     const bayests::VarTvpWishartDraws draws = io::read_forecast_coefficients(file, input);
 
     bayests::NullReporter reporter;
-    const bayests::ForecastDraws fcst =
-        bayests::VarTvpWishartSampler{}.forecast(input, draws, reporter);
+    if (!dataset_has_data(file, "/posterior/forecast/forecasts"))
+    {
+        const bayests::ForecastDraws fcst =
+            bayests::VarTvpWishartSampler{}.forecast(input, draws, reporter);
+        bayests::hdf5_io::write_forecast(file, fcst);
+    }
 
-    bayests::hdf5_io::write_forecast(file, fcst);
+    // The same draws the forecast starts from: the last in-sample period of
+    // whatever moves, and the variances to move it by.
+    if (scorable && !scored)
+    {
+        const arma::mat score = bayests::VarTvpWishartSampler{}.predictive_log_density(input, draws);
+        bayests::hdf5_io::write_forecast_loglik(file, score);
+    }
 }
 
 void VarTvpWishart::log_likelihood(const ModelLocation &location_arg)

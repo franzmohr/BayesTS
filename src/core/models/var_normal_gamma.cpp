@@ -464,7 +464,7 @@ arma::mat VarNormalGammaSampler::log_likelihood(const VarNormalGammaInput &input
 arma::mat VarNormalGammaSampler::predictive_log_density(const VarNormalGammaInput &input,
                                                         const VarNormalGammaDraws &coefficients) const
 {
-    core::require_scorable(input.spec, false, "VarNormalGamma");
+    core::require_scorable(input.spec, "VarNormalGamma");
     const arma::uword periods = core::scored_horizons(input.test.y, input.spec);
     const arma::mat x =
         core::realised_regressors(input.forecast.x, input.test.y, input.spec.k, input.spec.p);
