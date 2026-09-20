@@ -353,6 +353,38 @@ public:
     ModelCheck check(const ModelLocation &location_arg) override;
 };
 
+/// The two models with an answer rather than a chain. Everything a caller does
+/// with them goes through the same three stages, and `draw_coefficients` is
+/// still what estimates them -- it just consumes no random numbers. See
+/// src/models/VarTvpDiscount.cpp.
+class VarTvpDiscount : public BaseModel
+{
+private:
+    // Where the model is: file plus the group its tree hangs under
+    ModelLocation location;
+public:
+    VarTvpDiscount();
+    ~VarTvpDiscount() override;
+    void draw_coefficients(const ModelLocation &location_arg) override;
+    void forecast(const ModelLocation &location_arg) override;
+    void log_likelihood(const ModelLocation &location_arg) override;
+    ModelCheck check(const ModelLocation &location_arg) override;
+};
+
+class VecTvpDiscount : public BaseModel
+{
+private:
+    // Where the model is: file plus the group its tree hangs under
+    ModelLocation location;
+public:
+    VecTvpDiscount();
+    ~VecTvpDiscount() override;
+    void draw_coefficients(const ModelLocation &location_arg) override;
+    void forecast(const ModelLocation &location_arg) override;
+    void log_likelihood(const ModelLocation &location_arg) override;
+    ModelCheck check(const ModelLocation &location_arg) override;
+};
+
 class VecTvpWishart : public BaseModel
 {
 private:

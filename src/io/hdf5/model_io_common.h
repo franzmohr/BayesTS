@@ -182,6 +182,24 @@ arma::mat read_precision(const ModelFile &file, const VarSpec &spec, arma::uword
 
 void write_draws(const ModelFile &file, const std::string &dataset, const arma::mat &draws);
 
+/// A per-period posterior quantity, for the discounted models, whose output is
+/// a posterior rather than a chain.
+///
+/// `path` is one row per quantity and one column per period, and the dataset is
+/// written in the orientation write_draws() gives a chain: in HDF5 dataspace
+/// terms one row per quantity and one column per period, which R's readers
+/// reverse into periods-in-rows the way they reverse a posterior's draws. What
+/// it does not write is `start`, `end` and `thin` -- there is no chain behind
+/// these numbers, so a coda object built from them would be claiming a sweep
+/// that never ran.
+void write_posterior_path(const ModelFile &file, const std::string &dataset,
+                          const arma::mat &path);
+
+/// The inverse, giving back the quantity-by-period matrix.
+arma::mat read_posterior_path(const ModelFile &file, const std::string &dataset);
+bool read_posterior_path_if_present(const ModelFile &file, const std::string &dataset,
+                                    arma::mat &out);
+
 /// Neither of these depends on which model produced the numbers, and both write
 /// the `start`/`end`/`thin` attributes every other posterior dataset carries.
 ///

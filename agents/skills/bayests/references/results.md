@@ -25,10 +25,48 @@ A run writes back into the same file, under `/posterior` (or under
 | `/posterior/factors/coeffs` | `(n_factors*tt, iterations)` | `coefficients`, for a factor model. A FAVAR stores the **unobserved** factors alone |
 | `/posterior/v_sigma_inv/coeffs` | `(n_factors, iterations)`, or `(n_factors*tt, iterations)` under stochastic volatility; `(n_state*n_state, iterations)` for a FAVAR | `coefficients`, for a factor model |
 | `/posterior/forecast/forecasts` | `(h*k, iterations)`; `(h*(k + n_obs_factors), iterations)` for a FAVAR | `forecasts` |
-| `/posterior/loglik` | `(tt, iterations)` | `loglik` |
+| `/posterior/loglik` | `(tt, iterations)`; `(tt, 1)` for the two `*TvpDiscount` models | `loglik` |
 
 A factor model's `u_sigma_inv` is diagonal by assumption, so it stores `k` per
 draw rather than `k*k`, and `k*tt` where it moves with time.
+
+## The discounted pair writes a posterior, not draws
+
+`VarTvpDiscount` and `VecTvpDiscount` have a closed-form posterior, so
+`coefficients` writes these instead of everything in the table above. One column
+per **period**, where every dataset above has one per draw, and no
+`start`/`end`/`thin` attributes beside them — there is no chain for a `coda`
+object to describe.
+
+| Dataset | Dataspace shape | Holds |
+| --- | --- | --- |
+| `/posterior/a/mean` | `(nparams, tt)` | The posterior mean of `vec(B_t)`, `B_t` being `k` by `n_x`. Same ordering as `a/coeffs`: for a VEC, `vec(alpha)` first |
+| `/posterior/a/scale` | `(nparams, tt)` | The marginal Student t scale of each coefficient, `sqrt(C_ii S_jj)` |
+| `/posterior/a/cov` | `(n_x*n_x, tt)` | The regressor side of the coefficient covariance, `C_t` |
+| `/posterior/u_sigma/scale` | `(k*k, tt)` | The error **covariance**, `S_t` — which is why it is not at `u_sigma_inv`, where every sampler puts a precision |
+| `/posterior/df` | `(1, tt)` | The degrees of freedom of the matrix t and of the inverse Wishart above |
+| `/posterior/beta/coeffs` | `(k_beta*rank, 1)` | `VecTvpDiscount` only: the cointegration space the run conditioned on. One column — it was given, not estimated |
+
+**There is deliberately no `/posterior/a/coeffs`.** The posterior of one period
+is exact, and drawing from it is a two-liner: draw `Sigma` from
+`IW(df + k - 1, df*S_t)`, then `vec(Theta) | Sigma` from `N(a_t, Sigma kron
+C_t)`. But joining one draw per period into a column would look exactly like a
+sampled coefficient path and is not one — the smoothed posterior is dependent
+across periods, so a coherent path has to be sampled backwards. Draw per period,
+and say which period the draws are for.
+
+`/posterior/loglik` has **one row** for these models rather than one per draw:
+the parameters are integrated out exactly, so there is nothing to average over.
+A consumer that wants the draws-by-periods matrix WAIC and PSIS-LOO expect has
+to build it from per-period draws and pay for them. Summed over the columns it
+is the exact log marginal likelihood of the sample, which is what makes a grid
+over the discounts, the rank or a VEC's cointegration space comparable across
+files.
+
+`/posterior/forecast/loglik` keeps its usual `(n, iterations)` shape for
+`VecTvpDiscount`, whose score past the end of the sample is simulated like every
+VEC's. For `VarTvpDiscount` it is `(n, 1)`: the filter carries itself through the
+realised values, so that score is exact too.
 
 ## The `/posterior/forecast` group
 
@@ -55,8 +93,8 @@ the group rather than one dataset in it.
 
 `loglik` is written by `forecasts` wherever the file carries `/data/test/y` and
 the algorithm can be scored: every VAR, every VEC and every dynamic factor
-model -- seventeen of the twenty. One column per realised period, which may be
-fewer than `h`.
+model -- nineteen of the twenty-two. One column per realised period, which may
+be fewer than `h`.
 
 **A VEC is scored in levels**, the parameterisation it forecasts in. Its draws
 are rewritten as the level VAR they imply and the score is that VAR's, so

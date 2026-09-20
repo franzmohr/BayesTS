@@ -29,6 +29,108 @@ heading, and move down into a version section when one is cut.
 
 ### Added
 
+- **`VarTvpDiscount` and `VecTvpDiscount`, two models with an answer rather than
+  a chain.** The matrix normal dynamic linear model of West and Harrison (1997,
+  ch. 16) with Uhlig's (1997) discounted Wishart on the error precision: the
+  coefficients follow a random walk and the error covariance drifts, and both
+  posteriors are closed form. `bayests` runs them through the same three stages
+  as everything else, and `coefficients` is still the stage that estimates them;
+  it just consumes no random numbers.
+
+  Two new `/model` attributes drive them, both in `(0, 1]` and both defaulting
+  to 1. `delta_beta` discounts the coefficient covariance each period, which is
+  exactly a random walk whose innovation covariance is
+  `((1 - delta) / delta) C_{t-1}`; `delta_sigma` discounts the Wishart, a
+  stochastic volatility law of its own — multiplicative beta shocks to the
+  precision, where `stochvol_ocsn_2007` approximates a Gaussian autoregression
+  in the log variance. **Both at one is not a no-op** but the conjugate normal
+  inverse Wishart posterior of a constant coefficient model, computed one period
+  at a time, and that identity is what `unit.var_tvp_discount` pins them
+  against.
+
+  What no chain changes in the file:
+
+  - The regressors are `/data/train/x`, the compact layout `VecKlgs2010` reads,
+    and a file carrying only `/data/train/z` is refused. For `VecTvpDiscount`
+    that dataset holds the short-run blocks alone; the `rank` error correction
+    columns are built from `w` and `beta`.
+  - `/priors/a` holds `mean` and `cov`, not `mu` and `v_inv`. A matrix normal
+    prior: `mean` is the `n_x` by `k` coefficient matrix and `cov` the regressor
+    side of its covariance, the equation side being the error covariance the
+    Wishart prior already carries. Different names for a different object, so a
+    file bringing the other pair is read as having no coefficient prior at all
+    and `bayests check` says which datasets nothing opened.
+  - `burnin` must be 0 and `thin` 1. Refused rather than ignored, because both
+    reach the file: the `start`/`end`/`thin` attributes beside a forecast come
+    from `thin`, and draws labelled as though a sweep had happened are output
+    that looks like output. `iterations` keeps its meaning — how many i.i.d.
+    draws a forecast takes.
+  - `/model/seed` reaches the forecast and nothing else. Estimation draws no
+    random numbers, so two runs agree to the bit.
+  - **The posterior is written as a posterior.** `/posterior/a/mean`,
+    `a/scale`, `a/cov`, `u_sigma/scale` and `df`, one column per *period* rather
+    than per draw and with no `start`/`end`/`thin` beside them. `u_sigma/scale`
+    is a covariance, which is why it is not at `u_sigma_inv`. There is
+    deliberately **no `/posterior/a/coeffs`**: the posterior of one period is
+    exact and easy to draw from, but joining one draw per period would look
+    exactly like a sampled coefficient path and is not one, the smoothed
+    posterior being dependent across periods. `/posterior/loglik` has one row
+    instead of one per draw, the parameters being integrated out exactly, and
+    summed it is the log marginal likelihood of the sample.
+
+  **`VecTvpDiscount` holds the cointegration space fixed**, and that is the one
+  assumption separating it from the three sampling VECs. `/initial/beta` is read
+  from where every VEC keeps its space and in the same layout, but not as a
+  starting value: nothing iterates, so it is what the run conditions on, and it
+  is written back to `/posterior/beta/coeffs` so the loadings have a relation
+  attached. Conditional on it a VEC *is* a VAR in the regressors
+  `[beta' w_t, the short-run blocks]`, which every equation shares, and the
+  whole of `VarTvpDiscount` applies unchanged.
+
+  The space cannot be allowed to move and stay closed form, and the reason worth
+  writing down is not the conjugacy. A VEC's measurement is `alpha_t beta_t' w_t`,
+  two latent blocks multiplying each other, which is why the three sampling VECs
+  alternate two simulation smoother passes rather than filtering once; a discount
+  replaces one pass, not the alternation. Beyond that, `TvpCointSpacePrior` fixes
+  the innovation variance of `beta_t` at the identity *because that is what pins
+  beta's scale against alpha's*, and a discount replaces a fixed innovation
+  variance with `((1 - delta) / delta) C_{t-1}`, which moves with the data. So
+  discounting the space is not a cheaper Koop, León-González and Strachan (2011)
+  — it is a model in which alpha and beta slide against each other along a ridge.
+  Use `VecTvpDiscount` to ask how the *adjustment* to a given long-run relation
+  has moved, and `VecTvpWishart` and its two siblings to ask whether the relation
+  itself did.
+
+  What the fixed space buys back is a number the samplers cannot give cheaply:
+  the sum of `/posterior/loglik` is the exact marginal likelihood of the sample
+  given that space, the rank and the two discounts, at one pass over the sample.
+  A grid over candidate spaces, ranks or discounts is then a list of files with
+  no chain run for any of them, which is also why a grid over the two discounts
+  is a list of models rather than a vector in one file.
+
+  What they give up against the samplers is stated rather than hidden. The
+  volatility does not mean revert; one discount factor stands in for both the
+  persistence and the variance of the volatility process, so `delta_sigma` is
+  not the autoregressive parameter of a log volatility; and the degrees of
+  freedom converge to `1 / (1 - delta_sigma)` whatever the prior says, which
+  must exceed `k` and is refused where it does not. Variable selection and
+  `structural` are refused too — there are no draws for an inclusion indicator
+  to accompany, and an inverse Wishart posterior leaves `Sigma` unrestricted.
+
+  **Draws are unchanged** for every other model. No sampler was touched; the two
+  new `/model` attributes are read through defaults of 1 that only these two
+  models consult, and `read_spec()` is otherwise as it was. Verified rather than
+  assumed: all 102 pre-existing fixtures print their previous fingerprints digit
+  for digit, recorded from this commit and from its parent on one machine and
+  one build, and the four new rows are the only ones added.
+
+  One thing to know before running that comparison yourself. `bayests_golden`
+  fingerprints the union of every model's outputs, so the five datasets above
+  are now printed for *every* fixture — as `absent` on the other hundred and two
+  — and `diff_fingerprints.sh` therefore reports all of them as moved across
+  this change. Strip the five `absent` lines before comparing, or compare only
+  recordings taken on the same side of it.
+
 - **A `pre-push` hook that runs the Linux CI jobs before a push leaves the
   machine**, in `.githooks/`. `git config core.hooksPath .githooks`, once per
   clone, and `git push` builds and tests the commits it is about to send in the

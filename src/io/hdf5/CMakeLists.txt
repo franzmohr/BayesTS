@@ -20,6 +20,7 @@ add_library(bayests_hdf5_helper
             var_normal_ald_io.cpp var_normal_ald_io.h
             var_normal_stochvol_io.cpp var_normal_stochvol_io.h
             var_normal_wishart_io.cpp var_normal_wishart_io.h
+            var_tvp_discount_io.cpp var_tvp_discount_io.h
             var_tvp_gamma_io.cpp var_tvp_gamma_io.h
             var_tvp_wishart_io.cpp var_tvp_wishart_io.h
             var_tvp_ald_io.cpp var_tvp_ald_io.h
@@ -28,6 +29,7 @@ add_library(bayests_hdf5_helper
             vec_normal_gamma_io.cpp vec_normal_gamma_io.h
             vec_normal_stochvol_io.cpp vec_normal_stochvol_io.h
             vec_normal_wishart_io.cpp vec_normal_wishart_io.h
+            vec_tvp_discount_io.cpp vec_tvp_discount_io.h
             vec_tvp_gamma_io.cpp vec_tvp_gamma_io.h
             vec_tvp_stochvol_io.cpp vec_tvp_stochvol_io.h
             vec_tvp_wishart_io.cpp vec_tvp_wishart_io.h)

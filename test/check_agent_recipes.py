@@ -302,6 +302,73 @@ class Checker:
         if results["a_path"].shape != (tt, nparams, it):
             raise AssertionError(f"results.md: a_path is {results['a_path'].shape}")
 
+    def scenario_discount(self, d):
+        """The one model whose output is a posterior rather than draws."""
+        ns = self.run_python(d, self.code("references/recipes.md", "A discounted VAR", 0))
+        self.check_clean(d, "discount.h5")
+        self.posterior(d, "discount.h5")
+        k, n_x, nparams, tt, h, it = (ns[v] for v in
+                                      ("k", "n_x", "nparams", "tt", "h", "iterations"))
+        expect_shapes(d / "discount.h5", {
+            "/posterior/a/mean": (nparams, tt),
+            "/posterior/a/scale": (nparams, tt),
+            "/posterior/a/cov": (n_x * n_x, tt),
+            "/posterior/u_sigma/scale": (k * k, tt),
+            "/posterior/df": (1, tt),
+            "/posterior/forecast/forecasts": (h * k, it),
+            # One row, not one per draw: the parameters are integrated out.
+            "/posterior/loglik": (tt, 1),
+        })
+
+        # And no draws at all, which is the point the text makes twice.
+        with h5py.File(d / "discount.h5", "r") as f:
+            if "/posterior/a/coeffs" in f:
+                raise AssertionError(
+                    "the discounted model wrote /posterior/a/coeffs, which the text says "
+                    "it deliberately does not")
+
+        # Continues the first example's namespace: it opens the file it wrote and
+        # reuses its k, n_x and the import above them.
+        reader = self.run_python(d, self.code("references/recipes.md", "A discounted VAR", 1), ns)
+        if reader["B_T"].shape != (k, n_x):
+            raise AssertionError(f"recipes.md: B_T is {reader['B_T'].shape}, documented as "
+                                 f"{(k, n_x)}")
+        if not np.isfinite(reader["log_marginal"]):
+            raise AssertionError("the log marginal likelihood came back non-finite")
+
+        # Nothing is drawn while estimating, so two runs of the whole filter
+        # agree to the bit whatever the generator was doing in between.
+        again = d / "again.h5"
+        shutil.copy(d / "discount.h5", again)
+        with h5py.File(again, "r+") as f:
+            del f["posterior"]
+        self.posterior(d, "again.h5")
+        for dataset in ("/posterior/a/mean", "/posterior/u_sigma/scale", "/posterior/df"):
+            if not np.array_equal(read(d / "discount.h5", dataset), read(again, dataset)):
+                raise AssertionError(
+                    f"{dataset} differs between two runs of a model the text says "
+                    "consumes no random numbers")
+
+        # The per-period draws the text gives in place of /posterior/a/coeffs,
+        # run against the posterior just read back.
+        drawn = self.run_python(d, self.code("references/recipes.md", "A discounted VAR", 2),
+                                reader)
+        last = drawn["last"]
+        if last.shape != (nparams, 500):
+            raise AssertionError(f"recipes.md: the per-period draws are {last.shape}, "
+                                 f"documented as {(nparams, 500)}")
+
+        # The spread the draws come back with is the one /posterior/a/scale
+        # reports, inflated by the matrix t's sqrt(df/(df-2)). A wrong inverse
+        # Wishart degrees of freedom shows up here and nowhere else.
+        nu = reader["df"][0, -1]
+        expected = reader["scale"][:, -1] * np.sqrt(nu / (nu - 2.0))
+        ratio = last.std(axis=1, ddof=1) / expected
+        if np.max(np.abs(ratio - 1.0)) > 0.25:
+            raise AssertionError(
+                f"the per-period draws have spread ratios {ratio} against the scale the "
+                "posterior reports; the example's degrees of freedom are wrong")
+
     def scenario_vec(self, d):
         ns = self.run_python(d, self.code("references/recipes.md", "A VEC", 0))
         self.check_clean(d, "vec.h5")

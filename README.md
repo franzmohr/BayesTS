@@ -46,9 +46,9 @@ Requires a C++20 compiler and Fortran (for LAPACK). Built on
 ## Models
 
 The `/model/algorithm` attribute in the model file selects the sampler; it is
-the only thing that decides which one runs. Twenty are registered — eight VARs,
-six VECs, one alternative implementation of a VEC, four dynamic factor models and
-one factor augmented VAR:
+the only thing that decides which one runs. Twenty-two are registered — nine
+VARs, seven VECs, one alternative implementation of a VEC, four dynamic factor
+models and one factor augmented VAR:
 
 | `algorithm` | Coefficients | Error precision | Variable selection |
 | --- | --- | --- | --- |
@@ -60,12 +60,14 @@ one factor augmented VAR:
 | `VarTvpStochvol` | Random walk | Stochastic volatility, optional time-varying covariance block | BVS |
 | `VarNormalAld` | Constant, normal prior | Asymmetric Laplace at a chosen quantile; no covariance block | BVS |
 | `VarTvpAld` | Random walk | Asymmetric Laplace at a chosen quantile; no covariance block | BVS |
+| `VarTvpDiscount` | Random walk under a discount factor; **not sampled** | Discounted Wishart | none |
 | `VecNormalWishart` | Constant, normal prior; cointegration space prior on beta | Wishart | SSVS, BVS |
 | `VecNormalGamma` | Constant, normal prior; cointegration space prior on beta | Independent gamma, optional constant covariance block | SSVS, BVS |
 | `VecNormalStochvol` | Constant, normal prior; cointegration space prior on beta | Stochastic volatility, optional covariance block | BVS |
 | `VecTvpWishart` | Random walk, beta included | Wishart | BVS |
 | `VecTvpGamma` | Random walk, beta included | Independent gamma, optional time-varying covariance block | BVS |
 | `VecTvpStochvol` | Random walk, beta included | Stochastic volatility, optional time-varying covariance block | BVS |
+| `VecTvpDiscount` | Random walk under a discount factor, **beta held fixed**; not sampled | Discounted Wishart | none |
 | `VecKlgs2010` | `VecNormalWishart` drawn without the SUR system | Wishart | none |
 | `DfmNormalGamma` | Constant, normal prior on the loadings and on the factor transition | Independent gamma, on the idiosyncratic errors and the factor innovations | none |
 | `DfmNormalStochvol` | Constant, normal prior on the loadings and on the factor transition | Stochastic volatility, on the idiosyncratic errors and the factor innovations | none |
@@ -99,6 +101,51 @@ cannot be read as one. And the intervals are **not calibrated** — the asymmetr
 Laplace is a working likelihood rather than a claim about the data, so the
 posterior locates the quantile but its spread needs the adjustment of Yang, Wang
 and He (2016), which is not applied. Read the spread as a diagnostic.
+
+The two `*TvpDiscount` entries are **the only ones here that are not samplers.**
+Their posterior is closed form: a matrix normal dynamic linear model (West and
+Harrison 1997, ch. 16) with Uhlig's (1997) discounted Wishart on the error
+precision, computed in one pass over the sample. Two things buy the conjugacy.
+Every equation of a VAR shares its regressors, so the coefficient covariance
+factorises and only the `n_x` square factor is carried. And neither the drift
+nor the volatility has a free variance parameter: `/model/delta_beta` discounts
+the coefficient covariance each period, which is exactly a random walk whose
+innovation covariance is `((1 - delta) / delta) C_{t-1}`, and
+`/model/delta_sigma` discounts the Wishart, which is a stochastic volatility law
+in its own right. Both default to one, which is not a neutral default but the
+conjugate posterior of a constant coefficient model.
+
+What follows from there being no chain shows up throughout the file. Nothing
+consumes the RNG during estimation, so `/model/seed` has nothing to repeat and
+two runs agree to the bit; `/model/burnin` must be zero and `/model/thin` one,
+and `iterations` is how many i.i.d. draws a forecast takes rather than a sweep
+length. `bayests coefficients` writes `/posterior/a/mean`, `/posterior/a/scale`,
+`/posterior/a/cov`, `/posterior/u_sigma/scale` and `/posterior/df` — the
+posterior itself, one column per period — and **no `/posterior/a/coeffs`**:
+joining one i.i.d. draw per period would look exactly like a sampled coefficient
+path and is not one, the smoothed posterior being dependent across periods. A
+host that wants draws takes them per period from the two covariance blocks. What
+is given up against the samplers is stated rather than hidden: the volatility
+does not mean revert, one discount stands in for both the persistence and the
+variance of the volatility process, and the degrees of freedom converge to
+`1 / (1 - delta_sigma)` whatever the prior says — which must exceed `k`, and is
+refused where it does not.
+
+`VecTvpDiscount` is that model over a design with the error correction term in
+front of it, and **it holds the cointegration space fixed**: `/initial/beta` is
+not a starting value here but the space the run conditions on, and it is written
+back to `/posterior/beta/coeffs` so that the loadings have a relation attached.
+The space cannot be allowed to move and stay closed form. A VEC's measurement is
+`alpha_t beta_t' w_t`, two latent blocks multiplying each other, which is why
+the three sampling VECs alternate two smoother passes; and the innovation
+variance of `beta_t` is fixed at the identity in those models because that is
+what pins beta's scale against alpha's, where a discount would replace it with
+something that moves with the data. So the model answers how the *adjustment* to
+a given long-run relation has moved, not whether the relation itself did — the
+question `VecTvp*` is for. What the fixed space buys back is that the sum of
+`/posterior/loglik` is the exact marginal likelihood of the sample given that
+space, the rank and the two discounts, at the cost of one pass, so candidate
+spaces can be compared without a chain being run for any of them.
 
 `VecKlgs2010` is the one entry that is not a model of its own. It is
 `VecNormalWishart` — the cointegration sampler of Koop, León-González and
@@ -444,19 +491,19 @@ written for a simpler model still describes a valid one.
 
 | Location | Contents |
 | --- | --- |
-| `/model` (attributes) | `algorithm`, `k` endogenous variables, `iterations` kept, `burnin` discarded; optional `thin` (keep one draw in `thin` after the burn-in, default 1), `p`, `m`, `s`, `n` (lags, exogenous variables, their lags, deterministic terms), `h` forecast horizon, `forecast_states` (`simulate`, the default, or `hold`: whether the forecast of a model with time-varying coefficients or volatilities carries its random walks over the horizon or keeps them at the last sample period), `varsel` (`none`, `ssvs`, `bvs`), `structural`, `error`, `seed` (a non-negative whole number that fixes the run's draws on a single thread — set `OMP_NUM_THREADS=1` and `OPENBLAS_NUM_THREADS=1`, since the program otherwise uses every core and the draws then vary with the thread count); `rank`, `k_beta`, `n_restricted` for a VEC, `n_factors` for a factor model and `n_obs_factors` for a FAVAR |
+| `/model` (attributes) | `algorithm`, `k` endogenous variables, `iterations` kept, `burnin` discarded; optional `thin` (keep one draw in `thin` after the burn-in, default 1), `p`, `m`, `s`, `n` (lags, exogenous variables, their lags, deterministic terms), `h` forecast horizon, `forecast_states` (`simulate`, the default, or `hold`: whether the forecast of a model with time-varying coefficients or volatilities carries its random walks over the horizon or keeps them at the last sample period), `varsel` (`none`, `ssvs`, `bvs`), `structural`, `error`, `seed` (a non-negative whole number that fixes the run's draws on a single thread — set `OMP_NUM_THREADS=1` and `OPENBLAS_NUM_THREADS=1`, since the program otherwise uses every core and the draws then vary with the thread count); `rank`, `k_beta`, `n_restricted` for a VEC, `n_factors` for a factor model and `n_obs_factors` for a FAVAR; `delta_beta` and `delta_sigma`, both in (0, 1] and both defaulting to 1, for the two `*TvpDiscount` models, where they are the drift of the coefficients and of the error covariance |
 | `/data/train/y`, `/data/train/z` | Endogenous variables and the regressor matrix, `(tt k)` rows by `nparams` columns |
 | `/data/train/w` | A VEC's error correction term, `tt` rows by `k_beta` columns |
-| `/data/train/x` | The regressors in the compact layout, `tt` rows by one column each; read by `VecKlgs2010` in place of `z` |
+| `/data/train/x` | The regressors in the compact layout, `tt` rows by one column each; read by `VecKlgs2010`, `VarTvpDiscount` and `VecTvpDiscount` in place of `z`. For the two VECs it holds the short-run blocks alone — the error correction columns are built from `w` and `beta` |
 | `/data/train/f_obs` | A FAVAR only: the observed factors, `tt` rows by `n_obs_factors` columns. The observed half of the state vector, not regressors |
 | `/data/forecast/x` | Out-of-sample regressors in the compact layout, `h` rows by one column per regressor; required when `h` > 0. A file written before this layout carries `/data/forecast/z` instead — the same regressors kroneckered up with `I_k` — and is still read, the reader compacting it on the way in |
-| `/priors/a`, `/priors/psi` | Normal prior `mu` and `v_inv` for the coefficients and the covariance block, plus `inprior`, `include`, and `tau0`/`tau1` for SSVS |
+| `/priors/a`, `/priors/psi` | Normal prior `mu` and `v_inv` for the coefficients and the covariance block, plus `inprior`, `include`, and `tau0`/`tau1` for SSVS. The two `*TvpDiscount` models read `mean` and `cov` here instead — a matrix normal prior, `mean` being the `n_x` by `k` coefficient matrix and `cov` the regressor side of its covariance, the equation side being the error covariance the Wishart prior already carries. Different names for a different object, so a file bringing the wrong pair is read as having no coefficient prior and `bayests check` says so |
 | `/model/priors/psi` (attribute) | `varsel` for the covariance block on its own, read by the four time-varying models that have one; the `/model` attribute above governs the coefficients |
 | `/priors/u_sigma` | `shape`/`rate` for gamma precisions, `df`/`scale` for Wishart, `mu`/`v_inv`/`sigma`/`offset` for stochastic volatility |
 | `/priors/beta` | A VEC only: `p_tau_inv`, the prior precision of the cointegration space, and for the time-varying three `mu`/`v_inv` over beta before the sample and the state autoregression `rho`. `rho_min`/`rho_max`, given together, make `rho` a drawn parameter with that uniform prior instead of a fixed one, and `rho` the value the chain starts at. `p_tau`, `k_beta` square, symmetric with eigenvalues in [0, 1], is the transition of the state equation with `rho` taken out -- Koop, Leon-Gonzalez and Strachan's informative marginal prior, which centres the space on the one `p_tau` has an eigenvalue of one along; absent, the transition is `rho` alone |
 | `/priors/lambda`, `/priors/v_sigma` | A factor model only: normal `mu`/`v_inv` over the free loadings, and `shape`/`rate` for the factor innovation precisions. Under `DfmTvpGamma` the loading group is a state equation instead, `shape`/`rate` on the innovation variance beside `mu`/`v_inv` on the state before the sample, and `/priors/a` reads the same way. Under `FavarNormalWishart` the `v_sigma` group is `df`/`scale` rather than `shape`/`rate`, its state innovation precision being a matrix |
-| `/initial/…` | Starting values: `a`, `psi`, `u_sigma_inv`, `u_omega_inv`, `h`, the `*_init` states and the `*_lambda`, `*_sigma_inv` blocks the samplers that need them read; `beta` for a VEC; `lambda`, `v_sigma_inv` and, under stochastic volatility, `u_h`/`v_h` for a DFM; `lambda` and `a` are paths under `DfmTvpGamma`, beside `lambda_sigma_inv`, `lambda_init`, `a_sigma_inv` and `a_init`; under `FavarNormalWishart` `v_sigma_inv` is an `n_state` square matrix rather than a diagonal |
-| `/posterior/…` | Written by the run: `a/coeffs`, `a/lambda`, `a/sigma`, the matching `psi/…`, `u_sigma_inv/coeffs`, `u_omega_inv/coeffs`, `forecast` and `loglik`; `u_sigma_inv/sigma`, the variance of the log-volatility innovations, for every stochastic volatility model, with `v_sigma_inv/sigma` beside it for a factor model's factor innovations; `u_scale/coeffs`, the asymmetric Laplace scale, for the two `*Ald` models; `beta/coeffs` for a VEC, and `beta/rho` where a time-varying one put a prior on the state autoregression; `lambda/coeffs`, `factors/coeffs` and `v_sigma_inv/coeffs` for a factor model, plus `lambda/sigma` where the loadings drift. Under `FavarNormalWishart` `factors/coeffs` holds the unobserved factors alone, `v_sigma_inv/coeffs` is `n_state` squared per draw, and `forecast` is `h * (k + n_obs_factors)` rows rather than `h * k` |
+| `/initial/…` | Starting values — read by `VecTvpDiscount` as the space it conditions on rather than a start, nothing there being iterated: `a`, `psi`, `u_sigma_inv`, `u_omega_inv`, `h`, the `*_init` states and the `*_lambda`, `*_sigma_inv` blocks the samplers that need them read; `beta` for a VEC; `lambda`, `v_sigma_inv` and, under stochastic volatility, `u_h`/`v_h` for a DFM; `lambda` and `a` are paths under `DfmTvpGamma`, beside `lambda_sigma_inv`, `lambda_init`, `a_sigma_inv` and `a_init`; under `FavarNormalWishart` `v_sigma_inv` is an `n_state` square matrix rather than a diagonal |
+| `/posterior/…` | Written by the run: `a/coeffs`, `a/lambda`, `a/sigma`, the matching `psi/…`, `u_sigma_inv/coeffs`, `u_omega_inv/coeffs`, `forecast` and `loglik`; `u_sigma_inv/sigma`, the variance of the log-volatility innovations, for every stochastic volatility model, with `v_sigma_inv/sigma` beside it for a factor model's factor innovations; `u_scale/coeffs`, the asymmetric Laplace scale, for the two `*Ald` models; `beta/coeffs` for a VEC, and `beta/rho` where a time-varying one put a prior on the state autoregression; `lambda/coeffs`, `factors/coeffs` and `v_sigma_inv/coeffs` for a factor model, plus `lambda/sigma` where the loadings drift. Under `FavarNormalWishart` `factors/coeffs` holds the unobserved factors alone, `v_sigma_inv/coeffs` is `n_state` squared per draw, and `forecast` is `h * (k + n_obs_factors)` rows rather than `h * k`. The two `*TvpDiscount` models write none of the `coeffs` datasets and a closed form instead: `a/mean`, `a/scale`, `a/cov`, `u_sigma/scale` and `df`, one column per period rather than per draw, with no `start`/`end`/`thin` beside them — there is no chain. `u_sigma/scale` is a covariance, which is why it is not at `u_sigma_inv`. `VecTvpDiscount` writes `beta/coeffs` too, one column, holding the space it was given |
 
 Two conventions are worth knowing before writing a file by hand. The first is
 which way round the matrices are stored, and it is worth stating twice, because
@@ -760,7 +807,7 @@ remembers. With `git config core.hooksPath .githooks` set once per clone,
 `git push` builds and tests the commits it is about to send in that image and
 refuses the push if `ctest` fails.
 
-**Coverage.** All twenty samplers are covered from a clean clone:
+**Coverage.** All twenty-two algorithms are covered from a clean clone:
 `test/make_model_fixture.cpp` writes a model file for every one of them, and the
 suite depends on no data outside the repository.
 

@@ -37,11 +37,11 @@ seen from R.
 
 | Attribute | Type | Default | Meaning |
 | --- | --- | --- | --- |
-| `algorithm` | string | *required* | Which of the twenty samplers runs. The only thing that decides |
+| `algorithm` | string | *required* | Which of the twenty-two algorithms runs. The only thing that decides |
 | `k` | int | *required* | Endogenous variables. For a factor model, the number of **observed** series |
-| `iterations` | int | *required* | Draws kept. Must be positive |
-| `burnin` | int | *required* | Draws discarded before the first kept one |
-| `thin` | int | 1 | Keep one draw in `thin` after the burn-in, the last of each block. The chain runs `burnin + iterations * thin` draws and every result still holds `iterations`. At least 1 |
+| `iterations` | int | *required* | Draws kept. Must be positive. On the two `*TvpDiscount` models there is no chain, so it is how many i.i.d. draws a forecast takes |
+| `burnin` | int | *required* | Draws discarded before the first kept one. Must be 0 on a `*TvpDiscount` model, which iterates nothing |
+| `thin` | int | 1 | Keep one draw in `thin` after the burn-in, the last of each block. The chain runs `burnin + iterations * thin` draws and every result still holds `iterations`. At least 1, and exactly 1 on a `*TvpDiscount` model |
 | `p` | int | 0 | Lags. For a factor model, the lag order of the transition. For a VEC, a **level** order |
 | `forecast_states` | string | `simulate` | `simulate` or `hold`. Whether the forecast of a model with time-varying coefficients or volatilities — VAR, VEC or factor model — carries its random walks over the horizon or keeps them at the last sample period — see `results.md`, *What a forecast does with drifting states*. Any other spelling throws |
 | `m` | int | 0 | Exogenous variables |
@@ -52,12 +52,14 @@ seen from R.
 | `structural` | bool | false | Move the last `k(k-1)/2` entries of `a` to contemporaneous coefficients. Read from an HDF5 boolean enumeration (h5py, HighFive, or an R logical, whose NA is refused) or an integer (non-zero is true) |
 | `error` | string | `""` | Descriptive, except for `gamma+covar` and `sv+covar` — see below |
 | `quantile` | double | 0.5 | The quantile an `*Ald` model estimates. Must lie in `(0, 1)`. Ignored by every other model |
+| `delta_beta` | double | 1.0 | `VarTvpDiscount` and `VecTvpDiscount`: how fast the coefficients drift. In `(0, 1]`; 1 holds them constant. Ignored by every other model |
+| `delta_sigma` | double | 1.0 | The same for the error covariance. In `(0, 1]`, and `1/(1 - delta_sigma)` must exceed `k` — the degrees of freedom settle there whatever the prior says |
 | `rank` | int | 0 | A VEC's cointegration rank. Zero means "not a cointegrated model" |
 | `k_beta` | int | 0 | Rows of the cointegration matrix. `rank` may not exceed it |
 | `n_restricted` | int | 0 | A VEC's deterministic terms restricted to the cointegration space. Disjoint from `n` |
 | `n_factors` | int | 0 | Unobserved factors. Zero for every model that is not a factor model |
 | `n_obs_factors` | int | 0 | A FAVAR's observed factors. Needs `n_factors > 0` as well |
-| `seed` | int | none | Seeds the random number generator for this model's run, so its draws depend on the file alone. A non-negative whole number; anything else is refused. Absent leaves the generator as it is — see `pipeline.md`, *Reproducibility* |
+| `seed` | int | none | Seeds the random number generator for this model's run, so its draws depend on the file alone. A non-negative whole number; anything else is refused. Absent leaves the generator as it is — see `pipeline.md`, *Reproducibility*. A `*TvpDiscount` model's estimation consumes no random numbers at all, so a seed reaches only its forecast |
 
 `error` is load-bearing for exactly two values, and the spelling is
 model-specific: `gamma+covar` switches the covariance block on for the gamma
@@ -77,7 +79,7 @@ models with no `psi` block never compare it.
 | `y` | `(1, tt*k)` | The response, already stacked: `vec(Y')`, all `k` variables of period 1, then period 2, and so on |
 | `z` | `(nparams, tt*k)` | The SUR regressor matrix. On paper it is `(tt*k, nparams)`, one block of `k` rows per period |
 | `w` | `(k_beta, tt)` | A VEC only: the error correction term. On paper `(tt, k_beta)` |
-| `x` | `(n_x, tt)` | The regressors in the compact layout, one column per regressor on paper. Read by `VecKlgs2010` in place of `z` |
+| `x` | `(n_x, tt)` | The regressors in the compact layout, one column per regressor on paper. Read by `VecKlgs2010`, `VarTvpDiscount` and `VecTvpDiscount` in place of `z`. For `VecTvpDiscount` it holds the short-run blocks alone, `n_x_vec` of them: the `rank` error correction columns are built from `w` and `/initial/beta` |
 | `f_obs` | `(n_obs_factors, tt)` | A FAVAR only: the observed factors. On paper `(tt, n_obs_factors)`. The observed half of the state vector, not regressors |
 
 `tt` is never stored. It is recovered as `len(y) / k`, and a `y` whose length is
@@ -134,6 +136,7 @@ yet, and warns where there are some but `/model` asks for no horizon.
 | `/priors/a` | `mu` `(1, nparams)`, `v_inv` `(nparams, nparams)` | Every constant-coefficient model |
 | `/priors/a` | `shape`, `rate`, `mu`, `v_inv` | Every time-varying model: `shape`/`rate` on the innovation precision of the random walk, `mu`/`v_inv` on the state before the sample. `v_inv` must be positive definite -- the samplers integrate that state out of the first period's prior, which takes its inverse -- so a flat prior of zeros is refused. The same holds for `/priors/psi` and `/priors/lambda` |
 | `/priors/a` | `inprior` `(1, nparams)`, `include` (one-based ints), `tau0`, `tau1` | Added when `varsel` is on. `tau0`/`tau1` for `ssvs` only |
+| `/priors/a` | `mean` `(k, n_x)`, `cov` `(n_x, n_x)` | The two `*TvpDiscount` models, and **not** `mu`/`v_inv`: a matrix normal prior, `mean` being the `n_x` by `k` coefficient matrix on paper and `cov` the *regressor* side of its covariance. The equation side is the error covariance the Wishart prior carries, which is what makes the posterior conjugate. A file bringing `mu`/`v_inv` instead is read as having no coefficient prior, and `bayests check` warns that nothing read them |
 | `/priors/psi` | The same shapes at width `k(k-1)/2` | The models with a covariance block switched on. Every `psi` vector, here and under `/initial`, is the strict lower triangle of `Psi` **row by row** — `(1,0) (2,0) (2,1) (3,0) ...` — not column by column as R's `m[lower.tri(m)]` gives it. The two orders agree up to `k = 3`, so a writer that gets it wrong still passes on three variables |
 | `/priors/u_sigma` | `df` (scalar), `scale` `(k, k)` | The Wishart models |
 | `/priors/u_sigma` | `shape` `(1, k)`, `rate` `(1, k)` | The gamma models |
@@ -141,6 +144,7 @@ yet, and warns where there are some but `/model` asks for no horizon.
 | `/priors/u_scale` | `shape` `(1, k)`, `rate` `(1, k)` | The two `*Ald` models: the scale of the asymmetric Laplace |
 | `/priors/beta` | `v_inv` (scalar), `p_tau_inv` `(k_beta, k_beta)` | The constant VECs: the cointegration space prior |
 | `/priors/beta` | `mu`, `v_inv`, optional `rho`, optional `rho_min`/`rho_max`, optional `p_tau` `(k_beta, k_beta)` | The time-varying VECs — a state equation rather than a shrinkage. See below |
+| `/priors/beta` | nothing | `VecTvpDiscount` reads no prior over the space: it conditions on the one in `/initial/beta` rather than drawing it |
 | `/priors/lambda` | `mu`, `v_inv` (and `shape`/`rate` where the loadings drift) | The factor models: the free loadings |
 | `/priors/v_sigma` | `shape` `(1, n_factors)`, `rate` `(1, n_factors)` | `DfmNormalGamma` and `DfmTvpGamma`: the factor innovation precisions |
 | `/priors/v_sigma` | `offset`, `sigma`, `shape`, `rate`, `mu` `(1, n_factors)` and `v_inv` `(n_factors, n_factors)` | `DfmNormalStochvol` and `DfmTvpStochvol`: the factor innovations' log-volatilities, the same group `/priors/u_sigma` is for the series, at the width of the factors |
@@ -192,7 +196,7 @@ Starting values, at the widths the priors imply.
 | `u_omega_inv` | `(k, k)` | The time-varying gamma models |
 | `h`, `h_init` | `(k, tt)`, `(1, k)` | Stochastic volatility: the log-volatility path and its start |
 | `w`, `u_scale` | `(k, tt)`, `(1, k)` | The `*Ald` models: the latent scales (strictly positive) and the scale of the asymmetric Laplace |
-| `beta` | `(1, k_beta*rank)` | A constant VEC's cointegration matrix, flat as `vec(beta)` — the first column of `beta`, then the second |
+| `beta` | `(1, k_beta*rank)` | A constant VEC's cointegration matrix, flat as `vec(beta)` — the first column of `beta`, then the second. `VecTvpDiscount` reads it from here too, in the same layout, but **not as a starting value**: it iterates nothing, so this is the cointegration space the whole run conditions on. Copy a file, rewrite this one dataset, and you have the same model over another candidate space |
 | `beta`, `beta_init` | `(tt, k_beta*rank)`, `(1, k_beta*rank)` | A time-varying VEC: the whole path, and the state before the sample |
 | `lambda` | `(1, n_lambda)` | A constant-loading factor model's free loadings, flat. `FavarNormalWishart` counts them differently, `(k - n_factors) * n_state` — see `VarSpec::n_favar_lambda()` |
 | `lambda` | `(tt, n_lambda)` | `DfmTvpGamma` and `DfmTvpStochvol`: the whole path of the free loadings, held to exactly `tt` periods like `a` |
@@ -201,6 +205,10 @@ Starting values, at the widths the priors imply.
 | `v_sigma_inv` | `(n_state, n_state)` | `FavarNormalWishart`: a matrix, not a diagonal |
 | `u_h`, `u_h_init` | `(k, tt)`, `(1, k)` | `DfmNormalStochvol` and `DfmTvpStochvol`: the series' log-volatility path and its start, in place of `u_sigma_inv` |
 | `v_h`, `v_h_init` | `(n_factors, tt)`, `(1, n_factors)` | The same two models: the factors' log-volatility path and its start, in place of `v_sigma_inv` |
+
+The two `*TvpDiscount` models read almost none of this group: no coefficient
+start, no state precision, no error start, nothing being iterated. `/initial/beta`
+above is the only entry either of them opens.
 
 ## `/posterior`
 

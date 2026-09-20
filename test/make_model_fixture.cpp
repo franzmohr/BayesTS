@@ -114,6 +114,15 @@ constexpr double kVecRhoMax = 0.999;
 // entirely, which is admissible but the less interesting half of the range.
 constexpr double kVecTau = 0.5;
 
+// The two discount factors of VarTvpDiscount and VecTvpDiscount. Both away
+// from one, so the fixtures run the drifting model rather than the conjugate
+// one at both discounts of one -- which is the case the unit tests pin against
+// a closed form and needs no fixture. delta_sigma settles the degrees of
+// freedom at 1 / (1 - 0.95) = 20, which clears k = 3 as validate() demands;
+// anything below 1 - 1/k would be refused rather than written.
+constexpr double kDeltaBeta = 0.98;
+constexpr double kDeltaSigma = 0.95;
+
 /// A 64-bit LCG, so the fixtures do not depend on the host's <random>
 /// implementation the way std::mt19937 plus a distribution would.
 class Lcg
@@ -299,6 +308,25 @@ arma::mat build_forecast_regressors(const arma::mat &series, const Layout &layou
     return x;
 }
 
+/// tt x n_x, the compact reading of the same regressors build_train_regressors()
+/// kroneckers up with I_k -- the one lag block and the intercept, one column
+/// each rather than k of them.
+///
+/// Written only into a discounted VAR's file, which reads one k x n_x
+/// coefficient matrix per period and has no SUR design to undo. The two
+/// layouts describe one sample, the way they do for a VEC.
+arma::mat build_var_compact_regressors(const arma::mat &series, const Layout &layout)
+{
+    arma::mat x(kTT, layout.n_x, arma::fill::zeros);
+    x.cols(layout.n_x_lag, layout.n_x - 1).ones();
+    for (int t = 0; t < kTT; ++t)
+    {
+        // `series` runs kP ahead of the sample, so column t is period t's lag.
+        x.submat(t, 0, t, layout.n_x_lag - 1) = arma::trans(series.col(t));
+    }
+    return x;
+}
+
 void write_common(const ModelFile &file, const std::string &model, const std::string &varsel,
                   bool covar, bool structural, int h, const Layout &layout,
                   const arma::mat &series, const arma::mat &z_train)
@@ -311,10 +339,22 @@ void write_common(const ModelFile &file, const std::string &model, const std::st
     write_attribute<int>(file, "/model", "m", kM);
     write_attribute<int>(file, "/model", "s", kS);
     write_attribute<int>(file, "/model", "n", kN);
+    const bool discount = model == "VarTvpDiscount";
+
     write_attribute<int>(file, "/model", "iterations", kIterations);
-    write_attribute<int>(file, "/model", "burnin", kBurnin);
+
+    // Nothing is iterated in the discounted model, so there is nothing to
+    // discard: its validate() refuses a burn-in rather than ignoring one, and
+    // `iterations` is how many i.i.d. draws its forecast takes.
+    write_attribute<int>(file, "/model", "burnin", discount ? 0 : kBurnin);
     write_attribute<std::string>(file, "/model", "varsel", varsel);
     write_attribute<bool>(file, "/model", "structural", structural);
+
+    if (discount)
+    {
+        write_attribute<double>(file, "/model", "delta_beta", kDeltaBeta);
+        write_attribute<double>(file, "/model", "delta_sigma", kDeltaSigma);
+    }
 
     // The error specification the reader dispatches on. Neither Wishart model
     // carries a psi block, so neither has a "+covar" spelling to reach -- and
@@ -325,8 +365,11 @@ void write_common(const ModelFile &file, const std::string &model, const std::st
     {
         prefix = "sv";
     }
-    else if (model == "VarNormalWishart" || model == "VarTvpWishart")
+    else if (model == "VarNormalWishart" || model == "VarTvpWishart" || discount)
     {
+        // The discounted model's error covariance is the inverse Wishart whole,
+        // so it has no "+covar" spelling to reach either, and its reader is
+        // handed a null expectation the way the Wishart models' are.
         prefix = "wishart";
     }
     else if (model == "VarNormalAld" || model == "VarTvpAld")
@@ -355,7 +398,17 @@ void write_common(const ModelFile &file, const std::string &model, const std::st
     // emits it: vec(y') with the sample periods in order.
     const arma::mat sample = series.cols(kP, kTT + kP - 1);
     write_row(file, "/data/train/y", arma::vectorise(sample));
-    write_mat(file, "/data/train/z", z_train);
+
+    // Each file carries the one layout its model reads: writing both made
+    // `bayests check` warn, rightly, that one of them is never opened.
+    if (discount)
+    {
+        write_mat(file, "/data/train/x", build_var_compact_regressors(series, layout));
+    }
+    else
+    {
+        write_mat(file, "/data/train/z", z_train);
+    }
 
     if (h > 0)
     {
@@ -391,6 +444,27 @@ void write_var_normal_wishart(const ModelFile &file, const std::string &varsel,
             write_ssvs(file, "/priors/a", nparams);
         }
     }
+}
+
+/// The discounted VAR: a matrix normal prior on the coefficients, a Wishart one
+/// on the error precision, and nothing else.
+///
+/// Shorter than every writer beside it by exactly what a chain needs and this
+/// does not -- no `/initial` group at all, because nothing starts anywhere. The
+/// coefficient prior is at `/priors/a/mean` and `/priors/a/cov` rather than the
+/// `/priors/a/mu` and `/priors/a/v_inv` every sampler reads: a mean that is an
+/// n_x x k matrix rather than a stacked vector, and the regressor side of a
+/// covariance rather than a precision over the whole of it. See
+/// src/io/hdf5/var_tvp_discount_io.h.
+void write_var_tvp_discount(const ModelFile &file, const Layout &layout)
+{
+    const arma::uword n_x = static_cast<arma::uword>(layout.n_x);
+
+    write_mat(file, "/priors/a/mean", arma::mat(n_x, kK, arma::fill::zeros));
+    write_mat(file, "/priors/a/cov", arma::eye<arma::mat>(n_x, n_x));
+
+    write_int_scalar(file, "/priors/u_sigma/df", kK);
+    write_mat(file, "/priors/u_sigma/scale", arma::eye<arma::mat>(kK, kK));
 }
 
 void write_var_normal_gamma(const ModelFile &file, const std::string &varsel, bool covar,
@@ -811,7 +885,8 @@ arma::mat build_vec_forecast_regressors(const arma::mat &levels, int h)
 /// has a "+covar" spelling to reach.
 std::string vec_error_spec(const std::string &model, bool covar)
 {
-    if (model == "VecTvpWishart" || model == "VecNormalWishart" || model == "VecKlgs2010")
+    if (model == "VecTvpWishart" || model == "VecNormalWishart" || model == "VecKlgs2010" ||
+        model == "VecTvpDiscount")
     {
         return "wishart";
     }
@@ -839,11 +914,19 @@ void write_vec_common(const ModelFile &file, const std::string &model, const std
     write_attribute<int>(file, "/model", "rank", kVecRank);
     write_attribute<int>(file, "/model", "k_beta", kVecKBeta);
 
+    const bool discount = model == "VecTvpDiscount";
+
     write_attribute<int>(file, "/model", "iterations", kIterations);
-    write_attribute<int>(file, "/model", "burnin", kBurnin);
+    write_attribute<int>(file, "/model", "burnin", discount ? 0 : kBurnin);
     write_attribute<std::string>(file, "/model", "varsel", varsel);
     write_attribute<bool>(file, "/model", "structural", structural);
     write_attribute<std::string>(file, "/model", "error", vec_error_spec(model, covar));
+
+    if (discount)
+    {
+        write_attribute<double>(file, "/model", "delta_beta", kDeltaBeta);
+        write_attribute<double>(file, "/model", "delta_sigma", kDeltaSigma);
+    }
 
     ensure_group(file, "/data");
     ensure_group(file, "/data/train");
@@ -858,7 +941,7 @@ void write_vec_common(const ModelFile &file, const std::string &model, const std
     // Both layouts are built from the same levels, so a VecKlgs2010 fixture and a
     // SUR one still describe one sample; each file carries only the one its
     // model reads.
-    if (model == "VecKlgs2010")
+    if (model == "VecKlgs2010" || discount)
     {
         write_mat(file, "/data/train/x", x_train);
     }
@@ -1598,7 +1681,30 @@ void write_dfm_tvp_stochvol(const ModelFile &file, int h, const arma::mat &x)
     }
 }
 
-/// Dispatches to the six above. Returns false if the name is not a VEC.
+/// The discounted VEC: the matrix normal prior of write_var_tvp_discount(),
+/// over a design that is `rank` error correction columns wider than the compact
+/// regressors, and the cointegration matrix the run conditions on.
+///
+/// `/initial/beta` is where every VEC here keeps its space and in the same
+/// layout, and this model reads it from there -- not as a starting value, of
+/// which it has none, but as the space it holds fixed. A file that differs from
+/// a VecNormalWishart one in `/model/algorithm`, the two discounts and the shape
+/// of the coefficient prior is otherwise the same file.
+void write_vec_tvp_discount(const ModelFile &file)
+{
+    // rank error correction columns in front of the k(p-1) lagged differences.
+    const arma::uword n_design = static_cast<arma::uword>(kVecRank + kK * (kVecP - 1));
+
+    write_mat(file, "/priors/a/mean", arma::mat(n_design, kK, arma::fill::zeros));
+    write_mat(file, "/priors/a/cov", arma::eye<arma::mat>(n_design, n_design));
+
+    write_row(file, "/initial/beta", vec_initial_beta());
+
+    write_int_scalar(file, "/priors/u_sigma/df", kK);
+    write_mat(file, "/priors/u_sigma/scale", arma::eye<arma::mat>(kK, kK));
+}
+
+/// Dispatches to the seven above. Returns false if the name is not a VEC.
 bool write_vec_model(const ModelFile &file, const std::string &model, const std::string &varsel,
                      bool covar, arma::uword nparams)
 {
@@ -1630,6 +1736,10 @@ bool write_vec_model(const ModelFile &file, const std::string &model, const std:
     {
         write_vec_tvp_stochvol(file, varsel, covar, nparams);
     }
+    else if (model == "VecTvpDiscount")
+    {
+        write_vec_tvp_discount(file);
+    }
     else
     {
         return false;
@@ -1641,7 +1751,7 @@ bool is_vec_model(const std::string &model)
 {
     return model == "VecKlgs2010" || model == "VecNormalWishart" || model == "VecNormalGamma" ||
            model == "VecNormalStochvol" || model == "VecTvpWishart" || model == "VecTvpGamma" ||
-           model == "VecTvpStochvol";
+           model == "VecTvpStochvol" || model == "VecTvpDiscount";
 }
 
 } // namespace
@@ -1739,12 +1849,23 @@ int main(int argc, char *argv[])
     const bool is_favar = model == "FavarNormalWishart";
 
     const bool is_ald = model == "VarNormalAld" || model == "VarTvpAld";
+    const bool is_discount = model == "VarTvpDiscount" || model == "VecTvpDiscount";
 
     if (model != "VarNormalWishart" && model != "VarNormalGamma" &&
         model != "VarNormalStochvol" && model != "VarTvpGamma" && model != "VarTvpWishart" &&
-        model != "VarTvpStochvol" && !is_vec && !is_dfm && !is_favar && !is_ald)
+        model != "VarTvpStochvol" && model != "VarTvpDiscount" && !is_vec && !is_dfm &&
+        !is_favar && !is_ald)
     {
         std::cerr << "Unknown model: " << model << '\n';
+        return 2;
+    }
+    if (is_discount && (varsel != "none" || covar || structural))
+    {
+        std::cerr << "The discounted models take no variable selection -- there are no draws "
+                     "for an inclusion indicator to be drawn alongside -- no covariance block "
+                     "and no contemporaneous coefficients, an inverse Wishart posterior leaving "
+                     "the error covariance unrestricted: see validate() in "
+                     "src/core/models/var_tvp_discount.cpp\n";
         return 2;
     }
     if (is_dfm && (varsel != "none" || covar || structural))
@@ -1934,7 +2055,11 @@ int main(int argc, char *argv[])
             write_attribute<std::string>(file, "/model", "forecast_states", "hold");
         }
 
-        if (model == "VarNormalWishart")
+        if (model == "VarTvpDiscount")
+        {
+            write_var_tvp_discount(file, layout);
+        }
+        else if (model == "VarNormalWishart")
         {
             write_var_normal_wishart(file, varsel, layout);
         }

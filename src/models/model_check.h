@@ -39,9 +39,16 @@ struct has_psi_varsel
     static constexpr bool value = requires(const Input &input) { input.psi_varsel; };
 };
 
+/// Where a fitted posterior is looked for. Every sampler here writes an error
+/// precision, so its presence is what says the model has been run; the
+/// discounted pair writes a covariance and no draws at all, and is probed at
+/// the first dataset of its closed form instead.
+constexpr const char *kDefaultPosteriorProbe = "/posterior/u_sigma_inv/coeffs";
+
 /// Everything the check reports that does not depend on which model it is.
 template <typename Input>
-ModelCheck inspect(const ModelFile &file, const Input &input)
+ModelCheck inspect(const ModelFile &file, const Input &input,
+                   const char *posterior_probe = kDefaultPosteriorProbe)
 {
     ModelCheck check;
     check.spec = input.spec;
@@ -57,7 +64,7 @@ ModelCheck inspect(const ModelFile &file, const Input &input)
     const std::vector<std::string> read = file.datasets_read();
 
     check.error_attribute = hdf5_io::optional_attribute_string(file, "/model", "error", "");
-    check.has_posterior = dataset_has_data(file, "/posterior/u_sigma_inv/coeffs");
+    check.has_posterior = dataset_has_data(file, posterior_probe);
 
     // Not the reader's -- the command line seeds the generator, see
     // src/model_seed.cpp -- but a seed a run would refuse, the check refuses.
@@ -202,10 +209,60 @@ void require_vec_forecast_regressors(const Input &input)
     }
 }
 
+/// The same for a discounted model, whose regressors are the compact
+/// `/data/train/x` and whose forecast applies one k x n_x coefficient matrix
+/// per horizon to `/data/forecast/x` in the same layout.
+///
+/// Counted off the spec throughout. The VAR template above measures the width
+/// against `/data/train/z`, which these models do not read and which a file
+/// written for one does not carry, so every one of its tests would pass
+/// vacuously on a forecast that is about to overrun its regressors.
+template <typename Input>
+void require_discount_forecast_regressors(const Input &input)
+{
+    const VarSpec &spec = input.spec;
+    if (spec.h <= 0 || spec.k <= 0)
+    {
+        return;
+    }
+
+    const arma::uword h = static_cast<arma::uword>(spec.h);
+    const arma::uword width = static_cast<arma::uword>(spec.n_x());
+    const arma::mat &x = input.forecast.x;
+
+    if (width > 0 && x.n_elem == 0)
+    {
+        throw std::invalid_argument(
+            "h = " + std::to_string(spec.h) +
+            " asks for a forecast, but the file has no forecast regressors: /data/forecast/x is "
+            "missing, and a forecast without them would be drawn from the errors alone");
+    }
+    if (x.n_elem == 0)
+    {
+        return;
+    }
+    if (x.n_rows != h)
+    {
+        throw std::invalid_argument(
+            "/data/forecast/x holds " + std::to_string(x.n_rows) + " horizons, and h = " +
+            std::to_string(spec.h) + " needs exactly one row per horizon");
+    }
+    if (x.n_cols != width)
+    {
+        throw std::invalid_argument(
+            "/data/forecast/x has " + std::to_string(x.n_cols) +
+            " regressors per horizon, but k = " + std::to_string(spec.k) + ", p = " +
+            std::to_string(spec.p) + ", m = " + std::to_string(spec.m) + ", s = " +
+            std::to_string(spec.s) + ", n = " + std::to_string(spec.n) + " make " +
+            std::to_string(width) + " -- the compact layout /data/train/x is in");
+    }
+}
+
 /// Opens the model read-only, with the reads recorded, and runs its reader and
 /// validate(). `extra` is the stage-specific part.
 template <typename ReadInput, typename Extra>
-ModelCheck run(const ModelLocation &location, ReadInput read_input, Extra extra)
+ModelCheck run(const ModelLocation &location, ReadInput read_input, Extra extra,
+               const char *posterior_probe = kDefaultPosteriorProbe)
 {
     HighFive::File h5 = open_hdf5_file(location.file);
     ModelFile file(h5, location.group);
@@ -215,7 +272,7 @@ ModelCheck run(const ModelLocation &location, ReadInput read_input, Extra extra)
     input.validate();
     extra(file, input);
 
-    return inspect(file, input);
+    return inspect(file, input, posterior_probe);
 }
 
 } // namespace bayests::model_check_detail
@@ -238,6 +295,35 @@ ModelCheck check_vec_model(const ModelLocation &location, ReadInput read_input)
         location, read_input, [](const ModelFile &, const auto &input) {
             bayests::model_check_detail::require_vec_forecast_regressors(input);
         });
+}
+
+/// A discounted VAR: the compact regressor layout, and a posterior that is a
+/// closed form rather than draws, so neither of the two things the VAR template
+/// above looks at is where this model keeps it.
+template <typename ReadInput>
+ModelCheck check_var_discount_model(const ModelLocation &location, ReadInput read_input,
+                                    const char *posterior_probe)
+{
+    return bayests::model_check_detail::run(
+        location, read_input,
+        [](const ModelFile &, const auto &input) {
+            bayests::model_check_detail::require_discount_forecast_regressors(input);
+        },
+        posterior_probe);
+}
+
+/// A discounted VEC: the level forecast layout every VEC needs, against the
+/// same closed-form posterior.
+template <typename ReadInput>
+ModelCheck check_vec_discount_model(const ModelLocation &location, ReadInput read_input,
+                                    const char *posterior_probe)
+{
+    return bayests::model_check_detail::run(
+        location, read_input,
+        [](const ModelFile &, const auto &input) {
+            bayests::model_check_detail::require_vec_forecast_regressors(input);
+        },
+        posterior_probe);
 }
 
 /// A factor model, whose forecast runs on the horizon alone, so there is

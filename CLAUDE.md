@@ -33,8 +33,9 @@ ctest --test-dir build/bin/<your-preset> -R unit.kalman
 cmake --build build/bin/<your-preset> --target docs    # Doxygen, optional
 ```
 
-All twenty samplers are covered from a clean clone: `test/make_model_fixture.cpp`
-writes a model file for every one of them, and no `*.h5` is checked in. A file
+All twenty-two algorithms are covered from a clean clone:
+`test/make_model_fixture.cpp` writes a model file for every one of them, and no
+`*.h5` is checked in. A file
 recorded from a real run — real data, a real prior — is the one thing the
 generator cannot supply, so any number of them can be added as extra golden
 tests, and nothing in the suite depends on one being there:
@@ -116,7 +117,7 @@ Two rules that break the host silently rather than here:
 
 ### Model taxonomy
 
-Twenty registered algorithms. Six VARs × {`NormalWishart`, `NormalGamma`,
+Twenty-two registered algorithms. Six VARs × {`NormalWishart`, `NormalGamma`,
 `NormalStochvol`, `TvpWishart`, `TvpGamma`, `TvpStochvol`}, the same six as VECs,
 plus two quantile VARs — `VarNormalAld` and `VarTvpAld`, which add `Ald` to the
 error axis rather than a fourth axis, since the asymmetric Laplace *is* the error
@@ -149,6 +150,34 @@ and so coincide on a family of dimensions, every `k = n(n+1)/2` with one
 observed factor among them. Two algorithms carry the weight underneath:
 `kalman_durbin_koopman_2002` (whole-path simulation smoother for time-varying
 coefficients) and `stochvol_ocsn_2007` (the ten-component normal mixture).
+**Two of the twenty-two are not samplers.** `VarTvpDiscount` and
+`VecTvpDiscount` are the matrix normal dynamic linear model of West and Harrison
+(1997, ch. 16) with Uhlig's (1997) discounted Wishart on the error precision:
+`VarSpec::delta_beta` discounts the coefficient covariance each period and
+`VarSpec::delta_sigma` the Wishart, both in (0, 1], both meaningful at one. The
+shared recursion is `src/core/models/discount_support.h` and the two models
+differ only in the design they hand it -- the VEC puts `rank` columns of
+`beta' w_t` in front of the compact regressors, which is the whole of
+`build_design()`. They consume no random numbers while estimating, read
+`/data/train/x` and a `MatrixNormalPrior` at `/priors/a/mean` and
+`/priors/a/cov`, refuse a non-zero `burnin` and a `thin` other than one, and
+write a posterior rather than draws: `/posterior/a/mean`, `a/scale`, `a/cov`,
+`u_sigma/scale` and `df`, one column per period, and deliberately **no
+`/posterior/a/coeffs`** -- joining one i.i.d. draw per period would look like a
+sampled path and is not one.
+
+**`VecTvpDiscount` holds the cointegration space fixed and cannot do
+otherwise.** `/initial/beta` is the space it conditions on rather than a start.
+Letting it move breaks the conjugacy three times over, and the third is the one
+that would not show up as a failure: `TvpCointSpacePrior` fixes the innovation
+variance of `beta_t` at the identity because that is what pins beta's scale
+against alpha's, and a discount replaces a fixed variance with a data-dependent
+one. Discounting that block is not a cheaper Koop, Leon-Gonzalez and Strachan
+(2011) but an unidentified model. What the fixed space buys is that the sum of
+`/posterior/loglik` is the exact marginal likelihood given the space, the rank
+and the two discounts, at one pass -- so a grid over candidate spaces is a list
+of files and no chain is run for any of them.
+
 `chan_jeliazkov_2009` draws banded state paths and serves the DFM factor path.
 It has a second entry point, `chan_jeliazkov_2009_conditional`, which holds the
 trailing elements of every state column at observed values rather than drawing
@@ -286,8 +315,8 @@ existing one carries. Assisted commits get a `Co-Authored-By` trailer.
 ## The agent documentation
 
 `agents/` is documentation for coding agents *using* BayesTS, not for working on
-it (that is this file). It covers the model file, the twenty algorithms, the run
-order and worked examples. It ships three ways: as a Claude Code plugin through
+it (that is this file). It covers the model file, the twenty-two algorithms, the
+run order and worked examples. It ships three ways: as a Claude Code plugin through
 `.claude-plugin/marketplace.json`, as `llms.txt` beside the Doxygen site, and
 under `share/doc/BayesTS/agents/` in an installed package.
 
