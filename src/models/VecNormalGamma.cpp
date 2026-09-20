@@ -82,8 +82,14 @@ void VecNormalGamma::forecast(const ModelLocation &location_arg)
         return;
     }
 
-    // Stop if forecasts are already available in the object
-    if (dataset_has_data(file, "/posterior/forecast/forecasts"))
+    // Stop if forecasts are already available in the object -- unless the file
+    // carries what the horizon realised and has not been scored against it.
+    // The two members of the group are asked for separately so that adding
+    // /data/test/y to a file that was already forecast is enough to score it,
+    // rather than needing the paths thrown away first.
+    const bool scorable = dataset_has_data(file, "/data/test/y");
+    const bool scored = dataset_has_data(file, "/posterior/forecast/loglik");
+    if (dataset_has_data(file, "/posterior/forecast/forecasts") && (!scorable || scored))
     {
         return;
     }
@@ -92,10 +98,20 @@ void VecNormalGamma::forecast(const ModelLocation &location_arg)
     const bayests::VecNormalGammaDraws draws = io::read_coefficients(file);
 
     bayests::NullReporter reporter;
-    const bayests::ForecastDraws fcst =
-        bayests::VecNormalGammaSampler{}.forecast(input, draws, reporter);
+    if (!dataset_has_data(file, "/posterior/forecast/forecasts"))
+    {
+        const bayests::ForecastDraws fcst =
+            bayests::VecNormalGammaSampler{}.forecast(input, draws, reporter);
+        bayests::hdf5_io::write_forecast(file, fcst);
+    }
 
-    bayests::hdf5_io::write_forecast(file, fcst);
+    // Scored in the level parameterisation the forecast runs in, against the
+    // realised levels /data/test/y holds.
+    if (scorable && !scored)
+    {
+        const arma::mat score = bayests::VecNormalGammaSampler{}.predictive_log_density(input, draws);
+        bayests::hdf5_io::write_forecast_loglik(file, score);
+    }
 }
 
 void VecNormalGamma::log_likelihood(const ModelLocation &location_arg)

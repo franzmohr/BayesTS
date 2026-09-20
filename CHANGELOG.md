@@ -68,11 +68,21 @@ heading, and move down into a version section when one is cut.
   so two runs under `simulate` give two answers, as two forecasts do, and
   `/model/seed` is what repeats either.
 
-  The VECs and the factor models have no entry point yet. A structural model
-  refuses for good, its regressors holding the contemporaneous observations and
-  its density the Jacobian of `A_0`, and the two quantile models never reach it,
-  having no forecast at all. `bayests check` says which side of that line a file
-  is on.
+  **A VEC is scored in levels**, the parameterisation it forecasts in: its draws
+  are rewritten as the level VAR they imply and the score is that VAR's, which
+  is what the forecast already does. So `/data/test/y` of a VEC holds the
+  realised **levels**, the series `/data/forecast/x` carries the lags of, and
+  not the differences `/data/train/y` holds. `VecNormalWishart`,
+  `VecNormalGamma` and `VecKlgs2010` are scored today.
+
+  The four VECs whose states drift and the factor models have no entry point
+  yet. A drifting VEC asks more than the VARs did: its cointegration vectors
+  move by a state equation of their own rather than by a random walk, and the
+  level coefficients are not linear in the states, so the change of basis has to
+  be made again at every period. A structural model refuses for good, its
+  regressors holding the contemporaneous observations and its density the
+  Jacobian of `A_0`, and the two quantile models never reach it, having no
+  forecast at all. `bayests check` says which side of that line a file is on.
 
   The two members of the forecast group are now asked for separately, so adding
   `/data/test/y` to a file that was already forecast is enough to score it; the

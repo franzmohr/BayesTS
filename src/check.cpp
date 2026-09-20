@@ -171,7 +171,9 @@ void print_report(const std::string &algorithm, const ModelCheck &check)
 		!spec.structural &&
 		(algorithm == "VarNormalWishart" || algorithm == "VarNormalGamma" ||
 		 algorithm == "VarNormalStochvol" || algorithm == "VarTvpWishart" ||
-		 algorithm == "VarTvpGamma" || algorithm == "VarTvpStochvol");
+		 algorithm == "VarTvpGamma" || algorithm == "VarTvpStochvol" ||
+		 algorithm == "VecNormalWishart" || algorithm == "VecNormalGamma" ||
+		 algorithm == "VecKlgs2010");
 	if (check.test_periods > 0)
 	{
 		std::cout << "  realised: " << check.test_periods << " period(s) in /data/test/y";

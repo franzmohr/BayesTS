@@ -99,7 +99,12 @@ A factor model needs neither: the horizon alone drives its forecast.
 
 | Dataset | Dataspace shape | Contents |
 | --- | --- | --- |
-| `y` | `(k, h)` | What the horizon realised, `(h, k)` on paper: one row per period and one column per variable, in the variable order of `/data/train/y`. Optional |
+| `y` | `(k, h)` | What the horizon realised, `(h, k)` on paper: one row per period and one column per variable. Optional |
+
+For a VAR that is the variable order of `/data/train/y`. **For a VEC it is the
+levels**, the series `/data/forecast/x` carries the lags of, not the differences
+`/data/train/y` holds: a VEC is forecast and scored in its level
+parameterisation. See `results.md`.
 
 The one thing in `/data` that no sampler reads. It is not a sample anything is
 estimated on but the observations a forecast is scored against, and it lives in

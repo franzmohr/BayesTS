@@ -54,9 +54,19 @@ the group rather than one dataset in it.
 ## The score
 
 `loglik` is written by `forecasts` wherever the file carries `/data/test/y` and
-the algorithm can be scored, which today is the six VARs: `VarNormalWishart`,
-`VarNormalGamma`, `VarNormalStochvol`, `VarTvpWishart`, `VarTvpGamma` and
-`VarTvpStochvol`. One column per realised period, which may be fewer than `h`.
+the algorithm can be scored: the six VARs -- `VarNormalWishart`,
+`VarNormalGamma`, `VarNormalStochvol`, `VarTvpWishart`, `VarTvpGamma`,
+`VarTvpStochvol` -- and the three VECs whose states stand still,
+`VecNormalWishart`, `VecNormalGamma` and `VecKlgs2010`. One column per realised
+period, which may be fewer than `h`.
+
+**A VEC is scored in levels**, the parameterisation it forecasts in. Its draws
+are rewritten as the level VAR they imply and the score is that VAR's, so
+`/data/test/y` of a VEC holds the realised **levels** -- the same series
+`/data/forecast/x` carries the lags of, not the differences `/data/train/y`
+holds. The two parameterisations are the same model, and the change of basis is
+exact, so nothing is lost by scoring in either; levels are what the file already
+has.
 
 **Each column conditions on the realised observations before it**, not on the
 path the forecast simulated. Column `i` is therefore the one step ahead
@@ -100,8 +110,12 @@ posterior carries. It does mean the score is **drawn rather than computed**, so
 two runs under `simulate` give two answers, as two forecasts do. `/model/seed`
 is what repeats either.
 
-**What cannot be scored.** The VECs and the factor models have no entry point
-yet. A structural model refuses for good, its regressors holding the
+**What cannot be scored.** The four VECs whose states drift --
+`VecNormalStochvol`, `VecTvpWishart`, `VecTvpGamma`, `VecTvpStochvol` -- and the
+factor models have no entry point yet. A drifting VEC needs more than the VARs
+did: its cointegration vectors move by a state equation of their own rather than
+a random walk, and the level coefficients are not linear in the states, so the
+change of basis has to be made again at every period. A structural model refuses for good, its regressors holding the
 contemporaneous observations and its density the Jacobian of `A_0`. The two
 quantile models never reach it, having no forecast at all. `bayests check` says
 which side of that line a file is on.

@@ -441,6 +441,17 @@ class Checker:
         self.posterior(d, "var.h5")
         expect_shapes(d / "var.h5", {"/posterior/forecast/loglik": (n, it)})
 
+        # A VEC is scored in the level parameterisation it forecasts in, and
+        # /data/test/y is the realised levels, so it goes through the same
+        # motions with the same shapes.
+        vec = self.run_python(d, self.code("references/recipes.md", "A VEC", 0))
+        with h5py.File(d / "vec.h5", "a") as f:
+            f.create_dataset("/data/test/y", data=np.zeros((vec["k"], n)))
+        self.posterior(d, "vec.h5")
+        expect_shapes(d / "vec.h5", {
+            "/posterior/forecast/loglik": (n, vec["iterations"]),
+        })
+
         # results.md reads a file called model.h5.
         shutil.copy(d / "var.h5", d / "model.h5")
         scored = self.run_python(d, self.code("references/results.md", "The score", 0))
