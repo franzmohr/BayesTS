@@ -48,14 +48,22 @@ Treat a warning as a bug in the file until you can say why it is there.
 4. **Re-running does not re-estimate.** Every stage skips when its output is
    already in the file. Delete `/posterior` to redo a run.
 
-5. **Variable-selection positions are one-based.**
+5. **Variable-selection positions are one-based**, and they are the only
+   positions selection moves. Every coefficient outside `include` keeps the
+   indicator `/initial/a_lambda` (or `psi_lambda`) starts it at from the first
+   draw to the last, so a zero there is a permanent restriction and not a
+   starting value. Ones unless one is meant.
 
 6. **`error` is descriptive except for two values.** `gamma+covar` switches the
    covariance block on for the gamma models, `sv+covar` for the stochastic
    volatility models. Every other value — including the right one on the wrong
    model — does nothing at all.
 
-7. **`varsel` is `none`, `ssvs` or `bvs`.** Any other spelling throws.
+7. **`varsel` is `none`, `ssvs` or `bvs`.** Any other spelling throws. `bvs`
+   additionally needs a coefficient prior tight enough to select against: it
+   draws an excluded coefficient from its prior, so a near-flat
+   `/priors/a/v_inv` keeps everything excluded and reports inclusion
+   probabilities near zero. Nothing refuses one.
 
 8. **Never infer a dimension from an array that happens to fit.** The DFM and
    FAVAR loading counts coincide at a whole family of dimensions, and

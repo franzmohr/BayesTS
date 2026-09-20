@@ -135,7 +135,7 @@ yet, and warns where there are some but `/model` asks for no horizon.
 | --- | --- | --- |
 | `/priors/a` | `mu` `(1, nparams)`, `v_inv` `(nparams, nparams)` | Every constant-coefficient model |
 | `/priors/a` | `shape`, `rate`, `mu`, `v_inv` | Every time-varying model: `shape`/`rate` on the innovation precision of the random walk, `mu`/`v_inv` on the state before the sample. `v_inv` must be positive definite -- the samplers integrate that state out of the first period's prior, which takes its inverse -- so a flat prior of zeros is refused. The same holds for `/priors/psi` and `/priors/lambda` |
-| `/priors/a` | `inprior` `(1, nparams)`, `include` (one-based ints), `tau0`, `tau1` | Added when `varsel` is on. `tau0`/`tau1` for `ssvs` only |
+| `/priors/a` | `inprior` `(1, nparams)`, `include` (one-based ints), `tau0`, `tau1` | Added when `varsel` is on. `tau0`/`tau1` for `ssvs` only. With `bvs` the tightness of `v_inv` above decides whether selection can work at all — see the skill's `varsel` section |
 | `/priors/a` | `mean` `(k, n_x)`, `cov` `(n_x, n_x)` | The two `*TvpDiscount` models, and **not** `mu`/`v_inv`: a matrix normal prior, `mean` being the `n_x` by `k` coefficient matrix on paper and `cov` the *regressor* side of its covariance. The equation side is the error covariance the Wishart prior carries, which is what makes the posterior conjugate. A file bringing `mu`/`v_inv` instead is read as having no coefficient prior, and `bayests check` warns that nothing read them |
 | `/priors/psi` | The same shapes at width `k(k-1)/2` | The models with a covariance block switched on. Every `psi` vector, here and under `/initial`, is the strict lower triangle of `Psi` **row by row** — `(1,0) (2,0) (2,1) (3,0) ...` — not column by column as R's `m[lower.tri(m)]` gives it. The two orders agree up to `k = 3`, so a writer that gets it wrong still passes on three variables |
 | `/priors/u_sigma` | `df` (scalar), `scale` `(k, k)` | The Wishart models |
@@ -174,6 +174,11 @@ Values are checked as well as shapes, by a run and by `bayests check`:
 - A log-volatility `offset`, SSVS `tau0` and `tau1`, and the initial variance of
   a log-volatility's innovations must be finite and greater than zero.
 - `inprior` must lie in `[0, 1]`.
+- Nothing checks a prior precision for being tight enough for `bvs` to select
+  anything, and nothing compares `include` against the indicators `/initial`
+  starts them at. Both are ways of getting a run that finishes and a posterior
+  that looks ordinary while the model estimated was not the one intended; the
+  skill's `varsel` section has each.
 - A starting precision the sampler redraws only the diagonal of must be
   diagonal: `u_sigma_inv` of `VarNormalGamma` and `VecNormalGamma`, `u_omega_inv`
   of the time-varying gamma models, `a_sigma_inv` and `psi_sigma_inv` of the
@@ -190,7 +195,7 @@ Starting values, at the widths the priors imply.
 | `a` | `(1, nparams)` | Constant coefficients |
 | `a` | `(tt, nparams)` | Time-varying coefficients: the whole path, one period per column on paper. Exactly `tt` periods of `nparams`; a path of any other size is refused rather than padded, and so are `psi`, `beta` and `lambda` below |
 | `a_sigma_inv`, `a_init` | `(nparams, nparams)`, `(1, nparams)` | The random walk's innovation precision and the state before the sample |
-| `a_lambda` | `(1, nparams)` | Inclusion indicators, when `varsel` is on |
+| `a_lambda` | `(1, nparams)` | Inclusion indicators, when `varsel` is on. Only the positions `/priors/a/include` names are ever redrawn; every other one keeps the value it starts with from the first draw to the last. Ones unless an outright restriction is meant — a zero outside `include` masks that coefficient out of the whole run silently |
 | `psi`, `psi_sigma_inv`, `psi_init`, `psi_lambda` | The same at width `k(k-1)/2` | The covariance block |
 | `u_sigma_inv` | `(k, k)` | The Wishart models, and `VarNormalGamma` and `VecNormalGamma`. **A factor model's is `(1, k)`** — diagonal by assumption, so it is stored flat — and only `DfmNormalGamma`, `DfmTvpGamma` and `FavarNormalWishart` read it |
 | `u_omega_inv` | `(k, k)` | The time-varying gamma models |

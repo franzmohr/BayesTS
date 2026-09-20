@@ -27,6 +27,30 @@ Dates are ISO. Versions follow the `project(VERSION)` in `CMakeLists.txt`.
 New entries go here, under an `### Added`, `### Changed` or `### Fixed`
 heading, and move down into a version section when one is cut.
 
+### Changed
+
+- **The agent documentation now says what `bvs` needs from the coefficient
+  prior, and what `include` does not cover.** Two ways of getting a run that
+  finishes, writes a full posterior and answers a different question than the
+  one asked, neither of which anything refuses:
+
+  BVS draws an excluded coefficient from its prior and then scores that draw
+  against the data to decide whether to let it back in, so a flat
+  `/priors/a/v_inv` keeps every selected coefficient excluded for good.
+  Korobilis (2013, §3.1) puts the point where this takes over at a prior
+  variance around 100 and quotes Kuo and Mallick's (1997) usable range of 0.25
+  to 25. `validate_normal_block()` checks that precision for being square and
+  symmetric and says nothing about its size, so the symptom is a posterior
+  inclusion probability pinned near zero everywhere, which reads as a finding.
+
+  `include` names the positions selection *visits*. Every other position keeps
+  the indicator `/initial/a_lambda` starts it at for the whole run, which is
+  how an intercept is held unrestricted and equally how a coefficient is
+  masked out of every draw without a word.
+
+  **Draws are unchanged**: `agents/`, and nothing under `src/` or `include/`,
+  was touched.
+
 ### Fixed
 
 - **`VarTvpDiscount` scored only the first horizon; every one after it came back
