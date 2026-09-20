@@ -36,6 +36,13 @@ FROM ubuntu:${UBUNTU_VERSION}
 # tree while preserving timestamps, which is what keeps a second run incremental.
 # doxygen and graphviz are here for the docs job; they cost little and having one
 # image rather than two keeps the two jobs honest about using the same compiler.
+#
+# python3-h5py and python3-numpy are what agents.recipes needs, and ci.sh asks
+# for that test by name rather than letting BAYESTS_TEST_AGENT_DOCS=AUTO decide.
+# Without them the image ran one test fewer than the Linux runner does and said
+# so in a line nobody reads, which is the opposite of what a pre-push gate is
+# for. apt rather than pip, as in the workflow: the system Python is externally
+# managed and the distribution's h5py is all the test needs.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential \
         gfortran \
@@ -48,6 +55,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         pkg-config \
         ninja-build \
         python3 \
+        python3-h5py \
+        python3-numpy \
         rsync \
         doxygen \
         graphviz \

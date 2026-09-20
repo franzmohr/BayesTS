@@ -23,10 +23,11 @@
 // make_model_fixture writes names itself.
 //
 // Exit codes: 2 for an unusable command line, 1 if a fixture throws or if any of
-// the three entry points produced nothing -- no draws, no log likelihood, or no
-// forecast where the horizon is positive. That last check is what keeps a green
-// run from meaning less than it looks like: before it, a file the sampler
-// rejected outright ran, printed `absent` fourteen times and passed. The
+// the three entry points produced nothing -- no draws, no log likelihood, no
+// forecast where the horizon is positive, and no score where the file carries
+// the observations that horizon realised. Those checks are what keep a green run
+// from meaning less than it looks like: before them, a file the sampler rejected
+// outright ran, printed `absent` fourteen times and passed. The
 // front-ends throw now rather than swallowing, and run() below catches each
 // stage so the other two are still attempted and the fingerprints still
 // printed -- the reason goes to stderr and the empty stage is the failure. It is not a check that the model wrote
@@ -152,6 +153,18 @@ void report(const ModelFile &file, const std::string &dataset, bool present)
 /// which of those a given model writes depends on the model.
 constexpr const char *kLoglik = "/posterior/loglik";
 constexpr const char *kForecast = "/posterior/forecast/forecasts";
+
+/// The score and the thing that asks for it. /data/test/y is an input, not an
+/// output, which is why it is not in kOutputs: what it decides is whether the
+/// forecast stage was also supposed to write a predictive density.
+///
+/// Deliberately reported only when the file carries it. Putting the score in
+/// kOutputs would add an `absent` line to every unscored fixture, which is a
+/// difference in every recording ever taken -- diff_fingerprints.sh would name
+/// all of them and say nothing. A fixture that did not ask to be scored prints
+/// what it printed before this existed.
+constexpr const char *kTestObservations = "/data/test/y";
+constexpr const char *kForecastLoglik = "/posterior/forecast/loglik";
 
 /// The horizon the file asks for. Absent means zero, which is what a fixture
 /// written with h=0 carries -- no forecast regressors and no attribute.
@@ -295,6 +308,12 @@ int run_fixture(const std::filesystem::path &fixture, const std::filesystem::pat
         }
     }
 
+    const bool scorable = dataset_has_data(file, kTestObservations);
+    if (scorable)
+    {
+        report(file, kForecastLoglik, dataset_has_data(file, kForecastLoglik));
+    }
+
     // A stage that threw is reported by run() above and then lands here as an
     // absent dataset, which is also what a stage that returned quietly having
     // done nothing looks like. Both are caught the same way. Absent is a
@@ -319,6 +338,12 @@ int run_fixture(const std::filesystem::path &fixture, const std::filesystem::pat
     if (forecast_horizon(file) > 0 && !forecast_written)
     {
         std::cerr << name << ": h is positive but forecast wrote no " << kForecast << '\n';
+        ++failures;
+    }
+    if (scorable && !dataset_has_data(file, kForecastLoglik))
+    {
+        std::cerr << name << ": " << kTestObservations << " is present but forecast wrote no "
+                  << kForecastLoglik << '\n';
         ++failures;
     }
 

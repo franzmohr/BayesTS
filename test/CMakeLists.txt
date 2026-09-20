@@ -672,6 +672,40 @@ bayests_add_model_fixture(VecTvpGamma-bvs-covar-hold       VecTvpGamma       bvs
 bayests_add_model_fixture(VecTvpStochvol-rho-ptau-hold     VecTvpStochvol    none 0 0 4 --coint-rho --coint-p-tau --hold-states)
 
 #####################################################################
+# Scored forecasts
+#
+# The rows that carry /data/test/y, which is the one thing that turns
+# `bayests forecasts` into a scoring run and writes
+# /posterior/forecast/loglik. Nothing above carries it, so until these were
+# added the predictive density was covered by unit tests alone -- and a filter
+# that drifted indefinite under one BLAS and not another got through that gap
+# once already, into a tagged release.
+#
+# One row per distinct implementation rather than one per algorithm, because
+# what is being covered is the three pieces of code that compute a score:
+#
+#   * predictive_score.h, which every VAR goes through, and every VEC after its
+#     draws are rewritten as the level VAR they imply -- so a constant VAR row
+#     and a constant VEC row, plus a VarTvpStochvol row whose coefficients and
+#     volatilities are carried forward through the realised values period by
+#     period rather than standing still;
+#   * factor_score.h, the Kalman filter a dynamic factor model is scored with;
+#   * the closed form the discounted pair carry, VarTvpDiscount filtering
+#     itself through the realised values and VecTvpDiscount simulating as every
+#     VEC does.
+#
+# The realised values are drawn from a generator of their own, so these rows
+# add a dataset to the file and move nothing that was in it: a fingerprint
+# recorded for a matching row above is still the fingerprint of the sampler,
+# not of the flag.
+bayests_add_model_fixture(VarNormalWishart-score  VarNormalWishart  none 0 0 4 --score)
+bayests_add_model_fixture(VarTvpStochvol-score    VarTvpStochvol    none 1 0 4 --score)
+bayests_add_model_fixture(VarTvpDiscount-score    VarTvpDiscount    none 0 0 4 --score)
+bayests_add_model_fixture(VecNormalGamma-score    VecNormalGamma    none 0 0 4 --score)
+bayests_add_model_fixture(VecTvpDiscount-score    VecTvpDiscount    none 0 0 4 --score)
+bayests_add_model_fixture(DfmTvpGamma-score       DfmTvpGamma       none 0 0 4 --score)
+
+#####################################################################
 # Recorded model files
 #
 # Everything above is generated, and the numbers in it are invented: admissible

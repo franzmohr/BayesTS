@@ -75,10 +75,10 @@ models and one factor augmented VAR:
 | `DfmTvpStochvol` | Random walk, the free loadings and the factor transition both | Stochastic volatility, on the idiosyncratic errors and the factor innovations | none |
 | `FavarNormalWishart` | Constant, normal prior on the loadings and on the state transition | Wishart on the state innovations; independent gamma on the idiosyncratic errors | none |
 
-The sixteen VARs and VECs support exogenous regressors, deterministic terms and
-a pointwise log likelihood — laid out for WAIC and PSIS-LOO except on the two
-`*TvpDiscount` entries, whose parameters are integrated out exactly, so theirs
-is one row rather than one per draw. All but the two `*Ald` entries also
+The seventeen VARs and VECs support exogenous regressors, deterministic terms
+and a pointwise log likelihood — laid out for WAIC and PSIS-LOO except on the
+two `*TvpDiscount` entries, whose parameters are integrated out exactly, so
+theirs is one row rather than one per draw. All but the two `*Ald` entries also
 forecast; those two refuse, for the reason below. Ten of them take a structural
 (contemporaneous-coefficient) form: the four Wishart models and the two
 discounted ones leave the error covariance unrestricted, which leaves `A_0`
@@ -581,7 +581,7 @@ but nothing else is.
 
 **Compiler**
 
-On my Windows set-up I use the `x64-mingw-dynamic` compiler, which I downloaded via MSYS2 using:
+The toolchain this is developed and released against is `x64-mingw-dynamic`, installed through MSYS2:
 
 `pacman -S --needed base-devel mingw-w64-x86_64-gcc-fortran mingw-w64-x86_64-toolchain`
 
@@ -601,7 +601,7 @@ Using Ninja as generator. Make sure that its directory is included in the enviro
 
 Make sure that its directory is included in the environment variable `Path`. Also add the environment variable `VCPKG_ROOT`, which should also include the directory.
 
-Note that the `hdf5` library has problems to build. So I installed the binary from the website.
+The `hdf5` port does not build reliably here; the binary installer from the HDF Group's own site is what these instructions assume, and what `CMAKE_PREFIX_PATH` below points at.
 
 General information: [https://learn.microsoft.com/en-us/vcpkg/] and [https://learn.microsoft.com/en-us/vcpkg/get_started/get-started-vscode?pivots=shell-powershell]
 
@@ -715,6 +715,7 @@ subdirectory, or use a preset, which already does.
 | --- | --- | --- |
 | `BAYESTS_BUILD_DOCS` | `ON` | Add the `docs` target when Doxygen is found |
 | `BAYESTS_BUILD_TESTS` | `ON` | Build the regression harnesses in `test/` |
+| `BAYESTS_WERROR` | `OFF` | Treat compiler warnings as errors; CI builds with it on |
 | `BAYESTS_NATIVE_ARCH` | `OFF` | `-march=native`; not redistributable, see *Packaging* |
 | `BAYESTS_BUNDLE_RUNTIME_DEPS` | `ON` (Windows) | Copy the runtime DLLs next to the executable |
 | `BAYESTS_RECORDED_FIXTURES` | *(empty)* | Recorded model files, `;`-separated, each registering an extra golden test; the generated suite runs without them |
@@ -747,6 +748,16 @@ derived data and a full set runs to hundreds of megabytes. The tests pin
 samplers are only reproducible single-threaded, and on Windows they prepend the
 dependency DLL directories to `PATH` so `ctest` works in a shell that has not
 been set up by hand.
+
+Because each test pins its own thread counts rather than inheriting them, two of
+them running at once do not disturb each other's numbers, and `-j` is safe:
+
+```bash
+ctest --test-dir build/bin/my-windows-default -j 8 --output-on-failure
+```
+
+Record fingerprints serially, though: `record_fingerprints.sh` below reduces a
+`ctest -V` log, and `-j` interleaves the output of concurrent tests into it.
 
 **What these tests do and do not check.** `bayests_golden` prints a fingerprint
 for every posterior dataset, and fails a fixture that throws or whose run

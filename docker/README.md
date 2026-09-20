@@ -17,7 +17,8 @@ Two files do the work:
 
 - `Dockerfile` — Ubuntu 24.04, gfortran, an upstream CMake, Ninja, Armadillo and
   HDF5 from vcpkg's `x64-linux-dynamic` triplet, HighFive at the ref
-  `.github/highfive-version` pins, Doxygen.
+  `.github/highfive-version` pins, Doxygen, and h5py and numpy for
+  `agents.recipes`.
 - `ci.sh` — the workflow steps, as a script short enough to read beside the YAML
   it mirrors. **When a workflow step changes, this is the file to change with
   it.**
@@ -33,7 +34,9 @@ docker build -f docker/Dockerfile -t bayests-ci .
 ```
 
 Ten to twenty minutes, nearly all of it vcpkg compiling Armadillo and HDF5 —
-the step the workflow pays for on a cache miss. `.dockerignore` keeps the
+the step the workflow pays for on a cache miss. Adding a package to the `apt`
+block costs the whole of it, that layer sitting ahead of vcpkg; editing `ci.sh`
+costs seconds, its `COPY` sitting behind. `.dockerignore` keeps the
 context at about ten kilobytes; without it the generated fixtures alone would
 send well over a hundred megabytes. Rebuild when `.github/highfive-version`
 changes, or when the workflow's dependency set does.
