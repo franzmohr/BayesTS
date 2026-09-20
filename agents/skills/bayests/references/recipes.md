@@ -4,8 +4,9 @@ Every Python example on this page is run by the BayesTS test suite
 (`agents.recipes`, in `test/check_agent_recipes.py`): it executes the example,
 runs `bayests posterior` over the file it wrote, and checks the shapes stated
 here against the ones the run produced. The VAR, the VEC and the factor model
-are complete scripts. The covariance block, variable selection and the
-time-varying model are changes to the complete VAR, and say where they go.
+are complete scripts, and so is the discounted VAR, which is the one whose file
+differs most. The covariance block, variable selection and the time-varying
+model are changes to the complete VAR, and say where they go.
 
 Run the generator (last section) whenever you want a second opinion on a layout
 this page does not cover.
@@ -229,6 +230,148 @@ The posterior widens the same way: `/posterior/a/coeffs` is
 a_path = a.reshape(tt, nparams, iterations)       # period, coefficient, draw
 ```
 
+## A discounted VAR
+
+`VarTvpDiscount`: the same 3 variables and 1 lag, estimated in closed form
+rather than sampled. Three things differ from every example above, and all three
+come from there being no chain.
+
+```python
+import h5py
+import numpy as np
+
+k, p, m, s, n = 3, 1, 0, 0, 1      # 3 variables, 1 lag, an intercept
+tt, h = 24, 4
+iterations = 200                   # i.i.d. forecast paths, not a chain length
+
+n_x = k * p + m * (s + 1) + n      # 4 regressors per equation
+nparams = k * n_x                  # 12 coefficients
+
+rng = np.random.default_rng(2)
+Y_full = np.zeros((tt + p, k))
+for t in range(1, tt + p):
+    Y_full[t] = 0.5 * Y_full[t - 1] + rng.standard_normal(k)
+Y = Y_full[p:]
+
+# The compact design, (tt, n_x) on paper: one row per period, one column per
+# regressor. There is no /data/train/z at all -- this model never builds the
+# SUR matrix, and a file carrying one instead is refused.
+Xtrain = np.zeros((tt, n_x))
+Xtrain[:, k * p:] = 1.0            # the intercept
+Xtrain[:, :k * p] = Y_full[:tt]    # y_{t-1}
+
+X = np.zeros((h, n_x))             # out-of-sample, as for any VAR
+X[:, k * p:] = 1.0
+X[0, :k * p] = Y[-1]
+
+# The matrix normal prior. `mean` is the n_x x k coefficient matrix on paper,
+# `cov` the *regressor* side of its covariance -- the equation side is the error
+# covariance the Wishart prior below already carries, and that factorisation is
+# what makes the posterior conjugate. These are not `mu` and `v_inv`: a file
+# bringing those along is read as having no coefficient prior at all.
+A_mean = np.zeros((n_x, k))
+A_cov = np.eye(n_x)
+
+with h5py.File("discount.h5", "w") as f:
+    mdl = f.create_group("/model")
+    mdl.attrs["algorithm"] = "VarTvpDiscount"
+    mdl.attrs["k"] = k
+    mdl.attrs["p"] = p
+    mdl.attrs["m"] = m
+    mdl.attrs["s"] = s
+    mdl.attrs["n"] = n
+    mdl.attrs["h"] = h
+    mdl.attrs["iterations"] = iterations
+    mdl.attrs["burnin"] = 0        # nothing is iterated, so nothing is discarded
+    mdl.attrs["varsel"] = "none"
+    mdl.attrs["error"] = "wishart" # descriptive; this model has no psi block
+
+    # How fast the two drift. Both in (0, 1], and 1 is not a no-op but the
+    # constant-coefficient model. 1/(1 - delta_sigma) = 20 here, which has to
+    # clear k.
+    mdl.attrs["delta_beta"] = 0.98
+    mdl.attrs["delta_sigma"] = 0.95
+
+    f["/data/train/y"] = Y.reshape(1, -1)
+    f["/data/train/x"] = Xtrain.T      # store the transpose
+    f["/data/forecast/x"] = X.T
+
+    f["/priors/a/mean"] = A_mean.T
+    f["/priors/a/cov"] = A_cov
+    f["/priors/u_sigma/df"] = k        # a scalar dataset
+    f["/priors/u_sigma/scale"] = np.eye(k)
+
+    # No /initial group. There is nothing to start.
+```
+
+Then, as for any other model:
+
+```bash
+OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 bayests posterior discount.h5
+```
+
+**What comes back is a posterior, not draws.** One column per *period*, and no
+`/posterior/a/coeffs` — see `results.md` for why joining one draw per period
+would be a path the model never claims.
+
+```python
+with h5py.File("discount.h5", "r") as f:
+    mean = f["/posterior/a/mean"][:]            # (12, 24), vec(B_t) per period
+    scale = f["/posterior/a/scale"][:]          # (12, 24), the marginal t scale
+    cov = f["/posterior/a/cov"][:]              # (16, 24), the n_x square C_t
+    sigma = f["/posterior/u_sigma/scale"][:]    # (9, 24), a covariance
+    df = f["/posterior/df"][:]                  # (1, 24)
+    loglik = f["/posterior/loglik"][:]          # (24, 1) -- one row, not one per draw
+
+# The coefficients of the last in-sample period, the same ordering `a/coeffs`
+# uses: vec of the k x n_x matrix, column-major.
+B_T = mean[:, -1].reshape(k, n_x, order="F")
+
+# Summed, the pointwise score is the exact log marginal likelihood of the
+# sample given these two discounts -- which is what makes a grid over them
+# comparable file by file, at one pass each.
+log_marginal = float(loglik.sum())
+```
+
+**To get draws, take them one period at a time.** The posterior of a period is
+exact: `Sigma ~ IW(df + k - 1, df*S_t)`, then
+`vec(Theta) | Sigma ~ N(a_t, Sigma kron C_t)`. The `+ k - 1` is not decoration —
+`df` is the Student t's degrees of freedom, and the inverse Wishart needs its
+own for the draws to have the spread `a/scale` reports.
+
+```python
+def draw_period(period, draws, rng):
+    """(nparams, draws) from the posterior of one period alone."""
+    nu_t = df[0, period]                              # the Student t's
+    S = sigma[:, period].reshape(k, k, order="F")
+    C = cov[:, period].reshape(n_x, n_x, order="F")
+    B = mean[:, period].reshape(k, n_x, order="F")
+
+    nu = nu_t + k - 1                                 # the inverse Wishart's
+    root = np.linalg.cholesky(np.linalg.inv(nu_t * S))
+    chol_c = np.linalg.cholesky(C)
+
+    out = np.empty((k * n_x, draws))
+    for i in range(draws):
+        # Bartlett: chi square roots on the diagonal, normals below it.
+        A = np.zeros((k, k))
+        A[np.diag_indices(k)] = np.sqrt(rng.chisquare(nu - np.arange(k)))
+        A[np.tril_indices(k, -1)] = rng.standard_normal(k * (k - 1) // 2)
+        factor = root @ A
+        Sigma = np.linalg.inv(factor @ factor.T)
+
+        Theta = B.T + chol_c @ rng.standard_normal((n_x, k)) @ np.linalg.cholesky(Sigma).T
+        out[:, i] = Theta.T.reshape(-1, order="F")
+    return out
+
+last = draw_period(-1, 500, np.random.default_rng(3))   # (12, 500)
+```
+
+They are i.i.d., so there is nothing to burn in, nothing to thin and no
+convergence to judge — but they are correct for **that period alone**. The
+smoothed posterior is dependent across periods, so one draw per period joined
+into a column is not a draw of the coefficient path.
+
 ## A VEC
 
 `VecNormalWishart`: 3 variables with one cointegrating relation, level order 2,
@@ -410,7 +553,7 @@ will not catch the substitution. See `algorithms.md`.
 ## Generating a fixture instead
 
 The BayesTS tree ships a generator that writes a complete, admissible model file
-for any of the twenty algorithms — useful as a reference file to compare yours
+for any of the twenty-two algorithms — useful as a reference file to compare yours
 against:
 
 ```bash

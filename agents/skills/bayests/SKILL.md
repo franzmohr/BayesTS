@@ -1,6 +1,6 @@
 ---
 name: bayests
-description: Write correct BayesTS code — build, run and read the HDF5 model files that drive the BayesTS Bayesian time series samplers (VAR, VEC, DFM and FAVAR Gibbs samplers in C++). Use whenever a task mentions BayesTS, a `/model/algorithm` attribute, the `bayests` command line, a model file with `/data/train/y` and `/priors/`, or any of the twenty algorithm names (VarNormalWishart, VecTvpGamma, DfmNormalStochvol, FavarNormalWishart, VarNormalAld, VecKlgs2010 and the rest). Also use when building such a file from Python (h5py) or R, when choosing an algorithm and error specification, or when reading posterior draws, forecasts or the pointwise log likelihood back out.
+description: Write correct BayesTS code — build, run and read the HDF5 model files that drive the BayesTS Bayesian time series samplers (VAR, VEC, DFM and FAVAR Gibbs samplers in C++). Use whenever a task mentions BayesTS, a `/model/algorithm` attribute, the `bayests` command line, a model file with `/data/train/y` and `/priors/`, or any of the twenty-two algorithm names (VarNormalWishart, VecTvpGamma, DfmNormalStochvol, FavarNormalWishart, VarNormalAld, VarTvpDiscount, VecKlgs2010 and the rest). Also use when building such a file from Python (h5py) or R, when choosing an algorithm and error specification, or when reading posterior draws, forecasts or the pointwise log likelihood back out.
 ---
 
 # Writing correct BayesTS code
@@ -72,8 +72,10 @@ want. See `references/pipeline.md`.
 
 **4. Re-running does not re-estimate.** Every front-end skips when its output is
 already in the file: `coefficients` returns immediately if
-`/posterior/u_sigma_inv/coeffs` holds data, and `forecasts` and `loglik` do the
-same for theirs. To re-estimate, delete `/posterior` or write a fresh file.
+`/posterior/u_sigma_inv/coeffs` holds data — `/posterior/a/mean` for the two
+`*TvpDiscount` models, which write no precision — and `forecasts` and `loglik`
+do the same for theirs. To re-estimate, delete `/posterior` or write a fresh
+file.
 
 **5. Variable-selection positions are one-based.** `/priors/a/include` counts
 from 1, the way R and the file format count; the samplers convert on read. A
@@ -88,11 +90,18 @@ thing:
 | --- | --- | --- |
 | Family | `Var`, `Vec`, `Dfm`, `Favar` | The model |
 | Coefficients | `Normal`, `Tvp` | Constant with a normal prior, or a random walk |
-| Errors | `Wishart`, `Gamma`, `Stochvol`, `Ald` | The error precision |
+| Errors | `Wishart`, `Gamma`, `Stochvol`, `Ald`, `Discount` | The error precision |
 
 `VecKlgs2010` is the one name outside the grammar — it is `VecNormalWishart`
 drawn against compact regressors instead of the SUR matrix they kronecker up
 into, so it is a choice about cost rather than a different posterior.
+
+`VarTvpDiscount` and `VecTvpDiscount` are inside the grammar but outside the
+rest of the library: **they are not samplers.** Their posterior is closed form,
+so they have no burn-in, nothing to thin and nothing to judge convergence on,
+and they write a posterior rather than draws. `VecTvpDiscount` also holds the
+cointegration space fixed — it is the one `Vec*` name whose `Tvp` does not reach
+`beta`. See `references/algorithms.md`.
 
 Two things the grammar does not say out loud:
 
@@ -104,7 +113,7 @@ Two things the grammar does not say out loud:
   nothing to explain. That is why the FAVAR row has a `Wishart` entry and the
   DFM row cannot.
 
-The twenty registered names, and what each requires and refuses, are in
+The twenty-two registered names, and what each requires and refuses, are in
 `references/algorithms.md`.
 
 ## The `error` attribute
@@ -118,10 +127,10 @@ The twenty registered names, and what each requires and refuses, are in
 | anything else | Nothing at all |
 
 The spelling is model-specific: `gamma+covar` on a stochastic volatility model
-switches nothing on, and neither does `sv+covar` on a gamma model. Twelve of the
-twenty readers — the Wishart family, the two quantile models, `VecKlgs2010` and
-the factor models — never compare the attribute at all, so on those it is
-documentation and nothing more.
+switches nothing on, and neither does `sv+covar` on a gamma model. Fourteen of
+the twenty-two readers — the Wishart family, the two quantile models, the two
+discounted ones, `VecKlgs2010` and the factor models — never compare the
+attribute at all, so on those it is documentation and nothing more.
 
 A covariance block also needs `k > 1`: one variable has no off-diagonal
 covariance to model. When it is on, `psi` carries `k(k-1)/2` free elements and
@@ -200,7 +209,7 @@ Read the one you need; each is written to be read on its own.
 | File | Contents |
 | --- | --- |
 | `references/model-file.md` | Every attribute, group and dataset a reader looks for, with shapes |
-| `references/algorithms.md` | The twenty algorithms: what each needs, and the full table of refused combinations |
+| `references/algorithms.md` | The twenty-two algorithms: what each needs, and the full table of refused combinations |
 | `references/pipeline.md` | The command line, the run order, idempotence, `--group`, exit codes |
 | `references/results.md` | What a run writes, and how to read it back from Python and R |
 | `references/recipes.md` | Worked end-to-end examples: a VAR file from h5py, a VEC, a forecast, a DFM |

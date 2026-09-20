@@ -12,7 +12,7 @@ The documents below are written for coding agents. Their Python examples are run
 ## Reference
 
 - [The model file](agents/skills/bayests/references/model-file.md): every attribute, group and dataset a reader looks for, with shapes
-- [The twenty algorithms](agents/skills/bayests/references/algorithms.md): what each needs in the file, and the combinations it refuses
+- [The twenty-two algorithms](agents/skills/bayests/references/algorithms.md): what each needs in the file, and the combinations it refuses
 - [Running a model](agents/skills/bayests/references/pipeline.md): the command line, the run order, idempotence, `--group` and exit codes
 - [Reading the results](agents/skills/bayests/references/results.md): what a run writes and how to read it back from Python and R
 - [Worked examples](agents/skills/bayests/references/recipes.md): complete VAR, VEC and factor model files from h5py

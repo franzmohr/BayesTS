@@ -19,6 +19,7 @@ const std::unordered_map<std::string, std::function<std::unique_ptr<BaseModel>()
 		{"VarNormalAld", []() { return std::make_unique<VarNormalAld>(); }},
 {"VarNormalStochvol", []() { return std::make_unique<VarNormalStochvol>(); }},
 		{"VarNormalWishart", []() { return std::make_unique<VarNormalWishart>(); }},
+		{"VarTvpDiscount", []() { return std::make_unique<VarTvpDiscount>(); }},
 		{"VarTvpGamma", []() { return std::make_unique<VarTvpGamma>(); }},
 		{"VarTvpWishart", []() { return std::make_unique<VarTvpWishart>(); }},
 		{"VarTvpAld", []() { return std::make_unique<VarTvpAld>(); }},
@@ -27,6 +28,7 @@ const std::unordered_map<std::string, std::function<std::unique_ptr<BaseModel>()
 		{"VecNormalGamma", []() { return std::make_unique<VecNormalGamma>(); }},
 		{"VecNormalStochvol", []() { return std::make_unique<VecNormalStochvol>(); }},
 		{"VecNormalWishart", []() { return std::make_unique<VecNormalWishart>(); }},
+		{"VecTvpDiscount", []() { return std::make_unique<VecTvpDiscount>(); }},
 		{"VecTvpGamma", []() { return std::make_unique<VecTvpGamma>(); }},
 		{"VecTvpStochvol", []() { return std::make_unique<VecTvpStochvol>(); }},
 		{"VecTvpWishart", []() { return std::make_unique<VecTvpWishart>(); }}

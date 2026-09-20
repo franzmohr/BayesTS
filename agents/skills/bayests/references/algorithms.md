@@ -1,7 +1,11 @@
-# The twenty algorithms
+# The twenty-two algorithms
 
 `/model/algorithm` selects the sampler and is the only thing that does. The name
-must be one of these twenty, spelled exactly.
+must be one of these twenty-two, spelled exactly.
+
+Twenty of them are samplers. The two `*TvpDiscount` rows are not: their
+posterior is closed form, and the section on them below says what that changes
+in the file.
 
 ## Catalogue
 
@@ -15,12 +19,14 @@ must be one of these twenty, spelled exactly.
 | `VarTvpStochvol` | Random walk | Stochastic volatility | optional, time-varying | BVS | yes | yes |
 | `VarNormalAld` | Constant | Asymmetric Laplace | refused | BVS | yes | refused |
 | `VarTvpAld` | Random walk | Asymmetric Laplace | refused | BVS | yes | refused |
+| `VarTvpDiscount` | Random walk under a discount; not sampled | Discounted Wishart | — | refused | refused | yes |
 | `VecNormalWishart` | Constant | Wishart | — | SSVS, BVS | refused | yes, in levels |
 | `VecNormalGamma` | Constant | Independent gamma | optional | SSVS, BVS | yes | yes, in levels |
 | `VecNormalStochvol` | Constant | Stochastic volatility | optional | BVS | yes | yes, in levels |
 | `VecTvpWishart` | Random walk, beta included | Wishart | — | BVS | refused | yes, in levels |
 | `VecTvpGamma` | Random walk, beta included | Independent gamma | optional, time-varying | BVS | yes | yes, in levels |
 | `VecTvpStochvol` | Random walk, beta included | Stochastic volatility | optional, time-varying | BVS | yes | yes, in levels |
+| `VecTvpDiscount` | Random walk under a discount, beta fixed; not sampled | Discounted Wishart | — | refused | refused | yes, in levels |
 | `VecKlgs2010` | Constant, non-SUR | Wishart | — | refused | refused | yes, in levels |
 | `DfmNormalGamma` | Constant loadings and transition | Independent gamma | — | refused | refused | yes |
 | `DfmNormalStochvol` | Constant loadings and transition | Stochastic volatility | — | refused | refused | yes |
@@ -28,8 +34,10 @@ must be one of these twenty, spelled exactly.
 | `DfmTvpStochvol` | Random walk, loadings and transition | Stochastic volatility | — | refused | refused | yes |
 | `FavarNormalWishart` | Constant loadings and transition | Wishart on the state innovations, gamma on the idiosyncratic errors | — | refused | refused | yes |
 
-All fourteen VARs and VECs take exogenous regressors, deterministic terms and a
-pointwise log likelihood laid out for WAIC and PSIS-LOO. The factor models have
+All sixteen VARs and VECs take exogenous regressors, deterministic terms and a
+pointwise log likelihood — laid out for WAIC and PSIS-LOO, except on the
+discounted pair, whose parameters are integrated out exactly and whose
+`/posterior/loglik` is therefore one row rather than one per draw. The factor models have
 one too, with the caveat in the DFM section below.
 
 ## The refusal table
@@ -63,6 +71,12 @@ are refusals with reasons, not unimplemented features.
 | A `z` whose columns disagree with the dimensions (VEC) | The sampler would size everything off `z` and run to completion on a model the attributes do not name |
 | `rho` outside `(0, 1]`, or a `rho` outside its own prior support | The state path would reverse sign or grow without bound |
 | One of `rho_min`/`rho_max` without the other | Which end is missing changes the model rather than a detail of it |
+| Any selection on either `*TvpDiscount` model | There are no draws for an inclusion indicator to be drawn alongside |
+| `structural` on either `*TvpDiscount` model | The inverse Wishart posterior leaves `Sigma` unrestricted, so `A_0` is not identified |
+| `delta_beta` or `delta_sigma` outside `(0, 1]` | Zero is not a model and above one the covariance shrinks each period instead of growing |
+| `delta_sigma` with `1/(1 - delta_sigma) <= k` | The degrees of freedom settle there whatever the prior says, and below `k` the inverse Wishart is improper |
+| A non-zero `burnin` or a `thin` other than 1 on a `*TvpDiscount` model | Nothing is iterated, so a file asking for either is asking for something that does not happen |
+| `/data/train/z` and no `/data/train/x` on a `*TvpDiscount` model | These read the compact layout; the SUR matrix is the one thing they never build |
 
 ### Why `structural` needs a diagonal covariance
 
@@ -116,6 +130,64 @@ the posterior precision factors and the Gram product to form is `n_x` square
 rather than `k*n_x` square. The choice between the two is a choice about cost.
 What it gives up is variable selection, which acts on the columns of the matrix
 it declines to build.
+
+### The discounted pair
+
+`VarTvpDiscount` and `VecTvpDiscount` are the matrix normal dynamic linear model
+of West and Harrison (1997, ch. 16) with Uhlig's (1997) discounted Wishart on
+the error precision. **They have an answer rather than a chain**, and everything
+below follows from that.
+
+Two `/model` attributes drive them, both in `(0, 1]` and both defaulting to 1:
+
+- `delta_beta` discounts the coefficient covariance each period. `R_t =
+  C_{t-1}/delta` is exactly the predicted covariance of a random walk whose
+  innovation covariance is `((1 - delta)/delta) C_{t-1}`.
+- `delta_sigma` discounts the Wishart, which is a stochastic volatility law of
+  its own: multiplicative beta shocks to the precision, where the samplers'
+  `Stochvol` is a Gaussian autoregression in the log variance.
+
+Both at 1 is the conjugate posterior of a constant coefficient model, computed
+one period at a time. It is a meaningful setting, not a no-op.
+
+What the file looks like:
+
+- **`/data/train/x`, not `/data/train/z`.** The compact layout, `tt` rows by one
+  column per regressor. For `VecTvpDiscount` it holds the short-run blocks
+  alone; the `rank` error correction columns are built from `w` and `beta`.
+- **`/priors/a/mean` and `/priors/a/cov`, not `mu` and `v_inv`.** A matrix
+  normal prior: `mean` is `n_x` by `k`, `cov` is `n_x` square and is the
+  *regressor* side of a covariance, the equation side being the error covariance
+  the Wishart prior already carries. Bringing `mu`/`v_inv` along instead is read
+  as having no coefficient prior, and `bayests check` warns that nothing read
+  them.
+- **No `/initial` group for the VAR.** Nothing starts anywhere.
+  `VecTvpDiscount` reads `/initial/beta`, but not as a starting value: it is the
+  cointegration space the run *conditions on*, and it does not move.
+- **`burnin` must be 0 and `thin` 1.** `iterations` keeps its name and means
+  how many i.i.d. draws a forecast takes.
+- **`seed` has nothing to repeat.** Estimation consumes no random numbers, so
+  two runs agree to the bit. The forecast draws, and that is what a seed fixes.
+
+What comes back is in results.md: a posterior, not draws, and deliberately **no
+`/posterior/a/coeffs`**.
+
+**`VecTvpDiscount` holds the cointegration space fixed, and cannot do
+otherwise.** A VEC's measurement is `alpha_t beta_t' w_t`, two latent blocks
+multiplying each other, which is why the three sampling VECs alternate two
+smoother passes rather than filtering once. Beyond that, the innovation variance
+of `beta_t` in those models is fixed at the identity because that is what pins
+beta's scale against alpha's — a discount would replace it with something that
+moves with the data, and alpha and beta would slide against each other along a
+ridge. So use this model to ask how the *adjustment* to a given long-run
+relation has moved, and `VecTvpWishart` and its two siblings to ask whether the
+relation itself moved.
+
+The fixed space buys back a number the samplers cannot give cheaply: the sum of
+`/posterior/loglik` is the exact marginal likelihood of the sample given that
+space, the rank and the two discounts. One pass each, so a grid over candidate
+spaces, ranks or discounts is a list of files and no chain is run for any of
+them.
 
 ### DFM
 
@@ -187,6 +259,12 @@ not: the chain runs to completion and estimates a different model.
   path per coefficient. It costs the SSVS option and needs a `/priors/a` with
   `shape`/`rate` on the innovation precision beside `mu`/`v_inv` on the state
   before the sample.
+- **A discount instead of a sampler?** `VarTvpDiscount` or `VecTvpDiscount`
+  when the drift can be described by a discount factor rather than estimated,
+  and when an exact marginal likelihood is worth more than an unrestricted state
+  variance. They are the only models here with no burn-in, no thinning and no
+  convergence to judge. One file is one pair of discounts, so a grid over them
+  is a list of models — and cheap enough to be one, each costing a single pass.
 - **A quantile?** `VarNormalAld` or `VarTvpAld`, with `quantile` in `(0, 1)`.
   One file is one quantile, so a grid of them is a list of models — which is
   also what lets the grid run in parallel. Read the posterior spread as a

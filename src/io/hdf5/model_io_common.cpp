@@ -221,6 +221,12 @@ VarSpec read_spec(const ModelFile &file, const char *covar_error)
     // symmetric and the model is the one every other sampler here already is.
     spec.quantile = optional_attribute_double(file, "/model", "quantile", 0.5);
 
+    // Absent from every file but a discounted model's, and left at one there,
+    // which is not a neutral default but a meaningful model: both at one is the
+    // conjugate posterior of a constant coefficient VAR. See VarSpec.
+    spec.delta_beta = optional_attribute_double(file, "/model", "delta_beta", 1.0);
+    spec.delta_sigma = optional_attribute_double(file, "/model", "delta_sigma", 1.0);
+
     // Deterministic terms entering outside the cointegration space, under the one
     // name every model uses for them. A VEC's terms restricted to that space are
     // counted separately, below.
@@ -406,6 +412,31 @@ void write_draws(const ModelFile &file, const std::string &dataset, const arma::
     write_armadillo_matrix_to_hdf5(file, dataset, arma::trans(draws), true);
 }
 
+void write_posterior_path(const ModelFile &file, const std::string &dataset, const arma::mat &path)
+{
+    // The same orientation write_draws() gives a chain -- one row per quantity
+    // and one column per period in HDF5 dataspace terms -- without the mcpar
+    // attributes, which a closed form has nothing to put in: there is no chain,
+    // so no start, no end and nothing thinned.
+    write_armadillo_matrix_to_hdf5(file, dataset, arma::trans(path), false);
+}
+
+arma::mat read_posterior_path(const ModelFile &file, const std::string &dataset)
+{
+    return arma::trans(read_mat(file, dataset));
+}
+
+bool read_posterior_path_if_present(const ModelFile &file, const std::string &dataset,
+                                    arma::mat &out)
+{
+    if (!dataset_has_data(file, dataset))
+    {
+        return false;
+    }
+    out = read_posterior_path(file, dataset);
+    return true;
+}
+
 /// True when `name` is there and is a dataset rather than a group. Used to spot
 /// the legacy `/posterior/forecast` dataset, which the group has to replace.
 bool is_dataset(const ModelFile &file, const std::string &name)
@@ -463,6 +494,7 @@ bool is_model_attribute(const std::string &name)
         "m",         "s",         "h",          "quantile",     "n",
         "rank",      "k_beta",    "n_restricted", "n_factors",  "n_obs_factors",
         "varsel",    "structural", "error",     "seed",       "forecast_states",
+        "delta_beta", "delta_sigma",
     };
     return names.count(name) > 0;
 }

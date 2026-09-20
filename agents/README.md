@@ -22,7 +22,7 @@ AGENTS.md                           the rules worth having in context always
 skills/bayests/SKILL.md             the skill: vocabulary, traps, dimension arithmetic
 skills/bayests/references/
     model-file.md                   every attribute, group and dataset, with shapes
-    algorithms.md                   the twenty algorithms, and what each refuses
+    algorithms.md                   the twenty-two algorithms, and what each refuses
     pipeline.md                     the command line, the run order, exit codes
     results.md                      what a run writes, and reading it from Python and R
     recipes.md                      complete examples: a VAR, a VEC, a DFM, and changes to them

@@ -8,7 +8,7 @@
   "plugins": [
     {
       "name": "bayests",
-      "description": "Write correct BayesTS model files: the HDF5 layout every sampler reads, the twenty algorithms and what each refuses, the run order, and how to read the draws back from Python or R.",
+      "description": "Write correct BayesTS model files: the HDF5 layout every sampler reads, the twenty-two algorithms and what each refuses, the run order, and how to read the draws back from Python or R.",
       "source": "./agents",
       "category": "development",
       "homepage": "https://github.com/franzmohr/BayesTS/tree/main/agents"

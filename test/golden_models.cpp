@@ -70,6 +70,16 @@ constexpr const char *kOutputs[] = {
     "/posterior/a/coeffs",
     "/posterior/a/lambda",
     "/posterior/a/sigma",
+    // The discounted pair's closed form, which is a posterior rather than a
+    // chain: a mean and a scale per period, the regressor side of the
+    // coefficient covariance, the error covariance's scale -- a covariance, so
+    // not at the `u_sigma_inv` below -- and the degrees of freedom of both. They
+    // are `draws_written` for those two models, there being no draws to count.
+    "/posterior/a/mean",
+    "/posterior/a/scale",
+    "/posterior/a/cov",
+    "/posterior/u_sigma/scale",
+    "/posterior/df",
     "/posterior/beta/coeffs",
     // Written only by a time-varying VEC whose file put a prior on the
     // autoregression of the cointegration state equation, so absent on most

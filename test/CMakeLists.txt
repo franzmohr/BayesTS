@@ -87,6 +87,16 @@ add_executable(bayests_unit_coint_prior_symmetry unit_coint_prior_symmetry.cpp)
 add_executable(bayests_unit_bvs unit_bvs.cpp)
 add_executable(bayests_unit_input_values unit_input_values.cpp)
 add_executable(bayests_unit_var_normal_stochvol unit_var_normal_stochvol.cpp)
+# The one model that draws nothing, so unlike every sampler beside it the whole
+# posterior has an expected value: at both discounts one it is the conjugate
+# normal inverse Wishart posterior of a constant coefficient VAR, and the test
+# asserts against that rather than against a fingerprint.
+add_executable(bayests_unit_var_tvp_discount unit_var_tvp_discount.cpp)
+# The same model over a design with the error correction term in front, so the
+# check is the equivalence rather than the closed form again: the discounted VEC
+# has to agree element for element with the discounted VAR handed the design it
+# assembles, and its coefficients have to convert to the level VAR untouched.
+add_executable(bayests_unit_vec_tvp_discount unit_vec_tvp_discount.cpp)
 # Draws too, and compares a posterior mean with an exact one. That is a
 # statistical statement rather than an identity, so it is made with a margin
 # of five Monte Carlo standard errors against a gap of more than ten, which
@@ -125,6 +135,7 @@ foreach(_core_unit bayests_unit_identification bayests_unit_vec_klgs_2010 bayest
                    bayests_unit_var_ald bayests_unit_thin
                    bayests_unit_favar_normal_wishart bayests_unit_bvs
                    bayests_unit_input_values bayests_unit_var_normal_stochvol
+                   bayests_unit_var_tvp_discount bayests_unit_vec_tvp_discount
                    bayests_unit_predictive_score bayests_unit_factor_score)
     target_link_libraries(${_core_unit} PRIVATE bayests_core)
     target_link_libraries(${_core_unit} PRIVATE bayests_warnings)
@@ -293,7 +304,7 @@ foreach(_unit vec_to_var forecast_lags forecast_regressors_io forecast_group_io 
               inverse_gaussian truncated_normal identification
               vec_klgs_2010 vec_tvp_coint coint_prior_symmetry coint_jacobian coint_dees_us dfm_normal_gamma dfm_normal_stochvol
               dfm_tvp_gamma dfm_tvp_stochvol favar_normal_wishart var_ald thin model_group bvs ssvs
-              input_values var_normal_stochvol read_path bool_attributes tvp_initial_state
+              input_values var_normal_stochvol var_tvp_discount vec_tvp_discount read_path bool_attributes tvp_initial_state
               forecast_states)
     add_test(NAME "unit.${_unit}" COMMAND "bayests_unit_${_unit}")
     set_tests_properties("unit.${_unit}" PROPERTIES
@@ -487,6 +498,22 @@ bayests_add_model_fixture(VarTvpGamma-bvs-covar-hold       VarTvpGamma       bvs
 bayests_add_model_fixture(VarTvpWishart-bvs-hold           VarTvpWishart     bvs 0 0 4 --hold-states)
 bayests_add_model_fixture(VarTvpStochvol-bvs-covar-hold    VarTvpStochvol    bvs 1 0 4 --hold-states)
 
+# The discounted pair, two rows each. No selection, covar or structural rows:
+# validate() refuses all three, so a fixture asking for one would be testing the
+# error path. No --hold-states row either -- the drift is a declared discount
+# and the forecast always simulates it -- and no grid over the two discounts,
+# which is a list of models rather than an axis of one file: the fixtures fix
+# them at 0.98 and 0.95, away from the conjugate case at both of them one that
+# unit.var_tvp_discount pins against a closed form.
+#
+# What the `-nofcst` row of each pair is for here is not only the skipped
+# forecast: the models write a posterior rather than draws, so the golden
+# harness counts /posterior/a/mean and the four datasets beside it as the output
+# of the estimation stage, and a row with no horizon is where that count stands
+# on its own.
+bayests_add_model_fixture(VarTvpDiscount-plain  VarTvpDiscount none 0 0 4)
+bayests_add_model_fixture(VarTvpDiscount-nofcst VarTvpDiscount none 0 0 0)
+
 # The quantile models. Six rows rather than the twelve their stochastic
 # volatility counterparts get, because two of the usual axes are closed to them:
 # a covariance block rotates the equations into each other and leaves a residual
@@ -624,6 +651,13 @@ bayests_add_model_fixture(VecTvpStochvol-covar     VecTvpStochvol none 1 0 4)
 bayests_add_model_fixture(VecTvpStochvol-structural VecTvpStochvol none 0 1 4)
 bayests_add_model_fixture(VecTvpStochvol-nofcst    VecTvpStochvol none 0 0 0)
 bayests_add_model_fixture(VecTvpStochvol-bvs-covar VecTvpStochvol bvs  1 0 4)
+# The discounted VEC. Its cointegration matrix is read from /initial/beta and
+# held there, so the --coint-rho and --coint-p-tau rows the three above carry
+# have nothing to act on: there is no state equation over the space to put a
+# prior on. See include/bayests/vec_tvp_discount.h for why it cannot have one.
+bayests_add_model_fixture(VecTvpDiscount-plain  VecTvpDiscount none 0 0 4)
+bayests_add_model_fixture(VecTvpDiscount-nofcst VecTvpDiscount none 0 0 0)
+
 bayests_add_model_fixture(VecTvpStochvol-rho       VecTvpStochvol none 0 0 4 --coint-rho)
 bayests_add_model_fixture(VecTvpStochvol-rho-ptau  VecTvpStochvol none 0 0 4 --coint-rho --coint-p-tau)
 

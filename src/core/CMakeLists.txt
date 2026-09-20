@@ -16,6 +16,7 @@ add_library(bayests_core
             inputs.cpp
             models/model_support.h
             models/dfm_support.h
+            models/discount_support.h
             models/dfm_normal_gamma.cpp
             models/dfm_normal_stochvol.cpp
             models/dfm_tvp_gamma.cpp
@@ -27,6 +28,7 @@ add_library(bayests_core
             models/var_normal_stochvol.cpp
             models/var_normal_wishart.cpp
             models/var_tvp_gamma.cpp
+            models/var_tvp_discount.cpp
             models/var_tvp_wishart.cpp
             models/var_tvp_ald.cpp
             models/var_tvp_stochvol.cpp
@@ -37,6 +39,7 @@ add_library(bayests_core
             models/vec_normal_wishart.cpp
             models/vec_tvp_gamma.cpp
             models/vec_tvp_stochvol.cpp
+            models/vec_tvp_discount.cpp
             models/vec_tvp_wishart.cpp)
 
 # Namespaced alias. Target names are global to a build tree, so the real names
