@@ -50,8 +50,8 @@ heading, and move down into a version section when one is cut.
   the hook clears the packages there before a run that will produce new ones --
   `docker/ci.sh` copies an archive out by the name CPack just used and leaves
   the previous version's beside it, so the directory otherwise accumulates a set
-  per version and describes two builds as though they were one. Draws are unaffected -- no file under
-  `src/`, `include/` or `test/` is touched.
+  per version and describes two builds as though they were one. Draws are
+  unaffected -- no file under `src/`, `include/` or `test/` is touched.
 
 - **`/posterior/forecast/loglik`, the score of a forecast.** `bayests forecasts`
   writes it wherever the file carries `/data/test/y`, one column per realised
