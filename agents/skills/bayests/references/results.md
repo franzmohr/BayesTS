@@ -54,8 +54,9 @@ the group rather than one dataset in it.
 ## The score
 
 `loglik` is written by `forecasts` wherever the file carries `/data/test/y` and
-the algorithm can be scored: every VAR and every VEC, which is thirteen of the
-twenty. One column per realised period, which may be fewer than `h`.
+the algorithm can be scored: every VAR, every VEC, and the two dynamic factor
+models whose loadings stand still -- fifteen of the twenty. One column per
+realised period, which may be fewer than `h`.
 
 **A VEC is scored in levels**, the parameterisation it forecasts in. Its draws
 are rewritten as the level VAR they imply and the score is that VAR's, so
@@ -114,11 +115,35 @@ at every scored period rather than once per draw. It is the same walk the
 forecast takes -- one definition per model, used by both -- so a file cannot be
 forecast under one set of states and scored under another.
 
-**What cannot be scored.** The factor models have no entry point yet. A
-structural model refuses for good, its regressors holding the contemporaneous
-observations and its density the Jacobian of `A_0`. The two quantile models
-never reach it, having no forecast at all. `bayests check` says which side of
-that line a file is on.
+**A factor model is scored by filtering, which is a different problem.** Every
+model above reaches its realised history through its regressors: the lag blocks
+of the scored period carry what was realised, so the regressors do not depend on
+the draw and the density is the model's own pointwise log likelihood on another
+sample. A factor model's history reaches the density through the **factors**,
+which are latent. Its in-sample likelihood conditions on the factors the sampler
+drew, and no such draw exists for a period outside the sample.
+
+So at every scored period the realised `y` updates the distribution of the
+factors before the next period is predicted, and the column is that period's
+prediction error decomposition -- a Kalman filter over the scored periods, per
+draw, started from the drawn factors at the end of the sample and certain of
+them, the draw being what they are conditional on. Summing the columns is then
+the joint log density of the realised stretch exactly as it is for a VAR, which
+is the whole reason for filtering rather than simulating the factors forward.
+Simulating them, as the forecast does, would give the marginal density of each
+horizon: defensible, different, and not what this dataset holds for every other
+algorithm.
+
+The filter draws nothing, a recursion not being a simulation, so a factor
+model's score repeats without a seed. What does move between runs is the
+volatility of a `Stochvol` model under `simulate`, whose steps are taken as the
+forecast takes them.
+
+**What cannot be scored.** `DfmTvpGamma` and `DfmTvpStochvol`, whose loadings
+drift, and `FavarNormalWishart`. A structural model refuses for good, its
+regressors holding the contemporaneous observations and its density the Jacobian
+of `A_0`. The two quantile models never reach it, having no forecast at all.
+`bayests check` says which side of that line a file is on.
 
 Before 0.3.0 the paths were a dataset at `/posterior/forecast` itself. Rerun
 `bayests forecasts`: it replaces the old dataset with the group. The name is

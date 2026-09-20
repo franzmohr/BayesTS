@@ -467,6 +467,16 @@ class Checker:
             "/posterior/forecast/loglik": (n, tvp["iterations"]),
         })
 
+        # A factor model is scored by filtering, which shares none of the code
+        # above: its history reaches the density through the latent factors.
+        dfm = self.run_python(d, self.code("references/recipes.md", "A factor model", 0))
+        with h5py.File(d / "dfm.h5", "a") as f:
+            f.create_dataset("/data/test/y", data=np.zeros((dfm["k"], n)))
+        self.posterior(d, "dfm.h5")
+        expect_shapes(d / "dfm.h5", {
+            "/posterior/forecast/loglik": (n, dfm["iterations"]),
+        })
+
         # results.md reads a file called model.h5.
         shutil.copy(d / "var.h5", d / "model.h5")
         scored = self.run_python(d, self.code("references/results.md", "The score", 0))

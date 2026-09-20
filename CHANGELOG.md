@@ -81,11 +81,29 @@ heading, and move down into a version section when one is cut.
   the forecast takes -- each model's is written once and both drivers call it --
   so a file cannot be forecast under one set of states and scored under another.
 
-  **Every VAR and every VEC is scored**, thirteen of the twenty algorithms. The
-  factor models have no entry point yet. A structural model refuses for good,
-  its regressors holding the contemporaneous observations and its density the
-  Jacobian of `A_0`, and the two quantile models never reach it, having no
-  forecast at all. `bayests check` says which side of that line a file is on.
+  **A factor model is scored by filtering**, which is a different problem.
+  Every other model reaches its realised history through its regressors, so the
+  density is its own pointwise log likelihood on another sample. A factor
+  model's history reaches the density through the latent factors, and its
+  in-sample likelihood conditions on the factors the sampler drew -- of which
+  there are none outside the sample. So at every scored period the realised `y`
+  updates the distribution of the factors before the next is predicted, and the
+  column is that period's prediction error decomposition: a Kalman filter over
+  the scored periods, per draw, started from the drawn factors and certain of
+  them. Summing the columns is then the joint log density of the realised
+  stretch, as it is for a VAR. Simulating the factors forward instead, as the
+  forecast does, would give each horizon's marginal density: defensible,
+  different, and not what this dataset holds elsewhere. The filter draws
+  nothing, so a factor model's score repeats without a seed; what moves between
+  runs is a `Stochvol` model's volatility under `simulate`.
+
+  **Fifteen of the twenty algorithms are scored**: every VAR, every VEC, and
+  `DfmNormalGamma` and `DfmNormalStochvol`. `DfmTvpGamma` and `DfmTvpStochvol`,
+  whose loadings drift, and `FavarNormalWishart` have no entry point yet. A
+  structural model refuses for good, its regressors holding the contemporaneous
+  observations and its density the Jacobian of `A_0`, and the two quantile
+  models never reach it, having no forecast at all. `bayests check` says which
+  side of that line a file is on.
 
   The two members of the forecast group are now asked for separately, so adding
   `/data/test/y` to a file that was already forecast is enough to score it; the
