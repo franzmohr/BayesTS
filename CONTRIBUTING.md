@@ -1,6 +1,18 @@
 
 # Contributing
 
+## Branches
+
+`main` is the development version. Take a short-lived branch off it for a piece
+of work, merge it back when that work is done, and delete it. There is no
+long-lived release branch, so the base branch of a pull request is always
+`main`.
+
+A release is a tag on `main` plus a GitHub release made from that tag. `main`
+is never "the released version" — the tag is. That is what a downstream package
+vendoring the core copies from (see *Recording the change* below) and what a
+bug report against a release should name.
+
 ## Adding new models
 
 A model is split across four places, and which one a given piece of code
