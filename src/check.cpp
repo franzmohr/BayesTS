@@ -162,12 +162,23 @@ void print_report(const std::string &algorithm, const ModelCheck &check)
 		                  : ", states simulated forward");
 	}
 	std::cout << "\n";
+	// The algorithms a forecast can be scored against those values. The rest
+	// let something drift over the horizon, and carrying each draw's state
+	// forward before the density is taken is not written yet; a structural
+	// model is refused for good, its regressors holding the contemporaneous
+	// observations and its density the Jacobian of A_0.
+	const bool can_be_scored =
+		!spec.structural && (algorithm == "VarNormalWishart" || algorithm == "VarNormalGamma");
 	if (check.test_periods > 0)
 	{
 		std::cout << "  realised: " << check.test_periods << " period(s) in /data/test/y";
 		if (spec.h > 0 && check.test_periods < static_cast<arma::uword>(spec.h))
 		{
 			std::cout << ", short of the horizon, so only those can be scored";
+		}
+		if (!can_be_scored)
+		{
+			std::cout << ", which " << algorithm << " cannot be scored against yet";
 		}
 		std::cout << "\n";
 	}

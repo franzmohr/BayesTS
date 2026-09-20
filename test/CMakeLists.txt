@@ -106,6 +106,11 @@ add_executable(bayests_unit_tvp_initial_state unit_tvp_initial_state.cpp)
 # and holds them when told to. Statistical too: closed-form moments checked to
 # 5 percent, with Monte Carlo standard errors of about 1 percent.
 add_executable(bayests_unit_forecast_states unit_forecast_states.cpp)
+# What a forecast is scored as, pinned against the likelihood itself: hand a
+# model a stretch of its own sample as what the horizon realised and the score
+# has to be the pointwise log likelihood of those periods. An identity, so no
+# tolerance beyond floating point.
+add_executable(bayests_unit_predictive_score unit_predictive_score.cpp)
 
 foreach(_core_unit bayests_unit_identification bayests_unit_vec_klgs_2010 bayests_unit_coint_jacobian
                    bayests_unit_coint_dees_us bayests_unit_tvp_initial_state bayests_unit_forecast_states
@@ -114,7 +119,8 @@ foreach(_core_unit bayests_unit_identification bayests_unit_vec_klgs_2010 bayest
                    bayests_unit_dfm_tvp_gamma bayests_unit_dfm_tvp_stochvol
                    bayests_unit_var_ald bayests_unit_thin
                    bayests_unit_favar_normal_wishart bayests_unit_bvs
-                   bayests_unit_input_values bayests_unit_var_normal_stochvol)
+                   bayests_unit_input_values bayests_unit_var_normal_stochvol
+                   bayests_unit_predictive_score)
     target_link_libraries(${_core_unit} PRIVATE bayests_core)
     target_link_libraries(${_core_unit} PRIVATE bayests_warnings)
 
@@ -278,7 +284,7 @@ endif()
 # The unit tests, which need only the shared libraries on the path: no fixture
 # to set up, and no thread pinning, since an exact identity does not care how
 # many threads computed it.
-foreach(_unit vec_to_var forecast_lags forecast_regressors_io forecast_group_io test_observations_io stochvol kalman chan_jeliazkov
+foreach(_unit vec_to_var forecast_lags forecast_regressors_io forecast_group_io test_observations_io predictive_score stochvol kalman chan_jeliazkov
               inverse_gaussian truncated_normal identification
               vec_klgs_2010 vec_tvp_coint coint_prior_symmetry coint_jacobian coint_dees_us dfm_normal_gamma dfm_normal_stochvol
               dfm_tvp_gamma dfm_tvp_stochvol favar_normal_wishart var_ald thin model_group bvs ssvs

@@ -195,6 +195,16 @@ void write_draws(const ModelFile &file, const std::string &dataset, const arma::
 void write_forecast(const ModelFile &file, const ForecastDraws &forecast);
 void write_log_likelihood(const ModelFile &file, const arma::mat &loglik);
 
+/// The score of a forecast, draws x scored periods, to
+/// `/posterior/forecast/loglik`. Beside the paths it scores rather than beside
+/// `/posterior/loglik`, which is the in-sample pointwise likelihood and a
+/// different statistic: that one evaluates each observation under states that
+/// have already seen it, which is what a forecast score must not do.
+///
+/// Expects the group to be there, which it is: the paths are written first, and
+/// a score without them would be a score of nothing.
+void write_forecast_loglik(const ModelFile &file, const arma::mat &loglik);
+
 } // namespace bayests::hdf5_io
 
 #endif // BAYESTS_IO_HDF5_MODEL_IO_COMMON_H

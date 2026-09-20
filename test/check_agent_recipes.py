@@ -418,6 +418,37 @@ class Checker:
                 f"posterior on a file that is not HDF5: expected exit 1, got "
                 f"{result.returncode}\n{result.stdout}{result.stderr}")
 
+    def scenario_score(self, d):
+        # results.md: a forecast scored against /data/test/y, and the log
+        # predictive likelihood the example adds up out of the score.
+        ns = self.run_python(d, self.code(*VAR, 0))
+        k, h, it = (ns[v] for v in ("k", "h", "iterations"))
+
+        # Two of the h horizons realised. One row per period and one column per
+        # variable on paper, which is the (k, n) dataspace h5py writes from an
+        # array of that shape.
+        n = 2
+        if n > h:
+            raise AssertionError(f"the example forecasts {h} periods, too few to realise {n}")
+        with h5py.File(d / "var.h5", "a") as f:
+            f.create_dataset("/data/test/y", data=np.zeros((k, n)))
+
+        checked = self.bayests(d, "check", "var.h5")
+        if f"realised: {n} period(s)" not in checked.stdout:
+            raise AssertionError(
+                f"check did not report the realised periods\n{checked.stdout}")
+
+        self.posterior(d, "var.h5")
+        expect_shapes(d / "var.h5", {"/posterior/forecast/loglik": (n, it)})
+
+        # results.md reads a file called model.h5.
+        shutil.copy(d / "var.h5", d / "model.h5")
+        scored = self.run_python(d, self.code("references/results.md", "The score", 0))
+        if scored["lpd"].shape != (n,):
+            raise AssertionError(f"results.md: lpd is {scored['lpd'].shape}, documented as ({n},)")
+        if not np.isfinite(scored["lpl"]):
+            raise AssertionError(f"results.md: the log predictive likelihood came back {scored['lpl']}")
+
     def scenario_seed(self, d):
         # references/model-file.md and pipeline.md: /model/seed makes a model's
         # draws a function of its file, however the run is split up and whatever

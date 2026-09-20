@@ -40,7 +40,7 @@ host that has the observations those periods realised:
 | --- | --- | --- |
 | `forecasts` | `(h*k, iterations)` | The simulated paths |
 | `errors` | `(h*k, iterations)` | Realised minus forecast |
-| `loglik` | `(h, iterations)` | The log predictive density of the realised observation — the **joint** density of the `k` variables of one horizon, so that it sums over horizons to a log predictive likelihood |
+| `loglik` | `(n, iterations)` | The log predictive density of what `/data/test/y` realised, `n` of its periods |
 
 The leaves are named after what they hold rather than one of them being called
 `draws`, because all three are draws. `/posterior/loglik` stays outside the
@@ -48,8 +48,53 @@ group and is a different statistic, not the same one over other periods: it
 evaluates each in-sample observation under states that have already seen it,
 which is what WAIC and PSIS-LOO want and what a forecast score must not do.
 
-`forecasts` is the input to the other two, so rewriting it invalidates them.
-Delete the group rather than one dataset in it.
+`forecasts` is the input to `errors`, so rewriting it invalidates them. Delete
+the group rather than one dataset in it.
+
+## The score
+
+`loglik` is written by `forecasts` wherever the file carries `/data/test/y` and
+the algorithm can be scored, which today is `VarNormalWishart` and
+`VarNormalGamma`. One column per realised period, which may be fewer than `h`.
+
+**Each column conditions on the realised observations before it**, not on the
+path the forecast simulated. Column `i` is therefore the one step ahead
+predictive density of period `T+i` given everything known up to `T+i-1`, and
+
+```python
+import h5py
+import numpy as np
+
+with h5py.File("model.h5", "r") as f:
+    ll = f["/posterior/forecast/loglik"][:]      # (n, iterations)
+
+# log of the mean of exp(), taken per period and shifted to keep it finite
+top = ll.max(axis=1, keepdims=True)
+lpd = np.log(np.mean(np.exp(ll - top), axis=1)) + top.ravel()
+lpl = lpd.sum()                                  # log p(y*_{T+1..T+n} | data)
+```
+
+is the log predictive likelihood of the whole realised stretch: the joint,
+factorised. Scoring against a simulated history instead would give the marginal
+density of each horizon on its own — a defensible quantity, and a different one,
+since marginals do not sum to a joint.
+
+With the history realised rather than simulated the regressors of the scored
+periods do not depend on the draw, so the score is the model's own pointwise log
+likelihood over those periods, on a sample whose lag blocks are the realised
+values. There is one density per algorithm, not two that can drift apart, and
+`unit.predictive_score` pins the two against each other.
+
+**What cannot be scored yet.** Every algorithm that lets its coefficients or its
+error precision move over the horizon — the `Tvp` and `Stochvol` families, and
+the factor models — needs each draw's state carried forward before the density
+can be taken, which is the forecast's own machinery and is not wired into the
+score. Those refuse rather than produce a number of the right size. `hold` does
+not rescue them: it would score them under a model whose drift stops where the
+sample does, which is a different density. A structural model refuses for good,
+its regressors holding the contemporaneous observations and its density the
+Jacobian of `A_0`. The two quantile models never reach it, having no forecast at
+all. `bayests check` says which side of that line a file is on.
 
 Before 0.3.0 the paths were a dataset at `/posterior/forecast` itself. Rerun
 `bayests forecasts`: it replaces the old dataset with the group. The name is

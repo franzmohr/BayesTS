@@ -29,6 +29,45 @@ heading, and move down into a version section when one is cut.
 
 ### Added
 
+- **`/posterior/forecast/loglik`, the score of a forecast.** `bayests forecasts`
+  writes it wherever the file carries `/data/test/y`, one column per realised
+  period and one row per draw. The reserved name of the forecast group is a
+  name no longer.
+
+  **Each column conditions on the realised observations before it**, not on the
+  path the forecast simulated. Column `i` is the one step ahead predictive
+  density of period `T+i` given everything known up to `T+i-1`, so the log of
+  the mean of `exp()` over draws, summed over the columns, is
+  `log p(y*_{T+1..T+n} | data)` -- the log predictive likelihood of the whole
+  realised stretch, the joint, factorised. Scoring against a simulated history
+  would instead give the marginal density of each horizon on its own: a
+  defensible quantity, a different one, and one that cannot be summed, since
+  marginals do not make a joint.
+
+  That choice is what makes it cheap. With the history realised rather than
+  simulated, the regressors of the scored periods do not depend on the draw, so
+  the score is the model's own pointwise log likelihood over those periods on a
+  sample whose lag blocks are the realised values. Nothing new is written down
+  per algorithm, which is what keeps one density per model rather than two that
+  can drift apart; `unit.predictive_score` pins the two against each other by
+  handing a model a stretch of its own sample as what its horizon realised.
+
+  **`VarNormalWishart` and `VarNormalGamma` today.** Every algorithm that lets
+  its coefficients or its error precision move over the horizon needs each
+  draw's state carried forward before the density can be taken, which is the
+  forecast's own machinery and is not wired into the score yet; those refuse
+  rather than return a number of the right size and the wrong meaning. `hold`
+  does not rescue them -- it would score them under a model whose drift stops
+  where the sample does. A structural model refuses for good, its regressors
+  holding the contemporaneous observations and its density the Jacobian of
+  `A_0`. `bayests check` says which side of that line a file is on.
+
+  The two members of the forecast group are now asked for separately, so adding
+  `/data/test/y` to a file that was already forecast is enough to score it; the
+  paths do not have to be thrown away first. **Draws are unchanged**: the score
+  draws nothing -- it evaluates a density and touches the generator not at all --
+  and the 341 tests pass.
+
 - **`/data/test/y`, the observations a forecast is scored against.** One row per
   period and one column per variable, in the layout and the variable order of
   `/data/train/y`, and optional. It is the one thing in `/data` that no sampler

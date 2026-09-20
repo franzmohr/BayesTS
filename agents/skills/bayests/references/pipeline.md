@@ -12,7 +12,7 @@ below. The file names the sampler; the command names which results to produce.
 | `check` | Reads and validates each model without running it — writes nothing |
 | `posterior` | All three stages, in order |
 | `coefficients` | The Gibbs sampler alone — writes `/posterior/<block>/coeffs` |
-| `forecasts` | The forecast alone — writes `/posterior/forecast/forecasts` |
+| `forecasts` | The forecast alone — writes `/posterior/forecast/forecasts`, and `/posterior/forecast/loglik` where the file carries `/data/test/y` |
 | `loglik` | The pointwise log likelihood alone — writes `/posterior/loglik` |
 
 ## Checking a file first
@@ -85,7 +85,7 @@ Every stage skips when its output is already in the file:
 | Stage | Skips when |
 | --- | --- |
 | `coefficients` | `/posterior/u_sigma_inv/coeffs` holds data — and says so on stdout |
-| `forecasts` | `/posterior/forecast/forecasts` holds data, **or** `/model` has no `h` attribute, or `h` is 0 |
+| `forecasts` | `/posterior/forecast/forecasts` holds data and there is nothing left to score — no `/data/test/y`, or `/posterior/forecast/loglik` already written, **or** `/model` has no `h` attribute, or `h` is 0 |
 | `loglik` | `/posterior/loglik` holds data |
 
 This is deliberate — it makes a directory walk resumable — and it is the most

@@ -433,6 +433,13 @@ void write_forecast(const ModelFile &file, const ForecastDraws &forecast)
                                    arma::trans(forecast.values), true);
 }
 
+void write_forecast_loglik(const ModelFile &file, const arma::mat &loglik)
+{
+    ensure_group(file, "/posterior");
+    ensure_group(file, "/posterior/forecast");
+    write_armadillo_matrix_to_hdf5(file, "/posterior/forecast/loglik", loglik, true);
+}
+
 void write_log_likelihood(const ModelFile &file, const arma::mat &loglik)
 {
     ensure_group(file, "/posterior");

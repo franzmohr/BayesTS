@@ -117,9 +117,10 @@ guessed at: once `h` is unknown, `h*k` numbers in one column could be in either
 order and scoring against the wrong one would be a reshuffle of the right
 numbers.
 
-Nothing in `bayests` computes from it yet. `bayests check` reports how many
-periods are there, and warns where there are some but `/model` asks for no
-horizon.
+`bayests forecasts` scores the forecast against it where the algorithm can be
+scored, writing `/posterior/forecast/loglik`; see `results.md`. `bayests check`
+reports how many periods are there, says where the algorithm cannot use them
+yet, and warns where there are some but `/model` asks for no horizon.
 
 ## `/priors`
 
