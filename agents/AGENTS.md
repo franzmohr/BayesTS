@@ -62,8 +62,9 @@ Treat a warning as a bug in the file until you can say why it is there.
 7. **`varsel` is `none`, `ssvs` or `bvs`.** Any other spelling throws. `bvs`
    additionally needs a coefficient prior tight enough to select against: it
    draws an excluded coefficient from its prior, so a near-flat
-   `/priors/a/v_inv` keeps everything excluded and reports inclusion
-   probabilities near zero. Nothing refuses one.
+   `/priors/a/v_inv` makes it very hard for anything to get back in once it is
+   out, and pins the inclusion probabilities near zero. Nothing refuses one;
+   `bayests check` warns.
 
 8. **Never infer a dimension from an array that happens to fit.** The DFM and
    FAVAR loading counts coincide at a whole family of dimensions, and

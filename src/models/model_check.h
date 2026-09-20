@@ -26,6 +26,7 @@
 #include <algorithm>
 #include <stdexcept>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 namespace bayests::model_check_detail
@@ -38,6 +39,33 @@ struct has_psi_varsel
 {
     static constexpr bool value = requires(const Input &input) { input.psi_varsel; };
 };
+
+/// One block's selection prior against the coefficient prior it selects over,
+/// for `bvs` and for a prior that has a single variance to read.
+///
+/// The `if constexpr` is the whole of the scope rule: a time-varying block's
+/// prior is a RandomWalkPrior and simply does not match, so the four families
+/// share this call and only the constant-coefficient ones do anything with it.
+/// See bayests::flat_selection_prior() for why that is the right scope rather
+/// than a gap.
+template <typename Prior>
+void collect_flat_selection(ModelCheck &check, const char *block, const VarSelection scheme,
+                            const VarSelPrior &varsel, const Prior &prior)
+{
+    if (scheme != VarSelection::bvs)
+    {
+        return;
+    }
+
+    if constexpr (std::is_same_v<Prior, NormalPrior>)
+    {
+        const FlatSelectionPrior report = flat_selection_prior(varsel, prior.v_inv);
+        if (report.flat > 0)
+        {
+            check.flat_selection.push_back({block, report});
+        }
+    }
+}
 
 /// Where a fitted posterior is looked for. Every sampler here writes an error
 /// precision, so its presence is what says the model has been run; the
@@ -92,6 +120,33 @@ ModelCheck inspect(const ModelFile &file, const Input &input,
     // the file asks for a selection nothing performs.
     check.psi_varsel_unread = attribute_exists(file, "/model/priors/psi", "varsel") &&
                               !(has_psi_varsel<Input>::value && input.spec.uses_covar());
+
+    // Whether `bvs` has a prior it can select against, per block. The two
+    // spellings of the coefficient block's selection prior are the Wishart
+    // models' `varsel_prior` and everyone else's `a_varsel_prior`; the
+    // covariance block's is read only with that block switched on, and under
+    // its own scheme where the model has one.
+    if constexpr (requires { input.varsel_prior; })
+    {
+        collect_flat_selection(check, "a", input.spec.varsel, input.varsel_prior, input.a_prior);
+    }
+    if constexpr (requires { input.a_varsel_prior; })
+    {
+        collect_flat_selection(check, "a", input.spec.varsel, input.a_varsel_prior, input.a_prior);
+    }
+    if constexpr (requires { input.psi_varsel_prior; })
+    {
+        if (input.spec.uses_covar())
+        {
+            VarSelection psi_scheme = input.spec.varsel;
+            if constexpr (has_psi_varsel<Input>::value)
+            {
+                psi_scheme = input.psi_varsel;
+            }
+            collect_flat_selection(check, "psi", psi_scheme, input.psi_varsel_prior,
+                                   input.psi_prior);
+        }
+    }
 
     return check;
 }

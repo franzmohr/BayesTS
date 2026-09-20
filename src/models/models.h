@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "bayests/arma.h"
+#include "bayests/priors.h"
 #include "bayests/spec.h"
 
 /// Where a model is: the file, and the group inside it that the model's tree
@@ -80,6 +81,20 @@ struct ModelCheck
     /// /model above cannot see it: only the four time-varying models with a
     /// covariance block read it, and only with the block switched on.
     bool psi_varsel_unread = false;
+
+    /// One entry per block where `bvs` is selecting against a prior too flat to
+    /// select against -- see bayests::flat_selection_prior(), which is also what
+    /// fills this in. Empty under `ssvs` and `none`, empty when the prior is
+    /// tight enough, and empty for the time-varying models, whose state prior
+    /// has no one variance to compare.
+    struct FlatSelection
+    {
+        /// The prior group it is about, `"a"` or `"psi"`, so a message can name
+        /// the dataset rather than describe it.
+        std::string block;
+        bayests::FlatSelectionPrior report;
+    };
+    std::vector<FlatSelection> flat_selection;
 };
 
 /// Base class for all models.

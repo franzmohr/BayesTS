@@ -21,6 +21,7 @@
 #include "models/models.h"
 #include "io/hdf5/hdf5_and_armadillo.h"
 
+#include <cmath>
 #include <iostream>
 #include <memory>
 #include <string>
@@ -277,6 +278,28 @@ void print_report(const std::string &algorithm, const ModelCheck &check)
 		          << algorithm
 		          << " never reads it: only the time-varying models with a covariance block "
 		             "switched on do, so no selection over the covariance block will be made\n";
+	}
+
+	for (const ModelCheck::FlatSelection &flat : check.flat_selection)
+	{
+		std::cout << "  warning: bvs is selecting over " << flat.report.selected
+		          << " position(s) of " << flat.block << ", and " << flat.report.flat
+		          << " of them have a prior too flat to select against. /priors/" << flat.block
+		          << "/v_inv leaves position " << (flat.report.worst_position + 1)
+		          << " -- one-based, as `include` counts -- a conditional prior variance of ";
+		if (std::isinf(flat.report.worst_variance))
+		{
+			std::cout << "infinity";
+		}
+		else
+		{
+			std::cout << flat.report.worst_variance;
+		}
+		std::cout << ". An excluded coefficient is drawn from that prior and then scored against "
+		             "the data, so the wider that prior, the harder it is for anything to get back "
+		             "in once it is out. Expect inclusion probabilities pinned near zero that say "
+"more about the prior than about the data. "
+		             "Korobilis (2013) puts the usable range at a prior variance of 0.25 to 25\n";
 	}
 
 	for (const std::string &name : check.unread)

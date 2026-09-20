@@ -14,6 +14,13 @@
 /// the tolerance is statistical -- but the chain is seeded, and the tolerance is
 /// several standard errors wide.
 ///
+/// The third half -- flat_selection_prior() -- is the diagnostic that tells a
+/// posterior inclusion probability near zero because the data said so from one
+/// near zero because the prior was too flat for the data to be heard. It reads
+/// the diagonal of the prior precision at the selected positions only, so the
+/// checks here are that it finds the flat ones, counts only the selected ones,
+/// and reports an infinite variance rather than dividing by zero.
+///
 /// The second half runs the two constant-coefficient VARs with a covariance
 /// block on errors that are strongly correlated and on errors that are not.
 /// Their selection step used to score its candidates against a regressor matrix
@@ -297,6 +304,46 @@ void quantile_selection_sees_the_data()
     check("VarNormalAld excludes the one they do not", inclusion(1) < 0.2);
 }
 
+/// flat_selection_prior(): which selected positions BVS would be scoring a prior
+/// draw against rather than the data.
+void a_flat_prior_is_reported()
+{
+    std::printf("a prior too flat to select against\n");
+
+    bayests::VarSelPrior prior = selection_prior(arma::vec{0.5, 0.5, 0.5});
+    // Prior variances 1, 1000 and 1/0. The threshold is 100, so the first is
+    // fine and the other two are not.
+    arma::mat v_inv = arma::diagmat(arma::vec{1.0, 0.001, 0.0});
+
+    bayests::FlatSelectionPrior report = bayests::flat_selection_prior(prior, v_inv);
+    check("all three positions are selected", report.selected == 3);
+    check("two of them are too flat", report.flat == 2);
+    check("the worst is the one with no prior precision at all",
+          std::isinf(report.worst_variance) && report.worst_position == 2);
+
+    // The same prior, selecting only over the tight position.
+    prior.include = arma::uvec{0};
+    report = bayests::flat_selection_prior(prior, v_inv);
+    check("a position nothing selects over is not reported", report.flat == 0);
+    check("and the count is of the selected ones", report.selected == 1);
+
+    // A prior that is loose but inside the threshold, and one just outside it.
+    prior.include = arma::uvec{0, 1};
+    check("a prior variance of 50 passes",
+          bayests::flat_selection_prior(prior, arma::mat(arma::diagmat(arma::vec{1.0, 1 / 50.0})))
+                  .flat == 0);
+    check("one of 200 does not",
+          bayests::flat_selection_prior(prior, arma::mat(arma::diagmat(arma::vec{1.0, 1 / 200.0})))
+                  .flat == 1);
+
+    // The diagonal is the conditional prior precision, which is what the sweep
+    // draws against; correlation in the prior does not change that reading.
+    arma::mat correlated = arma::mat(arma::diagmat(arma::vec{1.0, 0.001}));
+    correlated(0, 1) = correlated(1, 0) = 0.02;
+    check("an off-diagonal does not move the reading",
+          bayests::flat_selection_prior(prior, correlated).flat == 1);
+}
+
 } // namespace
 
 int main()
@@ -308,6 +355,7 @@ int main()
     the_indicators_have_their_joint_posterior();
     covariance_block_selection_sees_the_data();
     quantile_selection_sees_the_data();
+    a_flat_prior_is_reported();
 
     std::printf("%s\n", failures == 0 ? "all checks passed" : "SOME CHECKS FAILED");
     return failures == 0 ? 0 : 1;
