@@ -186,6 +186,16 @@ heading, and move down into a version section when one is cut.
   the same `mcmc` object. **Draws are unchanged**; this adds three attributes
   and touches no value.
 
+- **`main` is the development version, and a release is a tag.** Work happens on
+  short-lived branches taken off `main` and merged back into it; a version is
+  cut by tagging a commit on `main` and publishing a GitHub release for that
+  tag. No branch tracks the last release, so **a downstream package vendoring
+  `src/core/` and `include/bayests/` should copy from a tag and record which
+  one** — between releases `main` carries whatever this *Unreleased* section
+  describes, which is the opposite of what copying from a branch named for a
+  release would suggest. CONTRIBUTING.md §*Branches* states the policy. This is
+  process only: no source file changed and no draw moves.
+
 ## 0.2.0 — 2026-09-15
 
 ### Added
