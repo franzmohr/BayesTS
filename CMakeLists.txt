@@ -63,6 +63,12 @@ option(BAYESTS_BUILD_DOCS "Add the 'docs' target for Doxygen API documentation" 
 # output, so a refactor can be checked against the recorded fixtures.
 option(BAYESTS_BUILD_TESTS "Build the regression harnesses in test/" ON)
 
+# Warnings are errors where a build is expected to be clean and nobody is
+# watching the log -- CI turns this on. It is off by default because a newer
+# compiler than the one a release was tested with finds new warnings, and a
+# user building from source should get a binary, not a diagnostic.
+option(BAYESTS_WERROR "Treat compiler warnings as errors" OFF)
+
 # -march=native bakes the build machine's instruction set into the binary, so a
 # package built with it dies with an illegal instruction on any older CPU. It is
 # therefore off by default and worth switching on only for local builds.
@@ -432,9 +438,32 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(bayests_warnings INTERFACE
         -Wall
         -Wextra
+        "$<$<BOOL:${BAYESTS_WERROR}>:-Werror>"
     )
+
+    # The one diagnostic that stays a warning under BAYESTS_WERROR.
+    #
+    # -Wfree-nonheap-object fires inside Armadillo's memory::release() once the
+    # optimiser has inlined an expression template into the destructor of the
+    # temporary that built it, and it names an ordinary local arma::mat as the
+    # object being freed -- `arma::mat period` in predictive_score.h, for one --
+    # although nothing here frees anything. It is a false positive of GCC's
+    # against Armadillo, it appears and disappears with the optimisation level
+    # and the Armadillo version, and the SYSTEM include directories above do not
+    # silence it: it is raised in the middle end, after inlining, where the
+    # header a line came from is no longer what decides.
+    #
+    # Left on as a warning rather than switched off, since the day it stops
+    # being a false positive is worth seeing.
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+        target_compile_options(bayests_warnings INTERFACE
+            "$<$<BOOL:${BAYESTS_WERROR}>:-Wno-error=free-nonheap-object>")
+    endif()
 elseif(MSVC)
-    target_compile_options(bayests_warnings INTERFACE /W4)
+    target_compile_options(bayests_warnings INTERFACE
+        /W4
+        "$<$<BOOL:${BAYESTS_WERROR}>:/WX>"
+    )
 endif()
 
 #####################################################################
@@ -849,6 +878,12 @@ include(CPack)
 # libraries via find_package(BayesTS). Should that change, the targets need
 # INSTALL_INTERFACE include directories and the HighFive interface target
 # above has to be reconstructible from the generated config file.
+#
+# The block below is a sketch, not a switch: uncommenting it does not configure,
+# because cmake/BayesTSConfig.cmake.in does not exist. That template is the part
+# that has to be written -- it is where the dependency lookups a consumer needs
+# get replayed -- and it is why this is commented out rather than guarded by an
+# option.
 
 # # Install targets
 # install(TARGETS bayests

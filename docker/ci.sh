@@ -49,6 +49,12 @@ sync_source() {
 # The workflow spells its configure out rather than using a preset, because the
 # presets carry no CMAKE_PREFIX_PATH -- that lives in the gitignored
 # CMakeUserPresets.json. Same here, and for the same reason.
+#
+# BAYESTS_WERROR is on for the same reason it is on in the workflow, and it has
+# to be on in both: this script exists so that what the Linux runner will say is
+# known before the push, and a warning the runner turns into an error is exactly
+# the kind of thing a Windows desktop does not see. The compiler here is the
+# runner's, not the one on the host.
 configure() {
     local build_dir=$1 build_type=$2
     shift 2
@@ -58,6 +64,7 @@ configure() {
         -DCMAKE_PREFIX_PATH="$BAYESTS_PREFIX_PATH" \
         -DHIGHFIVE_DIR="$BAYESTS_HIGHFIVE_DIR" \
         -DBAYESTS_NATIVE_ARCH=OFF \
+        -DBAYESTS_WERROR=ON \
         "$@"
 }
 

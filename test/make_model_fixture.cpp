@@ -312,6 +312,41 @@ arma::mat build_forecast_regressors(const arma::mat &series, const Layout &layou
     return x;
 }
 
+/// The observations the horizon realised, written where a fixture asks to be
+/// scored: one row per period and one column per variable, the layout
+/// read_test_observations() expects. `bayests forecasts` writes
+/// /posterior/forecast/loglik wherever it finds this dataset and the algorithm
+/// can be scored, so this is the only thing standing between a fixture and the
+/// score path.
+///
+/// The values continue the same stable AR(1) the sample was drawn from, from
+/// its last in-sample column -- `last` -- so a scored fixture is a forecast
+/// against a plausible future rather than against noise a model must strain to
+/// explain.
+///
+/// Drawn from a generator of its own rather than the file's. That is what makes
+/// `--score` additive: the file's stream is consumed in the same order and the
+/// same number of times whether the flag is there or not, so adding the flag to
+/// a fixture row adds a dataset and moves no number that was there before.
+void write_test_observations(const ModelFile &file, const arma::vec &last, int h)
+{
+    Lcg rng(20260920ULL);
+
+    arma::mat realised(static_cast<arma::uword>(h), last.n_elem, arma::fill::zeros);
+    arma::vec previous = last;
+    for (int t = 0; t < h; ++t)
+    {
+        for (arma::uword i = 0; i < previous.n_elem; ++i)
+        {
+            previous(i) = 0.5 * previous(i) + rng.normal();
+        }
+        realised.row(static_cast<arma::uword>(t)) = arma::trans(previous);
+    }
+
+    ensure_group(file, "/data/test");
+    write_mat(file, "/data/test/y", realised);
+}
+
 /// tt x n_x, the compact reading of the same regressors build_train_regressors()
 /// kroneckers up with I_k -- the one lag block and the intercept, one column
 /// each rather than k of them.
@@ -1766,7 +1801,8 @@ int main(int argc, char *argv[])
     {
         std::cerr << "Usage: " << argv[0]
                   << " <dest.h5> <model> <none|ssvs|bvs> <covar 0|1> <structural 0|1> <h>"
-                     " [group] [append] [--coint-rho] [--coint-p-tau] [--hold-states]\n";
+                     " [group] [append] [--coint-rho] [--coint-p-tau] [--hold-states]"
+                     " [--score]\n";
         return 2;
     }
 
@@ -1786,6 +1822,7 @@ int main(int argc, char *argv[])
     bool coint_rho = false;
     bool coint_p_tau = false;
     bool hold_states = false;
+    bool score = false;
     bool bare_group_seen = false;
 
     for (int i = 7; i < argc; i++)
@@ -1806,6 +1843,13 @@ int main(int argc, char *argv[])
         else if (token == "--coint-p-tau")
         {
             coint_p_tau = true;
+        }
+        else if (token == "--score")
+        {
+            // /data/test/y: what the horizon realised. It is what turns
+            // `bayests forecasts` into a scoring run, so it is what puts a
+            // fixture through the predictive density code at all.
+            score = true;
         }
         else if (token == "append")
         {
@@ -1877,6 +1921,20 @@ int main(int argc, char *argv[])
         std::cerr << "A dynamic factor model takes no variable selection, no covariance block "
                      "and no contemporaneous coefficients: see validate_dfm_shape() in "
                      "src/core/inputs.cpp\n";
+        return 2;
+    }
+    if (score && h <= 0)
+    {
+        std::cerr << "--score writes the observations a horizon realised, so it needs a "
+                     "horizon to realise: pass h > 0" << '\n';
+        return 2;
+    }
+    if (score && (is_ald || is_favar))
+    {
+        std::cerr << "--score is not available for " << model
+                  << ": the quantile models have no forecast to score, and a FAVAR's is not "
+                     "scored yet -- see can_be_scored in src/check.cpp for the nineteen that "
+                     "are" << '\n';
         return 2;
     }
     if (is_ald && (covar || h != 0))
@@ -2002,10 +2060,16 @@ int main(int argc, char *argv[])
                 write_attribute<std::string>(file, "/model", "forecast_states", "hold");
             }
 
+            if (score)
+            {
+                write_test_observations(file, x.col(kTT - 1), h);
+            }
+
             std::cout << "wrote " << dest.string() << group_suffix << " (" << model << ", h=" << h
                       << ", k=" << kDfmK << ", tt=" << kTT << ", n_factors=" << kDfmN
                       << ", p=" << kDfmP << ", n_lambda=" << kDfmNLambda << ", n_a=" << kDfmNA
-                      << (hold_states ? ", forecast_states=hold" : "") << ")\n";
+                      << (hold_states ? ", forecast_states=hold" : "")
+                      << (score ? ", score=1" : "") << ")\n";
             return 0;
         }
 
@@ -2038,6 +2102,14 @@ int main(int argc, char *argv[])
                 write_attribute<std::string>(file, "/model", "forecast_states", "hold");
             }
 
+            // Levels, the parameterisation a VEC forecasts and is scored in --
+            // the same series /data/forecast/x carries the lags of, not the
+            // differences /data/train/y holds.
+            if (score)
+            {
+                write_test_observations(file, levels.col(kTT + kVecP - 1), h);
+            }
+
             // coint_p_tau only when set, so the line every existing fixture
             // prints stays the one its recorded fingerprints were taken from.
             std::cout << "wrote " << dest.string() << group_suffix << " (" << model << ", varsel=" << varsel
@@ -2045,7 +2117,8 @@ int main(int argc, char *argv[])
                       << ", k=" << kK << ", tt=" << kTT << ", rank=" << kVecRank
                       << ", nparams=" << nparams << ", coint_rho=" << coint_rho
                       << (coint_p_tau ? ", coint_p_tau=1" : "")
-                      << (hold_states ? ", forecast_states=hold" : "") << ")\n";
+                      << (hold_states ? ", forecast_states=hold" : "")
+                      << (score ? ", score=1" : "") << ")\n";
             return 0;
         }
 
@@ -2057,6 +2130,11 @@ int main(int argc, char *argv[])
         if (hold_states)
         {
             write_attribute<std::string>(file, "/model", "forecast_states", "hold");
+        }
+
+        if (score)
+        {
+            write_test_observations(file, series.col(kTT + kP - 1), h);
         }
 
         if (model == "VarTvpDiscount")
@@ -2099,7 +2177,8 @@ int main(int argc, char *argv[])
         std::cout << "wrote " << dest.string() << group_suffix << " (" << model << ", varsel=" << varsel
                   << ", covar=" << covar << ", structural=" << structural << ", h=" << h
                   << ", k=" << kK << ", tt=" << kTT << ", nparams=" << layout.nparams
-                  << (hold_states ? ", forecast_states=hold" : "") << ")\n";
+                  << (hold_states ? ", forecast_states=hold" : "")
+                  << (score ? ", score=1" : "") << ")\n";
     }
     catch (const std::exception &e)
     {

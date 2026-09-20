@@ -34,7 +34,7 @@ in the file.
 | `DfmTvpStochvol` | Random walk, loadings and transition | Stochastic volatility | — | refused | refused | yes |
 | `FavarNormalWishart` | Constant loadings and transition | Wishart on the state innovations, gamma on the idiosyncratic errors | — | refused | refused | yes |
 
-All sixteen VARs and VECs take exogenous regressors, deterministic terms and a
+All seventeen VARs and VECs take exogenous regressors, deterministic terms and a
 pointwise log likelihood — laid out for WAIC and PSIS-LOO, except on the
 discounted pair, whose parameters are integrated out exactly and whose
 `/posterior/loglik` is therefore one row rather than one per draw. The factor models have

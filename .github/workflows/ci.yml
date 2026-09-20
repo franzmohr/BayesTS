@@ -93,6 +93,7 @@ jobs:
             -DBAYESTS_BUILD_TESTS=ON \
             -DBAYESTS_TEST_AGENT_DOCS=ON \
             -DPython3_EXECUTABLE=/usr/bin/python3 \
+            -DBAYESTS_WERROR=ON \
             -DBAYESTS_NATIVE_ARCH=OFF
 
       - name: Build
@@ -167,6 +168,10 @@ jobs:
           # group membership is how a job ends up with gcc and g++ but no
           # gfortran -- which fails at configure with "No CMAKE_Fortran_COMPILER
           # could be found", a message that names no package.
+          # python-h5py and python-numpy are what agents.recipes needs; the
+          # configure below asks for that test by name, so losing them fails
+          # the job rather than silently dropping the check, as it would
+          # under the default BAYESTS_TEST_AGENT_DOCS=AUTO.
           pacboy: >-
             toolchain:p
             gcc-fortran:p
@@ -175,15 +180,22 @@ jobs:
             armadillo:p
             hdf5:p
             openblas:p
+            python-h5py:p
+            python-numpy:p
 
       # Checked before configure so a missing compiler is reported here, against
       # the step that was supposed to install it, rather than 100 lines later.
       - name: Verify the toolchain
         run: |
-          for tool in gcc g++ gfortran cmake ninja; do
+          for tool in gcc g++ gfortran cmake ninja python; do
             command -v "$tool" >/dev/null || { echo "::error::$tool not on PATH"; exit 1; }
             printf '%-9s %s\n' "$tool" "$($tool --version | head -1)"
           done
+          # agents.recipes is asked for by name in the configure below, so a
+          # missing h5py is reported here, against the step that installs it,
+          # rather than as a test that quietly did not get registered.
+          python -c 'import h5py, numpy; print(h5py.__version__, numpy.__version__)'
+          echo "PYTHON_EXE=$(cygpath -m "$(command -v python)")" >> "$GITHUB_ENV"
 
       # Pinned in .github/highfive-version, the same file the Linux jobs read
       # through the composite action. See that action for why the tag is a beta
@@ -203,6 +215,9 @@ jobs:
             -DHIGHFIVE_DIR="$RUNNER_TEMP/highfive" \
             -DBAYESTS_BUILD_DOCS=OFF \
             -DBAYESTS_BUILD_TESTS=ON \
+            -DBAYESTS_TEST_AGENT_DOCS=ON \
+            -DPython3_EXECUTABLE="$PYTHON_EXE" \
+            -DBAYESTS_WERROR=ON \
             -DBAYESTS_NATIVE_ARCH=OFF
 
       - name: Build

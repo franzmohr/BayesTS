@@ -54,6 +54,41 @@ if(NOT _err MATCHES "is where the path goes")
     math(EXPR _failures "${_failures} + 1")
 endif()
 
+# The other half of the contract. Everything above is exit 2 -- a command line
+# that was never acted on -- and until these were added nothing asserted the 1
+# it is distinguished from, though ten sites in src/ return it. A caller
+# scripting `bayests` over a tree tells "this file is broken" from "you called
+# me wrongly" by that difference alone, so it is worth pinning on both sides of
+# the line, and the line does not fall where it looks like it should.
+file(REMOVE_RECURSE "${SCRATCH}")
+file(MAKE_DIRECTORY "${SCRATCH}")
+
+# 2, not 1: a path that is not there is a command line that cannot be acted on,
+# the same as a --group naming no group. Nothing was opened, so nothing started.
+expect_exit(2 "a path that does not exist" check "${SCRATCH}/no-such-model.h5")
+
+# 1: named with an extension the walk accepts, so the run started, opened it and
+# found it was not an HDF5 file. This is the plainest case of the code the other
+# nine sites share, and the only one reachable without writing a broken model.
+file(WRITE "${SCRATCH}/not-hdf5.h5" "This is not an HDF5 file.\n")
+expect_exit(1 "a file named .h5 that is not HDF5" check "${SCRATCH}/not-hdf5.h5")
+if(NOT _err MATCHES "Error processing")
+    message(STATUS "FAIL: a file that failed to open was not reported as processed\n${_err}")
+    math(EXPR _failures "${_failures} + 1")
+endif()
+
+# 1 as well, by the other route: is_hdf5_file() is an extension test, so this one
+# is turned away before HDF5 sees it. Same exit code, different message, and the
+# pair is what keeps the two paths from drifting apart.
+file(WRITE "${SCRATCH}/not-hdf5.txt" "This is not an HDF5 file either.\n")
+expect_exit(1 "a file that is not named like HDF5" check "${SCRATCH}/not-hdf5.txt")
+if(NOT _err MATCHES "Not an hdf5 file")
+    message(STATUS "FAIL: a non-HDF5 extension was not reported as one\n${_err}")
+    math(EXPR _failures "${_failures} + 1")
+endif()
+
+file(REMOVE_RECURSE "${SCRATCH}")
+
 # OPENBLAS_NUM_THREADS is the caller's to set. The binary used to overwrite it
 # with the OpenMP count, so a BLAS pinned to one thread ran on every core.
 #

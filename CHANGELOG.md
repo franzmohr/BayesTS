@@ -27,6 +27,77 @@ Dates are ISO. Versions follow the `project(VERSION)` in `CMakeLists.txt`.
 New entries go here, under an `### Added`, `### Changed` or `### Fixed`
 heading, and move down into a version section when one is cut.
 
+### Added
+
+- **Six fixtures that are scored, and a golden test that insists on it.** No
+  generated fixture carried `/data/test/y`, so nothing in the suite ever reached
+  the predictive density: nineteen algorithms can be scored and the code that
+  scores them was covered by unit tests alone. That is the gap the positive
+  semi-definite filter fix in 0.3.0 came through, found by a third toolchain
+  rather than by CI.
+
+  `make_model_fixture` takes a `--score` flag, which writes the observations the
+  horizon realised, and `bayests_golden` now fails a fixture that carries them
+  and comes back without `/posterior/forecast/loglik`. One fixture per distinct
+  implementation rather than one per algorithm: `VarNormalWishart-score` and
+  `VarTvpStochvol-score` for `predictive_score.h` with states held and drifting,
+  `VecNormalGamma-score` for a VEC scored in levels, `DfmTvpGamma-score` for
+  `factor_score.h`, and `VarTvpDiscount-score` and `VecTvpDiscount-score` for
+  the closed form the discounted pair carry.
+
+  *Draws are unchanged.* The realised values come from a generator of their own,
+  so the file's stream is consumed identically whether the flag is passed or
+  not, and the new golden line is printed only for a fixture that asked to be
+  scored. Verified rather than assumed: `record_fingerprints.sh` before and
+  after, over the full suite on one machine and one build, reports **106
+  fixtures unchanged, 0 moved**, the difference being the six new ones.
+
+- **`BAYESTS_WERROR`, off by default and on in CI.** The project already
+  compiled with `-Wall -Wextra` and produced no warnings of its own; nothing
+  held it there. It is off for anyone building from source, because a newer
+  compiler than a release was tested with finds new warnings and a user wants a
+  binary rather than a diagnostic.
+
+  `-Wfree-nonheap-object` is exempted under GCC, as a warning rather than an
+  error. It fires inside Armadillo's `memory::release()` once the optimiser has
+  inlined an expression template into the destructor of the temporary that built
+  it, names an ordinary local `arma::mat` as the object being freed, and is not
+  silenced by the SYSTEM include directories -- it is raised after inlining,
+  where the header a line came from no longer decides.
+
+- **Two exit codes asserted that were not.** `cli.refusals` covered 0 and 2 and
+  never 1, though ten sites in `src/` return it and the difference is what tells
+  a caller scripting `bayests` over a tree that a file is broken rather than
+  that the command line was. Three cases now pin the line: a path that does not
+  exist is 2 (nothing was opened, so nothing started), while a file named `.h5`
+  that is not HDF5, and a file whose extension `is_hdf5_file()` turns away, are
+  both 1.
+
+- **`agents.recipes` runs on Windows too.** The job installed no h5py, so the
+  test was dropped silently by the default `BAYESTS_TEST_AGENT_DOCS=AUTO` and
+  the Python examples in `agents/` were checked on Linux alone. The Windows job
+  now installs it, names the interpreter and asks for the test by name, so
+  losing it fails the job.
+
+### Fixed
+
+- **`results.h` described the file layout backwards.** The two `Draws` structs
+  told an embedding host that the convention is "draws in rows, for both the
+  HDF5 files and R" and to transpose at the boundary. The R half is right and
+  the HDF5 half is not: `write_draws()` transposes twice, so in dataspace terms
+  every posterior dataset is one row per quantity and one column per draw, which
+  is what h5py reports and what the README and `agents/` have always said. A
+  host that believed the header would have written files transposed against the
+  ones `bayests` reads. Documentation only -- no code path changes, and no
+  dataset this project writes was ever in the other orientation.
+
+- **Stale counts in the documentation.** `CITATION.cff` said twenty algorithms
+  where `.zenodo.json` said twenty-two; the README and `agents/` said sixteen
+  VARs and VECs where the catalogue in the same file lists nine and eight; and
+  `results.md` summarised the nineteen scorable algorithms as "every VAR, every
+  VEC and every dynamic factor model", which is twenty-one and contradicts the
+  paragraph ninety lines below it that correctly excludes the quantile pair.
+
 ## 0.3.0 — 2026-09-20
 
 ### Added

@@ -92,9 +92,9 @@ the group rather than one dataset in it.
 ## The score
 
 `loglik` is written by `forecasts` wherever the file carries `/data/test/y` and
-the algorithm can be scored: every VAR, every VEC and every dynamic factor
-model -- nineteen of the twenty-two. One column per realised period, which may
-be fewer than `h`.
+the algorithm can be scored: every VAR but the two quantile models, every VEC
+and every dynamic factor model -- nineteen of the twenty-two. The three that are
+left out are below. One column per realised period, which may be fewer than `h`.
 
 **A VEC is scored in levels**, the parameterisation it forecasts in. Its draws
 are rewritten as the level VAR they imply and the score is that VAR's, so
