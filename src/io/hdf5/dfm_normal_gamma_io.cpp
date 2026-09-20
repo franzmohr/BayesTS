@@ -17,6 +17,7 @@ DfmNormalGammaInput read_input(const ModelFile &file)
     input.spec = read_spec(file, nullptr);
 
     read_mat_if_present(file, "/data/train/y", input.train.y);
+    read_test_observations(file, input.spec, input.test.y);
 
     // Only draw_coefficients needs the priors and the starting values. A file
     // that holds nothing but a fitted posterior can still be forecast from, so a

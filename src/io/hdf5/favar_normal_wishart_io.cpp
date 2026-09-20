@@ -24,6 +24,7 @@ FavarNormalWishartInput read_input(const ModelFile &file)
     // state vector, and TrainData keeps them in a member of their own for that
     // reason.
     read_mat_if_present(file, "/data/train/f_obs", input.train.f_obs);
+    read_test_observations(file, input.spec, input.test.y);
 
     // Only draw_coefficients needs the priors and the starting values. A file
     // that holds nothing but a fitted posterior can still be forecast from, so a

@@ -64,6 +64,11 @@ struct ModelCheck
     /// whole number is refused here as it is by a run.
     std::optional<std::uint64_t> seed;
 
+    /// Rows of /data/test/y, the periods a forecast would be scored against.
+    /// Zero where the file carries none, which is every file that is a forecast
+    /// rather than a forecast being scored.
+    arma::uword test_periods = 0;
+
     /// Datasets in the model's tree the reader never opened, /posterior aside.
     std::vector<std::string> unread;
 

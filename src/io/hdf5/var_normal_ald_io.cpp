@@ -20,6 +20,7 @@ VarNormalAldInput read_input(const ModelFile &file)
 
     read_mat_if_present(file, "/data/train/y", input.train.y);
     read_mat_if_present(file, "/data/train/z", input.train.z);
+    read_test_observations(file, input.spec, input.test.y);
 
     if (input.use_a())
     {

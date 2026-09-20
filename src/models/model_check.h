@@ -50,6 +50,7 @@ ModelCheck inspect(const ModelFile &file, const Input &input)
     const arma::uword k = input.spec.k > 0 ? static_cast<arma::uword>(input.spec.k) : 0;
     check.periods = k > 0 ? input.train.y.n_elem / k : 0;
     check.z_columns = input.train.z.n_cols;
+    check.test_periods = input.test.y.n_rows;
 
     // Taken before anything below opens a dataset, so that the list is what
     // the reader asked for and nothing else.

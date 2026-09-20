@@ -160,6 +160,17 @@ if(OpenMP_CXX_FOUND)
     target_link_libraries(bayests_unit_forecast_group_io PRIVATE OpenMP::OpenMP_CXX)
 endif()
 
+# On the io layer too: the realised values, which no sampler reads, so their
+# shape is looked at here or nowhere.
+add_executable(bayests_unit_test_observations_io unit_test_observations_io.cpp)
+
+target_link_libraries(bayests_unit_test_observations_io PRIVATE bayests_hdf5_helper)
+target_link_libraries(bayests_unit_test_observations_io PRIVATE bayests_warnings)
+
+if(OpenMP_CXX_FOUND)
+    target_link_libraries(bayests_unit_test_observations_io PRIVATE OpenMP::OpenMP_CXX)
+endif()
+
 # On the io layer as well: that a starting path is read at exactly the size the
 # model says, and that a forecast reader refuses a file with no sample.
 add_executable(bayests_unit_read_path unit_read_path.cpp)
@@ -267,7 +278,7 @@ endif()
 # The unit tests, which need only the shared libraries on the path: no fixture
 # to set up, and no thread pinning, since an exact identity does not care how
 # many threads computed it.
-foreach(_unit vec_to_var forecast_lags forecast_regressors_io forecast_group_io stochvol kalman chan_jeliazkov
+foreach(_unit vec_to_var forecast_lags forecast_regressors_io forecast_group_io test_observations_io stochvol kalman chan_jeliazkov
               inverse_gaussian truncated_normal identification
               vec_klgs_2010 vec_tvp_coint coint_prior_symmetry coint_jacobian coint_dees_us dfm_normal_gamma dfm_normal_stochvol
               dfm_tvp_gamma dfm_tvp_stochvol favar_normal_wishart var_ald thin model_group bvs ssvs

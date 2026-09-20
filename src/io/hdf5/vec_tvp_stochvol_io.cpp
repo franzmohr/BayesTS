@@ -18,6 +18,7 @@ VecTvpStochvolInput read_input(const ModelFile &file)
     read_mat_if_present(file, "/data/train/w", input.train.w);
     read_mat_if_present(file, "/data/train/z", input.train.z);
     read_forecast_regressors(file, input.spec.k, input.forecast.x);
+    read_test_observations(file, input.spec, input.test.y);
 
     const arma::uword tt = input.train.y.n_elem > 0 && input.spec.k > 0
                                ? input.train.periods(input.spec.k)

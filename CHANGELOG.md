@@ -27,6 +27,34 @@ Dates are ISO. Versions follow the `project(VERSION)` in `CMakeLists.txt`.
 New entries go here, under an `### Added`, `### Changed` or `### Fixed`
 heading, and move down into a version section when one is cut.
 
+### Added
+
+- **`/data/test/y`, the observations a forecast is scored against.** One row per
+  period and one column per variable, in the layout and the variable order of
+  `/data/train/y`, and optional. It is the one thing in `/data` that no sampler
+  reads: not a sample anything is estimated on, but what the horizon turned out
+  to be.
+
+  It is in the file so that one window of an expanding window exercise carries
+  what it is to be judged by. Scoring a folder of them is then one file at a
+  time, where before the caller had to hold window *i+1* in memory to supply the
+  observation window *i* predicted. That is also where the reserved
+  `/posterior/forecast/loglik` will take its observations from.
+
+  Fewer than `h` periods is accepted and means what it says -- the last windows
+  of an expanding window realise fewer periods than they forecast. More than `h`
+  is refused, since the file then describes a horizon other than the one
+  `/model` asks for, and so is the stacked spelling `/data/train/y` also
+  accepts: with `h` unknown, `h*k` numbers in one column could be in either
+  order, and scoring against the wrong one would be a reshuffle of the right
+  numbers. `bayests check` reports how many periods are there and warns where
+  there are some but no horizon to use them for.
+
+  Nothing computes from it yet. Every model's reader takes it into
+  `Input::test.y`, which is what keeps `bayests check` from reporting it as a
+  dataset the model never reads; the forecast score that consumes it is still to
+  come. **Draws are unchanged**: no sampler sees this, and the 340 tests pass.
+
 ### Changed
 
 - **The forecast paths move from `/posterior/forecast` to

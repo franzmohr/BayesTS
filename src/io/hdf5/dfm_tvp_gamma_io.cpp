@@ -30,6 +30,7 @@ DfmTvpGammaInput read_input(const ModelFile &file)
     input.spec = read_spec(file, nullptr);
 
     read_mat_if_present(file, "/data/train/y", input.train.y);
+    read_test_observations(file, input.spec, input.test.y);
 
     const arma::uword tt = sample_periods(input);
     const arma::uword n_lambda = static_cast<arma::uword>(input.spec.n_lambda());

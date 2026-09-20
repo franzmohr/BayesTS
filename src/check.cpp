@@ -162,6 +162,15 @@ void print_report(const std::string &algorithm, const ModelCheck &check)
 		                  : ", states simulated forward");
 	}
 	std::cout << "\n";
+	if (check.test_periods > 0)
+	{
+		std::cout << "  realised: " << check.test_periods << " period(s) in /data/test/y";
+		if (spec.h > 0 && check.test_periods < static_cast<arma::uword>(spec.h))
+		{
+			std::cout << ", short of the horizon, so only those can be scored";
+		}
+		std::cout << "\n";
+	}
 	std::cout << "  chain: " << spec.iterations << " draws kept after " << spec.burnin
 	          << " burn-in";
 	if (spec.thin > 1)
@@ -210,6 +219,13 @@ void print_report(const std::string &algorithm, const ModelCheck &check)
 		          << spec.nparams_per_period()
 		          << " coefficients per period. The chain runs on z, so the dimensions "
 		             "describe a different model, and asking for a forecast would fail\n";
+	}
+
+	if (check.test_periods > 0 && spec.h == 0)
+	{
+		std::cout << "  warning: /data/test/y holds " << check.test_periods
+		          << " period(s) to score a forecast against, but /model asks for no "
+		             "horizon, so there is no forecast to score\n";
 	}
 
 	for (const std::string &name : check.unknown_attributes)

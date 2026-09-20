@@ -8,6 +8,7 @@
 #include <cmath>
 #include <set>
 #include <stdexcept>
+#include <utility>
 
 namespace bayests::hdf5_io
 {
@@ -112,6 +113,34 @@ bool read_forecast_regressors(const ModelFile &file, int k, arma::mat &out)
             out(i, j) = sur(i * width, j * width);
         }
     }
+    return true;
+}
+
+bool read_test_observations(const ModelFile &file, const VarSpec &spec, arma::mat &out)
+{
+    arma::mat realised;
+    if (!read_mat_if_present(file, "/data/test/y", realised))
+    {
+        return false;
+    }
+
+    const arma::uword k = spec.k > 0 ? static_cast<arma::uword>(spec.k) : 0;
+    if (k == 0 || realised.n_cols != k)
+    {
+        throw std::invalid_argument(
+            "/data/test/y is one row per period and one column per variable, so it must have k = " +
+            std::to_string(spec.k) + " columns, got " + std::to_string(realised.n_rows) + " by " +
+            std::to_string(realised.n_cols));
+    }
+    if (spec.h > 0 && realised.n_rows > static_cast<arma::uword>(spec.h))
+    {
+        throw std::invalid_argument(
+            "/data/test/y holds " + std::to_string(realised.n_rows) +
+            " periods, more than the h = " + std::to_string(spec.h) +
+            " this model forecasts; a forecast cannot be scored against periods it does not cover");
+    }
+
+    out = std::move(realised);
     return true;
 }
 

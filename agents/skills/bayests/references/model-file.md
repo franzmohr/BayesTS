@@ -95,6 +95,32 @@ rather than given, so `/data/train/y` is all the data there is.
 
 A factor model needs neither: the horizon alone drives its forecast.
 
+## `/data/test`
+
+| Dataset | Dataspace shape | Contents |
+| --- | --- | --- |
+| `y` | `(k, h)` | What the horizon realised, `(h, k)` on paper: one row per period and one column per variable, in the variable order of `/data/train/y`. Optional |
+
+The one thing in `/data` that no sampler reads. It is not a sample anything is
+estimated on but the observations a forecast is scored against, and it lives in
+the file so that one window of an expanding window exercise carries what it is
+to be judged by -- which is what lets a folder of them be scored a file at a
+time, instead of the caller holding the next window in memory to supply the
+observation this one predicted.
+
+**Fewer than `h` periods is fine** and means what it says: an expanding window
+whose last windows run past the end of the sample realises fewer periods than it
+forecasts, and those are the ones that can be scored. More than `h` is refused,
+since the file then describes a horizon other than the one `/model` asks for.
+The stacked spelling `/data/train/y` also accepts is refused here rather than
+guessed at: once `h` is unknown, `h*k` numbers in one column could be in either
+order and scoring against the wrong one would be a reshuffle of the right
+numbers.
+
+Nothing in `bayests` computes from it yet. `bayests check` reports how many
+periods are there, and warns where there are some but `/model` asks for no
+horizon.
+
 ## `/priors`
 
 | Group | Datasets | Read by |

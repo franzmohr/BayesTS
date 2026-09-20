@@ -60,6 +60,27 @@ bool read_forecast_regressors(const ModelFile &file, int k, arma::mat &out);
 /// cuts a long one, after which validate() sees a matrix of exactly the shape it
 /// asks for whatever the file held. An empty matrix comes back when there is no
 /// sample to measure against (`periods` of zero); validate() refuses that run.
+/// Reads `/data/test/y`, the observations the forecast horizon realised, into
+/// `out`. False and `out` untouched where the file has none, which is every
+/// file that is a forecast rather than a forecast being scored.
+///
+/// One row per period and one column per variable, the layout and the variable
+/// order of `/data/train/y`, and refused otherwise -- the stacked spelling that
+/// `/data/train/y` also accepts is not taken here, because a `k` column matrix
+/// and a stacked vector of the same length cannot be told apart by anything but
+/// convention once `h` is unknown, and guessing would score a forecast against
+/// a reshuffle of the right numbers.
+///
+/// Fewer rows than `h` is not an error: the last windows of an expanding window
+/// exercise realise fewer periods than they forecast, and the ones that are
+/// there are the ones that can be scored. More than `h` is, since the file then
+/// describes a horizon other than the one `/model` asks for. Neither is checked
+/// against `h` when there is no horizon at all -- a file can carry what it will
+/// be scored on before it is told how far to forecast, and refusing that here
+/// would fail the sampler over data no sampler reads. `bayests check` reports
+/// it instead.
+bool read_test_observations(const ModelFile &file, const VarSpec &spec, arma::mat &out);
+
 arma::mat read_path(const ModelFile &file, const std::string &dataset, arma::uword rows,
                     arma::uword periods);
 
