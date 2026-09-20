@@ -3,9 +3,11 @@
 
 #include "bayests/inputs.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <limits>
 #include <stdexcept>
 #include <string>
 
@@ -559,6 +561,45 @@ void validate_tvp_coint_rho(const TvpCointSpacePrior &prior)
 }
 
 } // namespace
+
+/// The selected positions a BVS sweep would be scoring against a prior draw
+/// rather than against the data. See the declaration in priors.h for why the
+/// diagonal is what to read, and why this is a report and not a refusal.
+FlatSelectionPrior flat_selection_prior(const VarSelPrior &prior, const arma::mat &v_inv,
+                                        const double variance_threshold)
+{
+    FlatSelectionPrior report;
+    report.selected = prior.include.n_elem;
+
+    const arma::uword side = std::min(v_inv.n_rows, v_inv.n_cols);
+    for (const arma::uword pos : prior.include)
+    {
+        // validate_varsel() refuses a position past the end of the block, but
+        // this is a diagnostic and may be called before or instead of it.
+        if (pos >= side)
+        {
+            continue;
+        }
+
+        const double precision = v_inv(pos, pos);
+        const double variance = precision > 0.0 ? 1.0 / precision
+                                                : std::numeric_limits<double>::infinity();
+        if (variance < variance_threshold)
+        {
+            continue;
+        }
+
+        report.flat++;
+        if (report.flat == 1 || variance > report.worst_variance)
+        {
+            report.worst_variance = variance;
+            report.worst_position = pos;
+        }
+    }
+
+    return report;
+}
+
 } // namespace bayests
 
 namespace bayests

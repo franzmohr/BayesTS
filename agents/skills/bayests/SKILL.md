@@ -167,23 +167,30 @@ moves.
 BVS excludes a coefficient by zeroing its regressor, so while it is out its
 draw comes from the prior alone — and the sweep decides whether to let it back
 in by scoring that prior draw against the data. The flatter the prior, the
-wilder that draw and the worse it scores, so a coefficient that goes out stays
-out whatever the data say. Korobilis (2013, §3.1) puts the point where
+wilder that draw and the worse it scores, so the harder it is for anything to
+get back in once it is out. Korobilis (2013, §3.1) puts the point where
 selection stops working at a prior variance of about 100, and quotes Kuo and
 Mallick's (1997) usable range of 0.25 to 25 — in `v_inv` terms a diagonal of
 roughly 0.04 to 4, with the variables on a comparable scale.
 
-Nothing refuses a flatter prior. `/priors/a/v_inv` is checked for being square
-and symmetric and not for being tight, so a file with `varsel = "bvs"` and a
-near-zero `v_inv` runs to the end and reports inclusion probabilities pinned
-near zero. **Posterior inclusion that comes back at or near zero for every
-selected coefficient is this, not a finding**; compare against a run with a
-tighter `v_inv` before reading anything into it. On a time-varying model the
-same argument runs through the state prior instead: it is `/priors/a/mu` and
+Nothing refuses a flatter prior — it is a perfectly good prior, and the chain
+it produces is the one the file asked for. `/priors/a/v_inv` is checked for
+being square and symmetric and not for being tight, so a file with
+`varsel = "bvs"` and a near-zero `v_inv` runs to the end and reports inclusion
+probabilities pinned near zero. **`bayests check` warns about it**, naming the
+block, how many of the selected positions are affected and the worst
+conditional prior variance among them; it is a warning and not a refusal, so
+the exit code stays 0. **Posterior inclusion that comes back at or near zero
+for every selected coefficient is this, not a finding**; compare against a run
+with a tighter `v_inv` before reading anything into it.
+
+The warning covers the constant-coefficient models only. On a time-varying one
+the same argument runs through the state prior instead — `/priors/a/mu` and
 `v_inv` on the state before the sample, together with `shape`/`rate` on the
-innovation precision, that decide how far an excluded path wanders. SSVS is not
-exposed to this — its excluded component is the `tau0` spike, which is tight by
-construction.
+innovation precision, are what decide how far an excluded path wanders — and
+there is no one variance there to compare against a threshold, so the check
+says nothing and the judgement is yours. SSVS is not exposed to any of this:
+its excluded component is the `tau0` spike, which is tight by construction.
 
 ## `structural`
 

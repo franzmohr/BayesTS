@@ -27,6 +27,34 @@ Dates are ISO. Versions follow the `project(VERSION)` in `CMakeLists.txt`.
 New entries go here, under an `### Added`, `### Changed` or `### Fixed`
 heading, and move down into a version section when one is cut.
 
+### Added
+
+- **`bayests check` warns when `bvs` is selecting against a prior too flat to
+  select against.** BVS draws an excluded coefficient from its prior and then
+  scores that draw against the data, so the flatter the prior the harder it is
+  for anything to get back in once it is out, and the inclusion probabilities
+  end up describing the prior rather than the data. Korobilis (2013, section
+  3.1) puts the point where this takes over at a prior variance of around 100
+  and quotes Kuo and Mallick's (1997) usable range of 0.25 to 25. On a
+  three-variable fixture with the diagonal of `v_inv` moved from 1 to 0.001,
+  mean inclusion across the twelve coefficients went from a spread of 0.10 to
+  1.00 down to eleven of the twelve at 0.10 or below.
+
+  The reading is `bayests::flat_selection_prior()`, declared in
+  `include/bayests/priors.h` so that a host vendoring the core can surface it
+  its own way. It reports the diagonal of the prior precision at the selected
+  positions -- the conditional prior variance of the draw BVS actually scores,
+  which is also what keeps it defined for a singular `v_inv`. The command line
+  prints it as a warning naming the block, how many positions are affected and
+  the worst variance among them; it does not refuse the file, and the exit code
+  stays 0. Constant-coefficient blocks only: a random walk has no one prior
+  variance to compare against a threshold, so the time-varying models are left
+  to their documentation, which now says so.
+
+  **Draws are unchanged.** No sampler was touched -- the new function is read
+  by `bayests check` alone, which draws nothing -- and the suite passes
+  unchanged, 374 tests from a clean clone.
+
 ### Changed
 
 - **The agent documentation now says what `bvs` needs from the coefficient
@@ -36,7 +64,8 @@ heading, and move down into a version section when one is cut.
 
   BVS draws an excluded coefficient from its prior and then scores that draw
   against the data to decide whether to let it back in, so a flat
-  `/priors/a/v_inv` keeps every selected coefficient excluded for good.
+  `/priors/a/v_inv` makes it very hard for anything to get back in once it is
+  out, and pins the inclusion probabilities near zero.
   Korobilis (2013, §3.1) puts the point where this takes over at a prior
   variance around 100 and quotes Kuo and Mallick's (1997) usable range of 0.25
   to 25. `validate_normal_block()` checks that precision for being square and

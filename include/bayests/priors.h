@@ -185,6 +185,51 @@ struct VarSelPrior
     arma::uword size() const { return include.n_elem; }
 };
 
+/// How flat the prior is where BVS has to select against it.
+///
+/// BVS excludes a coefficient by zeroing its regressor, so while it is out its
+/// draw comes from the prior alone -- and the sweep decides whether to let it
+/// back in by scoring that prior draw against the data. The flatter the prior,
+/// the wilder that draw and the worse it scores, so a coefficient that is out
+/// has that much more trouble getting back in. Korobilis (2013, section 3.1)
+/// puts the point where this takes over at a prior variance of around 100, and
+/// quotes Kuo and Mallick's (1997) usable range of 0.25 to 25.
+///
+/// **Nothing refuses such a prior**, here or anywhere else: it is a perfectly
+/// good prior and the chain it produces is the one the file asked for. What it
+/// is not is evidence that the data excluded anything -- and a posterior
+/// inclusion probability pinned near zero across every selected coefficient
+/// reads exactly like such evidence. This is the diagnostic that tells the two
+/// apart, and a host surfaces it however it surfaces anything: the command line
+/// prints it as a `bayests check` warning.
+struct FlatSelectionPrior
+{
+    arma::uword selected = 0; ///< Positions `include` names.
+    arma::uword flat = 0;     ///< Of those, how many are at or above the threshold.
+
+    /// The largest conditional prior variance among the flat ones, infinite
+    /// where the precision is zero, and where in the block it is -- zero-based,
+    /// as `VarSelPrior::include` holds it.
+    double worst_variance = 0.0;
+    arma::uword worst_position = 0;
+};
+
+/// The report above, for one selection block against one normal prior.
+///
+/// `v_inv(j, j)` is the *conditional* prior precision of coefficient j given
+/// the others, so its reciprocal is the variance of exactly the draw BVS ends
+/// up scoring: the sweep draws every coefficient from its full conditional, and
+/// for an excluded one that conditional is the prior. Reading the diagonal is
+/// therefore the right thing rather than a shortcut around an inverse, and it
+/// stays defined for a `v_inv` that has none.
+///
+/// Meaningful only where the coefficients are constant. A random walk has no
+/// one prior variance to compare against a threshold -- how far an excluded
+/// path wanders is set by the innovation precision and grows with the sample --
+/// so the time-varying models are left to their documentation.
+FlatSelectionPrior flat_selection_prior(const VarSelPrior &prior, const arma::mat &v_inv,
+                                        double variance_threshold = 100.0);
+
 
 /// Matrix normal prior on a coefficient matrix whose equations share their
 /// regressors.
