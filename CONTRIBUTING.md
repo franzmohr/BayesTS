@@ -211,6 +211,34 @@ one that matters here: a fingerprint recorded in the container is comparable to
 another recorded in the container and to nothing else, the same rule that
 applies to any two machines.
 
+### Before a push, automatically
+
+Remembering to run that is the weak part, so `.githooks/pre-push` runs it. Point
+git at the directory once per clone -- `core.hooksPath` is local configuration
+and cannot be committed:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+From then on `git push` builds and tests the commits it is about to send, in the
+same image, and refuses the push if `ctest` fails. It tests the *commit*, checked
+out into a throwaway worktree under `build/pre-push-src`, rather than the working
+tree: that is what the runner will see, and it is the question a pre-push check
+exists to answer. Running `docker run ... -v "$PWD:/src:ro"` by hand remains the
+way to ask the other one, whether what is on disk right now would survive.
+
+It runs the whole matrix, `Debug` then `Release`, because that is what the job
+does. The first push after a change pays for a build; the ones after it are
+incremental, the build tree living in the `bayests-ci-work` volume between runs.
+`BAYESTS_PREPUSH_JOB="ci Release"` cuts it to one leg, `BAYESTS_PREPUSH=off`
+skips it, and `git push --no-verify` is the bypass for a push that should go out
+anyway -- a docs-only commit while the build is known broken, say.
+
+The hook fails closed. No docker, no running daemon or no image is a refusal
+naming the command that fixes it, not a silent pass: a check that does nothing
+when its tooling is missing is worse than none, because it is still believed.
+
 ## Recording the change
 
 Whatever that diff told you, write it down in `CHANGELOG.md` under *Unreleased*.

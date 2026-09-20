@@ -29,6 +29,26 @@ heading, and move down into a version section when one is cut.
 
 ### Added
 
+- **A `pre-push` hook that runs the Linux CI jobs before a push leaves the
+  machine**, in `.githooks/`. `git config core.hooksPath .githooks`, once per
+  clone, and `git push` builds and tests the commits it is about to send in the
+  image `docker/` already carried, refusing the push if `ctest` fails. Nothing
+  about the jobs is duplicated -- it is the same image and the same
+  `docker/ci.sh` -- only when they run.
+
+  What it mounts is the *commit being pushed*, checked out into a throwaway
+  worktree under `build/pre-push-src`, rather than the working tree. That is
+  what the runner will see; running the image by hand remains the way to ask
+  whether what is on disk right now would survive, and the hook says which it
+  is testing when the tree is dirty. The whole matrix runs, `Debug` then
+  `Release`, incremental after the first push through the `bayests-ci-work`
+  volume; `BAYESTS_PREPUSH_JOB="ci Release"` cuts it to one leg,
+  `BAYESTS_PREPUSH=off` skips it and `git push --no-verify` bypasses it.
+
+  It fails closed: no docker, no running daemon or no image is a refusal naming
+  the command that fixes it, not a pass. Draws are unaffected -- no file under
+  `src/`, `include/` or `test/` is touched.
+
 - **`/posterior/forecast/loglik`, the score of a forecast.** `bayests forecasts`
   writes it wherever the file carries `/data/test/y`, one column per realised
   period and one row per draw. The reserved name of the forecast group is a

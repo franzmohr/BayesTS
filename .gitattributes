@@ -22,6 +22,11 @@
 # POSIX shell, none of which tolerate CRLF in a shebang.
 *.sh text eol=lf
 
+# Git hooks are shell scripts without the extension to say so, and git runs them
+# through its own bash. CRLF in the shebang line is the failure that reads as
+# "no such file or directory" naming an interpreter that plainly exists.
+.githooks/** text eol=lf
+
 # Batch files are the mirror image.
 *.bat text eol=crlf
 *.cmd text eol=crlf

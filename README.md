@@ -755,6 +755,11 @@ cannot be asked until it is pushed. A fingerprint recorded in the container is
 comparable to another recorded in the container and to nothing else, the same
 rule that governs any two machines. See [docker/README.md](docker/README.md).
 
+`.githooks/pre-push` makes running it the default rather than a thing one
+remembers. With `git config core.hooksPath .githooks` set once per clone,
+`git push` builds and tests the commits it is about to send in that image and
+refuses the push if `ctest` fails.
+
 **Coverage.** All twenty samplers are covered from a clean clone:
 `test/make_model_fixture.cpp` writes a model file for every one of them, and the
 suite depends on no data outside the repository.
