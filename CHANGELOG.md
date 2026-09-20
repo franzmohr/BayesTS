@@ -97,9 +97,14 @@ heading, and move down into a version section when one is cut.
   nothing, so a factor model's score repeats without a seed; what moves between
   runs is a `Stochvol` model's volatility under `simulate`.
 
-  **Fifteen of the twenty algorithms are scored**: every VAR, every VEC, and
-  `DfmNormalGamma` and `DfmNormalStochvol`. `DfmTvpGamma` and `DfmTvpStochvol`,
-  whose loadings drift, and `FavarNormalWishart` have no entry point yet. A
+  A time-varying factor model steps its states per scored period in the order
+  the forecast steps them, and **only the free elements of `Lambda` walk**: the
+  identifying block is fixed, was never drawn in any period of the sample, and a
+  score that let it move would change the rotation and the scale the factors
+  were estimated under.
+
+  **Seventeen of the twenty algorithms are scored**: every VAR, every VEC and
+  every dynamic factor model. `FavarNormalWishart` has no entry point yet. A
   structural model refuses for good, its regressors holding the contemporaneous
   observations and its density the Jacobian of `A_0`, and the two quantile
   models never reach it, having no forecast at all. `bayests check` says which

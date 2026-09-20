@@ -54,9 +54,9 @@ the group rather than one dataset in it.
 ## The score
 
 `loglik` is written by `forecasts` wherever the file carries `/data/test/y` and
-the algorithm can be scored: every VAR, every VEC, and the two dynamic factor
-models whose loadings stand still -- fifteen of the twenty. One column per
-realised period, which may be fewer than `h`.
+the algorithm can be scored: every VAR, every VEC and every dynamic factor
+model -- seventeen of the twenty. One column per realised period, which may be
+fewer than `h`.
 
 **A VEC is scored in levels**, the parameterisation it forecasts in. Its draws
 are rewritten as the level VAR they imply and the score is that VAR's, so
@@ -139,11 +139,17 @@ model's score repeats without a seed. What does move between runs is the
 volatility of a `Stochvol` model under `simulate`, whose steps are taken as the
 forecast takes them.
 
-**What cannot be scored.** `DfmTvpGamma` and `DfmTvpStochvol`, whose loadings
-drift, and `FavarNormalWishart`. A structural model refuses for good, its
-regressors holding the contemporaneous observations and its density the Jacobian
-of `A_0`. The two quantile models never reach it, having no forecast at all.
-`bayests check` says which side of that line a file is on.
+A time-varying factor model steps its states per scored period in the order the
+forecast steps them, and **only the free elements of `Lambda` walk**: the
+identifying block is fixed ones and zeros, was never drawn in any period of the
+sample, and a score that let it move would change the rotation and the scale the
+factors were estimated under. `step_free_loadings()` is what keeps it still, for
+the score as for the forecast.
+
+**What cannot be scored.** `FavarNormalWishart`. A structural model refuses for
+good, its regressors holding the contemporaneous observations and its density
+the Jacobian of `A_0`. The two quantile models never reach it, having no
+forecast at all. `bayests check` says which side of that line a file is on.
 
 Before 0.3.0 the paths were a dataset at `/posterior/forecast` itself. Rerun
 `bayests forecasts`: it replaces the old dataset with the group. The name is

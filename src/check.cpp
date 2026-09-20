@@ -176,7 +176,8 @@ void print_report(const std::string &algorithm, const ModelCheck &check)
 		 algorithm == "VecKlgs2010" || algorithm == "VecNormalStochvol" ||
 		 algorithm == "VecTvpWishart" || algorithm == "VecTvpGamma" ||
 		 algorithm == "VecTvpStochvol" || algorithm == "DfmNormalGamma" ||
-		 algorithm == "DfmNormalStochvol");
+		 algorithm == "DfmNormalStochvol" || algorithm == "DfmTvpGamma" ||
+		 algorithm == "DfmTvpStochvol");
 	if (check.test_periods > 0)
 	{
 		std::cout << "  realised: " << check.test_periods << " period(s) in /data/test/y";
