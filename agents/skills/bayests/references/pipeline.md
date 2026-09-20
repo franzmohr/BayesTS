@@ -46,7 +46,7 @@ changes what it means:
 | `/model attribute '<name>' is not one any model reads` | A misspelling, and the attribute it was meant to be is read through its default |
 | `error "<x>" switches no covariance block on` | The spelling belongs to another model family |
 | `/data/train/z has N columns, but ... make M` | `z` was built for different dimensions than the attributes state |
-| `bvs is selecting over N position(s) of a, and M of them have a prior too flat to select against` | `/priors/a/v_inv` (or `psi`) leaves an excluded coefficient so loosely pinned that little can get back in once it is out, so the inclusion probabilities describe the prior rather than the data. The skill's `varsel` section has the range |
+| `bvs is selecting over N position(s) of a, and M of them have a prior too flat to select against` | `/priors/a/v_inv` (or `psi`) leaves an excluded coefficient so loosely pinned that little can get back in once it is out, so the inclusion probabilities describe the prior rather than the data. The skill's `varsel` section has the range. The one warning a run repeats: `coefficients` prints the same line before its first draw |
 
 It exits 0 when every model would be accepted, warnings or not, and 1 with the
 reason on stderr when a model would be refused. That includes two failures a

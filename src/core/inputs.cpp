@@ -4,6 +4,7 @@
 #include "bayests/inputs.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -598,6 +599,24 @@ FlatSelectionPrior flat_selection_prior(const VarSelPrior &prior, const arma::ma
     }
 
     return report;
+}
+
+std::string flat_selection_message(const FlatSelectionPrior &report, const std::string &block)
+{
+    const std::string variance = std::isinf(report.worst_variance)
+                                     ? std::string("infinity -- no prior precision at all")
+                                     : number(report.worst_variance);
+
+    return "bvs is selecting over " + std::to_string(report.selected) + " position(s) of " +
+           block + ", and " + std::to_string(report.flat) +
+           " of them have a prior too flat to select against: /priors/" + block +
+           "/v_inv leaves position " + std::to_string(report.worst_position + 1) +
+           " -- one-based, as `include` counts -- a conditional prior variance of " + variance +
+           ". An excluded coefficient is drawn from that prior before it is scored against the "
+           "data, so the wider that prior, the harder it is for anything to get back in once it "
+           "is out. Expect inclusion probabilities pinned near zero that say more about the "
+           "prior than about the data. Korobilis (2013) puts the usable range at a prior "
+           "variance of 0.25 to 25";
 }
 
 } // namespace bayests

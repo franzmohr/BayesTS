@@ -6,6 +6,8 @@
 
 #include "bayests/arma.h"
 
+#include <string>
+
 namespace bayests
 {
 
@@ -229,6 +231,13 @@ struct FlatSelectionPrior
 /// so the time-varying models are left to their documentation.
 FlatSelectionPrior flat_selection_prior(const VarSelPrior &prior, const arma::mat &v_inv,
                                         double variance_threshold = 100.0);
+
+/// The sentence a host shows for that report, `block` naming the prior group it
+/// is about -- "a" or "psi". Kept in one place so that the line `bayests check`
+/// prints before a run and the line a run itself emits through the Reporter
+/// cannot drift apart; the host adds its own framing, a "warning: " prefix or
+/// whatever its console does with a warning.
+std::string flat_selection_message(const FlatSelectionPrior &report, const std::string &block);
 
 
 /// Matrix normal prior on a coefficient matrix whose equations share their
