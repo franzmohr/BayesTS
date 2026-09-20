@@ -82,6 +82,47 @@ docker run --rm -v "${PWD}:/src:ro" -v "${PWD}/build/docker-out:/out" `
            -v bayests-ci-work:/work bayests-ci ci Release
 ```
 
+## Before a push
+
+`.githooks/pre-push` runs `ci` here on the commits `git push` is about to send
+and refuses the push if `ctest` fails. Point git at the directory once per
+clone — `core.hooksPath` is local configuration and cannot be committed:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+It differs from the runs above in what it mounts at `/src`: the commit being
+pushed, checked out into a throwaway worktree under `build/pre-push-src`, rather
+than the working tree. That is what the runner will check out, and what a
+pre-push check is for; the commands above answer the other question, whether
+what is on disk right now would survive, and the hook says so when the tree is
+dirty.
+
+The whole matrix runs, `Debug` then `Release`, and the build tree lives in the
+`bayests-ci-work` volume so that only the first push after a change pays for a
+build. Four ways out, in increasing order of bluntness:
+
+| | |
+| --- | --- |
+| `BAYESTS_PREPUSH_JOB="ci Release"` | one leg instead of both |
+| `BAYESTS_PREPUSH_IMAGE`, `BAYESTS_PREPUSH_VOLUME` | a different image, or no volume when empty |
+| `BAYESTS_PREPUSH=off` | skip the check |
+| `git push --no-verify` | git's own bypass |
+
+No docker, no running daemon or no image is a refusal naming the command that
+fixes it rather than a pass. A check that quietly does nothing when its tooling
+is missing is worse than no check, because it is still believed.
+
+Output lands in `build/docker-out` as it does for a run started by hand, with
+one difference: the hook clears the packages there before a run that will
+produce new ones. `ci.sh` copies an archive out by the name CPack just used,
+which stops a stale set being restamped as this build's but leaves it in place,
+so after a version bump the directory holds two versions and describes two
+builds as though they were one. Clearing them before the run leaves it
+describing the last run and only the last run. The `ctest` log, the Doxygen site
+and the fingerprint recordings are overwritten in place and are not touched.
+
 ## What it does with the source
 
 The sources are the one thing that does *not* come through the build context.

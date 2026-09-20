@@ -1,0 +1,170 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (c) 2026 Franz X. Mohr
+#
+# Refuse a push whose commits have not passed the Linux CI jobs on this machine.
+#
+# The workflows run on Ubuntu and this project is developed on Windows, so the
+# Linux jobs are the ones that are normally found to be broken by pushing and
+# waiting. docker/ already carries them as an image; this is the part that makes
+# running it the default rather than a thing one remembers. It is the same
+# image and the same docker/ci.sh -- nothing about the jobs is duplicated here,
+# only when they run.
+#
+# What it tests is the *commit being pushed*, checked out into a throwaway
+# worktree, not the working tree. That is what the runner will see, and it is
+# the one question a pre-push check exists to answer; `docker run ... -v
+# "$PWD:/src:ro"` by hand answers the other one, whether what is on disk right
+# now would survive, uncommitted changes included.
+#
+# Output goes to build/docker-out, as it does for a run started by hand. The
+# packages CPack produces there are cleared before each run that will produce new
+# ones, so the directory describes the last run rather than accumulating a set per
+# version; the ctest log and the fingerprint recordings are overwritten in place
+# and need no such help.
+#
+# Install (once per clone; core.hooksPath is local config and is not committed):
+#
+#     git config core.hooksPath .githooks
+#
+# Knobs, all environment variables, and the escape hatch git itself provides:
+#
+#     BAYESTS_PREPUSH=off            skip the check entirely
+#     BAYESTS_PREPUSH_JOB="ci Release"   one matrix leg instead of both
+#     BAYESTS_PREPUSH_IMAGE=...      default bayests-ci
+#     BAYESTS_PREPUSH_VOLUME=...     the named volume holding the build tree,
+#                                    which is what keeps every run after the
+#                                    first incremental; empty for none
+#     git push --no-verify           bypass, for the times it is the right call
+#
+# It fails closed. No docker, no daemon or no image is a refusal with the
+# command that fixes it, not a pass -- a check that quietly does nothing when
+# its tooling is missing is worse than no check, because it is still believed.
+
+set -euo pipefail
+
+IMAGE=${BAYESTS_PREPUSH_IMAGE:-bayests-ci}
+VOLUME=${BAYESTS_PREPUSH_VOLUME-bayests-ci-work}
+JOB=${BAYESTS_PREPUSH_JOB:-ci}
+
+say()  { printf '\033[1m%s\033[0m\n' "$*" >&2; }
+err()  { printf '\033[31merror: %s\033[0m\n' "$*" >&2; }
+die()  { err "$*"; exit 1; }
+
+case "${BAYESTS_PREPUSH:-on}" in
+    off|0|no|false) say "pre-push: skipped (BAYESTS_PREPUSH=$BAYESTS_PREPUSH)"; exit 0 ;;
+esac
+
+# The refs git is about to send, one per line: <local ref> <local sha> <remote
+# ref> <remote sha>. A deletion arrives with an all-zero local sha and carries
+# no commit to test.
+shas=""
+while read -r _local_ref local_sha _remote_ref _remote_sha; do
+    [ -n "${local_sha:-}" ] || continue
+    # All zeros, whatever the hash length: a deletion. Nothing to build.
+    case "$local_sha" in *[!0]*) ;; *) continue ;; esac
+    case " $shas " in *" $local_sha "*) continue ;; esac
+    shas="$shas $local_sha"
+done
+# shellcheck disable=SC2086
+set -- $shas
+[ $# -gt 0 ] || exit 0
+
+command -v docker >/dev/null 2>&1 \
+    || die "docker is not on PATH, so the Linux CI jobs cannot be run before this push.
+       Install Docker, or push with --no-verify if you have run them another way."
+docker info >/dev/null 2>&1 \
+    || die "the Docker daemon is not reachable. Start Docker Desktop and push again."
+docker image inspect "$IMAGE" >/dev/null 2>&1 \
+    || die "no '$IMAGE' image. Build it once, from the repository root:
+
+           docker build -f docker/Dockerfile -t $IMAGE .
+
+       Ten to twenty minutes, nearly all of it vcpkg compiling Armadillo and
+       HDF5. See docker/README.md."
+
+root=$(git rev-parse --show-toplevel)
+cd "$root"
+
+# Docker wants a host path its daemon understands. Under Git for Windows, which
+# is what runs this hook on the development machine, that is `pwd -W` -- and
+# MSYS_NO_PATHCONV keeps the shell from rewriting the `:/src:ro` half of the
+# argument on the way out.
+host_path() { ( cd "$1" && { pwd -W 2>/dev/null || pwd; } ); }
+
+out="$root/build/docker-out"
+mkdir -p "$out"
+
+# Does the job about to run end with a CPack step? Only `ci` with no build type
+# and `ci Release` do; `ci Debug`, `docs` and `fingerprints` produce no archive.
+release_leg() (
+    # shellcheck disable=SC2086
+    set -- $JOB
+    [ "${1:-ci}" = ci ] || exit 1
+    case "${2:-}" in ""|Release) exit 0 ;; *) exit 1 ;; esac
+)
+
+# docker/ci.sh copies the archives out of the build tree by the name CPack just
+# used, which is what stops a stale set being restamped as this build's -- but
+# nothing removes it, so after a version bump the previous version's archives sit
+# beside the new ones and /out describes two builds as though they were one.
+#
+# Clearing them here, before the run that will replace them, leaves the directory
+# describing the last run and only the last run. It happens before rather than
+# after, because a failed Debug leg never reaches CPack and archives left over
+# from an earlier commit would then be the most plausible thing in a directory
+# that is otherwise evidence about this one. They cost a build to regenerate and
+# nothing else; the run that is about to start is that build.
+clear_packages() {
+    release_leg || return 0
+    shopt -s nullglob
+    local stale=( "$out"/BayesTS-* )
+    shopt -u nullglob
+    [ ${#stale[@]} -gt 0 ] || return 0
+    say "pre-push: clearing ${#stale[@]} package file(s) left in build/docker-out"
+    printf '         %s
+' "${stale[@]##*/}" >&2
+    rm -f "${stale[@]}"
+}
+
+wt="$root/build/pre-push-src"
+cleanup() {
+    git worktree remove --force "$wt" >/dev/null 2>&1 || rm -rf "$wt"
+    git worktree prune >/dev/null 2>&1 || true
+}
+trap cleanup EXIT
+
+if [ -n "$(git status --porcelain)" ]; then
+    say "pre-push: the working tree is dirty; what follows tests the commits being pushed, not it."
+fi
+
+for sha in "$@"; do
+    subject=$(git log -1 --format='%h %s' "$sha")
+    say ""
+    say "pre-push: $IMAGE $JOB at $subject"
+    say ""
+
+    cleanup
+    git worktree add --detach --force "$wt" "$sha" >/dev/null \
+        || die "could not check $sha out into $wt"
+
+    clear_packages
+
+    mounts="-v $(host_path "$wt"):/src:ro -v $(host_path "$out"):/out"
+    [ -z "$VOLUME" ] || mounts="$mounts -v $VOLUME:/work"
+
+    # shellcheck disable=SC2086
+    if ! MSYS_NO_PATHCONV=1 docker run --rm $mounts "$IMAGE" $JOB; then
+        err "the Linux CI jobs failed at $subject -- the push is refused.
+
+       The ctest log is under build/docker-out/. Fix it, or, if the failure is
+       understood and the push is still the right thing to do:
+
+           git push --no-verify
+"
+        exit 1
+    fi
+done
+
+say ""
+say "pre-push: $JOB passed; pushing."
