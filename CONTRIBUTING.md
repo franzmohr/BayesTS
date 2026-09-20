@@ -13,6 +13,33 @@ is never "the released version" — the tag is. That is what a downstream packag
 vendoring the core copies from (see *Recording the change* below) and what a
 bug report against a release should name.
 
+## Cutting a release
+
+In order, because two of these depend on the one before:
+
+1. `project(VERSION)` in `CMakeLists.txt` is the version. Everything else reads
+   it or repeats it.
+2. `CHANGELOG.md`: move everything under *Unreleased* into a new
+   `## <version> — <date>` section. The heading text under *Unreleased* says
+   this too; it is the step that is easiest to leave half done, and a version
+   section that is missing the last few entries is indistinguishable from one
+   that never had them.
+3. `CITATION.cff`: `version` and `date-released`.
+4. Tag `main`, annotated, `v<version>`. This is the release. Until the tag
+   exists, a `CHANGELOG.md` section with a date in it is a statement about a
+   release nobody can check out.
+5. Publish the GitHub release from that tag.
+
+Steps 6 and 7 cannot be done before 5, because the version DOI does not exist
+until Zenodo has archived the release. They are a commit of their own, made the
+same day — 0.2.0's is `Record the Zenodo DOI for 0.2.0`:
+
+6. `CITATION.cff`: add the new version DOI to `identifiers`, beside the concept
+   DOI that resolves to the latest release.
+7. `README.md` §*Citing BayesTS*: the worked citation names a version and a
+   version DOI, and it is the one a paper will copy. It has to be the release
+   just made, not the one before it.
+
 ## Adding new models
 
 A model is split across four places, and which one a given piece of code

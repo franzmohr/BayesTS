@@ -27,80 +27,6 @@ Dates are ISO. Versions follow the `project(VERSION)` in `CMakeLists.txt`.
 New entries go here, under an `### Added`, `### Changed` or `### Fixed`
 heading, and move down into a version section when one is cut.
 
-### Added
-
-- **Six fixtures that are scored, and a golden test that insists on it.** No
-  generated fixture carried `/data/test/y`, so nothing in the suite ever reached
-  the predictive density: nineteen algorithms can be scored and the code that
-  scores them was covered by unit tests alone. That is the gap the positive
-  semi-definite filter fix in 0.3.0 came through, found by a third toolchain
-  rather than by CI.
-
-  `make_model_fixture` takes a `--score` flag, which writes the observations the
-  horizon realised, and `bayests_golden` now fails a fixture that carries them
-  and comes back without `/posterior/forecast/loglik`. One fixture per distinct
-  implementation rather than one per algorithm: `VarNormalWishart-score` and
-  `VarTvpStochvol-score` for `predictive_score.h` with states held and drifting,
-  `VecNormalGamma-score` for a VEC scored in levels, `DfmTvpGamma-score` for
-  `factor_score.h`, and `VarTvpDiscount-score` and `VecTvpDiscount-score` for
-  the closed form the discounted pair carry.
-
-  *Draws are unchanged.* The realised values come from a generator of their own,
-  so the file's stream is consumed identically whether the flag is passed or
-  not, and the new golden line is printed only for a fixture that asked to be
-  scored. Verified rather than assumed: `record_fingerprints.sh` before and
-  after, over the full suite on one machine and one build, reports **106
-  fixtures unchanged, 0 moved**, the difference being the six new ones.
-
-- **`BAYESTS_WERROR`, off by default and on in CI.** The project already
-  compiled with `-Wall -Wextra` and produced no warnings of its own; nothing
-  held it there. It is off for anyone building from source, because a newer
-  compiler than a release was tested with finds new warnings and a user wants a
-  binary rather than a diagnostic.
-
-  `-Wfree-nonheap-object` is exempted under GCC, as a warning rather than an
-  error. It fires inside Armadillo's `memory::release()` once the optimiser has
-  inlined an expression template into the destructor of the temporary that built
-  it, names an ordinary local `arma::mat` as the object being freed, and is not
-  silenced by the SYSTEM include directories -- it is raised after inlining,
-  where the header a line came from no longer decides.
-
-- **Two exit codes asserted that were not.** `cli.refusals` covered 0 and 2 and
-  never 1, though ten sites in `src/` return it and the difference is what tells
-  a caller scripting `bayests` over a tree that a file is broken rather than
-  that the command line was. Three cases now pin the line: a path that does not
-  exist is 2 (nothing was opened, so nothing started), while a file named `.h5`
-  that is not HDF5, and a file whose extension `is_hdf5_file()` turns away, are
-  both 1.
-
-- **`agents.recipes` runs everywhere the suite does.** The Windows job installed
-  no h5py, so the test was dropped silently by the default
-  `BAYESTS_TEST_AGENT_DOCS=AUTO` and the Python examples in `agents/` were
-  checked on Linux alone. So did the image in `docker/`, which is the gate this
-  project runs before a push -- it was passing a suite one test shorter than the
-  runner's and saying so in a line of status output. All three now install h5py,
-  name the interpreter and ask for the test by name, so losing it fails the job
-  rather than shrinking it.
-
-### Fixed
-
-- **`results.h` described the file layout backwards.** The two `Draws` structs
-  told an embedding host that the convention is "draws in rows, for both the
-  HDF5 files and R" and to transpose at the boundary. The R half is right and
-  the HDF5 half is not: `write_draws()` transposes twice, so in dataspace terms
-  every posterior dataset is one row per quantity and one column per draw, which
-  is what h5py reports and what the README and `agents/` have always said. A
-  host that believed the header would have written files transposed against the
-  ones `bayests` reads. Documentation only -- no code path changes, and no
-  dataset this project writes was ever in the other orientation.
-
-- **Stale counts in the documentation.** `CITATION.cff` said twenty algorithms
-  where `.zenodo.json` said twenty-two; the README and `agents/` said sixteen
-  VARs and VECs where the catalogue in the same file lists nine and eight; and
-  `results.md` summarised the nineteen scorable algorithms as "every VAR, every
-  VEC and every dynamic factor model", which is twenty-one and contradicts the
-  paragraph ninety lines below it that correctly excludes the quantile pair.
-
 ## 0.3.0 — 2026-09-20
 
 ### Added
@@ -344,6 +270,59 @@ heading, and move down into a version section when one is cut.
   dataset the model never reads; the forecast score that consumes it is still to
   come. **Draws are unchanged**: no sampler sees this, and the 340 tests pass.
 
+- **Six fixtures that are scored, and a golden test that insists on it.** No
+  generated fixture carried `/data/test/y`, so nothing in the suite ever reached
+  the predictive density: nineteen algorithms can be scored and the code that
+  scores them was covered by unit tests alone. That is the gap the positive
+  semi-definite filter fix in 0.3.0 came through, found by a third toolchain
+  rather than by CI.
+
+  `make_model_fixture` takes a `--score` flag, which writes the observations the
+  horizon realised, and `bayests_golden` now fails a fixture that carries them
+  and comes back without `/posterior/forecast/loglik`. One fixture per distinct
+  implementation rather than one per algorithm: `VarNormalWishart-score` and
+  `VarTvpStochvol-score` for `predictive_score.h` with states held and drifting,
+  `VecNormalGamma-score` for a VEC scored in levels, `DfmTvpGamma-score` for
+  `factor_score.h`, and `VarTvpDiscount-score` and `VecTvpDiscount-score` for
+  the closed form the discounted pair carry.
+
+  *Draws are unchanged.* The realised values come from a generator of their own,
+  so the file's stream is consumed identically whether the flag is passed or
+  not, and the new golden line is printed only for a fixture that asked to be
+  scored. Verified rather than assumed: `record_fingerprints.sh` before and
+  after, over the full suite on one machine and one build, reports **106
+  fixtures unchanged, 0 moved**, the difference being the six new ones.
+
+- **`BAYESTS_WERROR`, off by default and on in CI.** The project already
+  compiled with `-Wall -Wextra` and produced no warnings of its own; nothing
+  held it there. It is off for anyone building from source, because a newer
+  compiler than a release was tested with finds new warnings and a user wants a
+  binary rather than a diagnostic.
+
+  `-Wfree-nonheap-object` is exempted under GCC, as a warning rather than an
+  error. It fires inside Armadillo's `memory::release()` once the optimiser has
+  inlined an expression template into the destructor of the temporary that built
+  it, names an ordinary local `arma::mat` as the object being freed, and is not
+  silenced by the SYSTEM include directories -- it is raised after inlining,
+  where the header a line came from no longer decides.
+
+- **Two exit codes asserted that were not.** `cli.refusals` covered 0 and 2 and
+  never 1, though ten sites in `src/` return it and the difference is what tells
+  a caller scripting `bayests` over a tree that a file is broken rather than
+  that the command line was. Three cases now pin the line: a path that does not
+  exist is 2 (nothing was opened, so nothing started), while a file named `.h5`
+  that is not HDF5, and a file whose extension `is_hdf5_file()` turns away, are
+  both 1.
+
+- **`agents.recipes` runs everywhere the suite does.** The Windows job installed
+  no h5py, so the test was dropped silently by the default
+  `BAYESTS_TEST_AGENT_DOCS=AUTO` and the Python examples in `agents/` were
+  checked on Linux alone. So did the image in `docker/`, which is the gate this
+  project runs before a push -- it was passing a suite one test shorter than the
+  runner's and saying so in a line of status output. All three now install h5py,
+  name the interpreter and ask for the test by name, so losing it fails the job
+  rather than shrinking it.
+
 ### Changed
 
 - **The forecast paths move from `/posterior/forecast` to
@@ -398,6 +377,16 @@ heading, and move down into a version section when one is cut.
   release would suggest. CONTRIBUTING.md §*Branches* states the policy. This is
   process only: no source file changed and no draw moves.
 
+- **CONTRIBUTING.md §*Cutting a release* lists the steps, in order.** The policy
+  said what a release *is* -- a tag on `main` plus a GitHub release from it --
+  and left the sequence to be remembered. Two of the steps cannot be taken at
+  release time at all: the version DOI does not exist until Zenodo has archived
+  the release, so adding it to `CITATION.cff` and putting the new version in the
+  README's worked citation come after publishing. That is already how it has
+  been done -- 0.2.0's DOI landed in its own commit the day the tag was made --
+  and writing it down is what keeps it from depending on whoever remembers.
+  Process only: no source file changed and no draw moves.
+
 ### Fixed
 
 - **A factor model's score filter keeps its covariance positive semi-definite.**
@@ -450,6 +439,23 @@ heading, and move down into a version section when one is cut.
   is, and `CPACK_PACKAGE_FILES` names the package inside its staging directory
   rather than where it ends up. The format is unchanged — the hash, two spaces
   and the base name — so anything that read the old files reads these.
+
+- **`results.h` described the file layout backwards.** The two `Draws` structs
+  told an embedding host that the convention is "draws in rows, for both the
+  HDF5 files and R" and to transpose at the boundary. The R half is right and
+  the HDF5 half is not: `write_draws()` transposes twice, so in dataspace terms
+  every posterior dataset is one row per quantity and one column per draw, which
+  is what h5py reports and what the README and `agents/` have always said. A
+  host that believed the header would have written files transposed against the
+  ones `bayests` reads. Documentation only -- no code path changes, and no
+  dataset this project writes was ever in the other orientation.
+
+- **Stale counts in the documentation.** `CITATION.cff` said twenty algorithms
+  where `.zenodo.json` said twenty-two; the README and `agents/` said sixteen
+  VARs and VECs where the catalogue in the same file lists nine and eight; and
+  `results.md` summarised the nineteen scorable algorithms as "every VAR, every
+  VEC and every dynamic factor model", which is twenty-one and contradicts the
+  paragraph ninety lines below it that correctly excludes the quantile pair.
 
 ## 0.2.0 — 2026-09-15
 
