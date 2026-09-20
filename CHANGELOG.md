@@ -27,6 +27,25 @@ Dates are ISO. Versions follow the `project(VERSION)` in `CMakeLists.txt`.
 New entries go here, under an `### Added`, `### Changed` or `### Fixed`
 heading, and move down into a version section when one is cut.
 
+### Fixed
+
+- **`VarTvpDiscount` scored only the first horizon; every one after it came back
+  as not a number.** `predictive_log_density()` read the rows of
+  `/data/forecast/x` as they arrived, and the lagged endogenous blocks of a
+  horizon past the first hold a placeholder there -- a forecast overwrites them
+  as it simulates, and this recursion does not simulate. The first period was
+  scored correctly, the second fed the filter that placeholder, and the state
+  never recovered. It now builds its regressors with
+  `core::realised_regressors()`, which is what the eight sampling VARs beside it
+  have always done and which fills those blocks from `/data/test/y`.
+
+  **Draws change** for this one entry point of this one model, from
+  unusable to correct: the first scored horizon is unchanged and no horizon
+  after it had a usable value to change. Nothing else moves -- `estimate()`,
+  `forecast()` and `log_likelihood()` do not read the affected code, and
+  `VecTvpDiscount` scores through `score_vec_forecast()`, which fills the blocks
+  already.
+
 ## 0.3.0 — 2026-09-20
 
 ### Added
