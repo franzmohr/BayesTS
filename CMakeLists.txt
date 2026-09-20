@@ -500,7 +500,12 @@ set(CPACK_PACKAGE_VENDOR "Franz X. Mohr")
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "${PROJECT_DESCRIPTION}")
 set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
 set(CPACK_PACKAGE_INSTALL_DIRECTORY "${PROJECT_NAME}")
-set(CPACK_PACKAGE_CHECKSUM SHA256)
+# The SHA256 beside every package is written by the post-build script below
+# rather than by CPACK_PACKAGE_CHECKSUM, which on Windows produces a file
+# `sha256sum -c` cannot read. The script says why that cannot simply be fixed
+# afterwards, and setting CPACK_PACKAGE_CHECKSUM as well would only put a CRLF
+# file back over each one.
+set(CPACK_POST_BUILD_SCRIPTS "${CMAKE_CURRENT_SOURCE_DIR}/cmake/normalise_checksums.cmake")
 
 # Quote CPack variables in the generated config instead of re-parsing them as
 # CMake lists, so paths containing spaces survive.
