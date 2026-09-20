@@ -73,11 +73,14 @@ heading, and move down into a version section when one is cut.
   that is not HDF5, and a file whose extension `is_hdf5_file()` turns away, are
   both 1.
 
-- **`agents.recipes` runs on Windows too.** The job installed no h5py, so the
-  test was dropped silently by the default `BAYESTS_TEST_AGENT_DOCS=AUTO` and
-  the Python examples in `agents/` were checked on Linux alone. The Windows job
-  now installs it, names the interpreter and asks for the test by name, so
-  losing it fails the job.
+- **`agents.recipes` runs everywhere the suite does.** The Windows job installed
+  no h5py, so the test was dropped silently by the default
+  `BAYESTS_TEST_AGENT_DOCS=AUTO` and the Python examples in `agents/` were
+  checked on Linux alone. So did the image in `docker/`, which is the gate this
+  project runs before a push -- it was passing a suite one test shorter than the
+  runner's and saying so in a line of status output. All three now install h5py,
+  name the interpreter and ask for the test by name, so losing it fails the job
+  rather than shrinking it.
 
 ### Fixed
 
