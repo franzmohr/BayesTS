@@ -114,6 +114,15 @@ No docker, no running daemon or no image is a refusal naming the command that
 fixes it rather than a pass. A check that quietly does nothing when its tooling
 is missing is worse than no check, because it is still believed.
 
+Output lands in `build/docker-out` as it does for a run started by hand, with
+one difference: the hook clears the packages there before a run that will
+produce new ones. `ci.sh` copies an archive out by the name CPack just used,
+which stops a stale set being restamped as this build's but leaves it in place,
+so after a version bump the directory holds two versions and describes two
+builds as though they were one. Clearing them before the run leaves it
+describing the last run and only the last run. The `ctest` log, the Doxygen site
+and the fingerprint recordings are overwritten in place and are not touched.
+
 ## What it does with the source
 
 The sources are the one thing that does *not* come through the build context.

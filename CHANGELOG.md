@@ -46,7 +46,11 @@ heading, and move down into a version section when one is cut.
   `BAYESTS_PREPUSH=off` skips it and `git push --no-verify` bypasses it.
 
   It fails closed: no docker, no running daemon or no image is a refusal naming
-  the command that fixes it, not a pass. Draws are unaffected -- no file under
+  the command that fixes it, not a pass. Output goes to `build/docker-out`, and
+  the hook clears the packages there before a run that will produce new ones --
+  `docker/ci.sh` copies an archive out by the name CPack just used and leaves
+  the previous version's beside it, so the directory otherwise accumulates a set
+  per version and describes two builds as though they were one. Draws are unaffected -- no file under
   `src/`, `include/` or `test/` is touched.
 
 - **`/posterior/forecast/loglik`, the score of a forecast.** `bayests forecasts`

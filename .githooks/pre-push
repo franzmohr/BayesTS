@@ -17,6 +17,12 @@
 # "$PWD:/src:ro"` by hand answers the other one, whether what is on disk right
 # now would survive, uncommitted changes included.
 #
+# Output goes to build/docker-out, as it does for a run started by hand. The
+# packages CPack produces there are cleared before each run that will produce new
+# ones, so the directory describes the last run rather than accumulating a set per
+# version; the ctest log and the fingerprint recordings are overwritten in place
+# and need no such help.
+#
 # Install (once per clone; core.hooksPath is local config and is not committed):
 #
 #     git config core.hooksPath .githooks
@@ -89,6 +95,38 @@ host_path() { ( cd "$1" && { pwd -W 2>/dev/null || pwd; } ); }
 out="$root/build/docker-out"
 mkdir -p "$out"
 
+# Does the job about to run end with a CPack step? Only `ci` with no build type
+# and `ci Release` do; `ci Debug`, `docs` and `fingerprints` produce no archive.
+release_leg() (
+    # shellcheck disable=SC2086
+    set -- $JOB
+    [ "${1:-ci}" = ci ] || exit 1
+    case "${2:-}" in ""|Release) exit 0 ;; *) exit 1 ;; esac
+)
+
+# docker/ci.sh copies the archives out of the build tree by the name CPack just
+# used, which is what stops a stale set being restamped as this build's -- but
+# nothing removes it, so after a version bump the previous version's archives sit
+# beside the new ones and /out describes two builds as though they were one.
+#
+# Clearing them here, before the run that will replace them, leaves the directory
+# describing the last run and only the last run. It happens before rather than
+# after, because a failed Debug leg never reaches CPack and archives left over
+# from an earlier commit would then be the most plausible thing in a directory
+# that is otherwise evidence about this one. They cost a build to regenerate and
+# nothing else; the run that is about to start is that build.
+clear_packages() {
+    release_leg || return 0
+    shopt -s nullglob
+    local stale=( "$out"/BayesTS-* )
+    shopt -u nullglob
+    [ ${#stale[@]} -gt 0 ] || return 0
+    say "pre-push: clearing ${#stale[@]} package file(s) left in build/docker-out"
+    printf '         %s
+' "${stale[@]##*/}" >&2
+    rm -f "${stale[@]}"
+}
+
 wt="$root/build/pre-push-src"
 cleanup() {
     git worktree remove --force "$wt" >/dev/null 2>&1 || rm -rf "$wt"
@@ -109,6 +147,8 @@ for sha in "$@"; do
     cleanup
     git worktree add --detach --force "$wt" "$sha" >/dev/null \
         || die "could not check $sha out into $wt"
+
+    clear_packages
 
     mounts="-v $(host_path "$wt"):/src:ro -v $(host_path "$out"):/out"
     [ -z "$VOLUME" ] || mounts="$mounts -v $VOLUME:/work"
