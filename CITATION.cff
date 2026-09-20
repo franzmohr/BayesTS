@@ -16,8 +16,8 @@ authors:
   - family-names: Mohr
     given-names: Franz X.
     orcid: "https://orcid.org/0009-0003-8890-7781"
-version: 0.2.0
-date-released: "2026-09-15"
+version: 0.3.0
+date-released: "2026-09-20"
 doi: 10.5281/zenodo.22722531
 license: BSD-3-Clause
 repository-code: "https://github.com/franzmohr/BayesTS"

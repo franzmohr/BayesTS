@@ -27,6 +27,8 @@ Dates are ISO. Versions follow the `project(VERSION)` in `CMakeLists.txt`.
 New entries go here, under an `### Added`, `### Changed` or `### Fixed`
 heading, and move down into a version section when one is cut.
 
+## 0.3.0 — 2026-09-20
+
 ### Added
 
 - **`VarTvpDiscount` and `VecTvpDiscount`, two models with an answer rather than

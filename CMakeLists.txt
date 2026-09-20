@@ -45,7 +45,7 @@ unset(_bayests_bin_real)
 
 
 project(BayesTS
-    VERSION 0.2.0
+    VERSION 0.3.0
     LANGUAGES C CXX Fortran
     DESCRIPTION "Bayesian Time Series Library"
 )
@@ -506,7 +506,7 @@ set(CPACK_PACKAGE_CHECKSUM SHA256)
 # CMake lists, so paths containing spaces survive.
 set(CPACK_VERBATIM_VARIABLES ON)
 
-# BayesTS-0.2.0-Windows-AMD64.zip
+# BayesTS-0.3.0-Windows-AMD64.zip
 set(CPACK_PACKAGE_FILE_NAME
     "${PROJECT_NAME}-${PROJECT_VERSION}-${CMAKE_SYSTEM_NAME}-${CMAKE_SYSTEM_PROCESSOR}")
 

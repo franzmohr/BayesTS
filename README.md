@@ -75,14 +75,17 @@ models and one factor augmented VAR:
 | `DfmTvpStochvol` | Random walk, the free loadings and the factor transition both | Stochastic volatility, on the idiosyncratic errors and the factor innovations | none |
 | `FavarNormalWishart` | Constant, normal prior on the loadings and on the state transition | Wishart on the state innovations; independent gamma on the idiosyncratic errors | none |
 
-The fourteen VARs and VECs support exogenous regressors, deterministic terms and
-a pointwise log likelihood laid out for WAIC and PSIS-LOO. All but the two
-`*Ald` entries also forecast; those two refuse, for the reason below. Ten of them
-take a structural (contemporaneous-coefficient) form: the four Wishart models
-leave the error covariance unrestricted, which leaves `A_0` unidentified, so they
-refuse it — see the structural paragraph at the end of this section.
-`VecKlgs2010`, the four `Dfm*` entries and `FavarNormalWishart` are the exceptions
-to the rest, each in its own way — see below.
+The sixteen VARs and VECs support exogenous regressors, deterministic terms and
+a pointwise log likelihood — laid out for WAIC and PSIS-LOO except on the two
+`*TvpDiscount` entries, whose parameters are integrated out exactly, so theirs
+is one row rather than one per draw. All but the two `*Ald` entries also
+forecast; those two refuse, for the reason below. Ten of them take a structural
+(contemporaneous-coefficient) form: the four Wishart models and the two
+discounted ones leave the error covariance unrestricted, which leaves `A_0`
+unidentified, so they refuse it — see the structural paragraph at the end of
+this section. `VecKlgs2010`, the two `*TvpDiscount` entries, the four `Dfm*`
+entries and `FavarNormalWishart` are the exceptions to the rest, each in its own
+way — see below.
 
 **The two `*Ald` entries estimate a conditional quantile rather than a
 conditional mean.** Minimising the quantile loss at `q` is maximising the
@@ -844,8 +847,8 @@ The archive and its SHA-256 checksum land next to the build, in
 `build/bin/my-windows-release/`:
 
 ```
-BayesTS-0.2.0-Windows-AMD64.zip
-BayesTS-0.2.0-Windows-AMD64.zip.sha256
+BayesTS-0.3.0-Windows-AMD64.zip
+BayesTS-0.3.0-Windows-AMD64.zip.sha256
 ```
 
 It contains `bin/bayests.exe`, the runtime libraries it needs, and
@@ -863,8 +866,8 @@ nothing beyond CMake. When [NSIS](https://nsis.sourceforge.io/) is present an
 installer is built alongside it:
 
 ```
-BayesTS-0.2.0-Windows-AMD64.exe
-BayesTS-0.2.0-Windows-AMD64.exe.sha256
+BayesTS-0.3.0-Windows-AMD64.exe
+BayesTS-0.3.0-Windows-AMD64.exe.sha256
 ```
 
 It installs into `%ProgramFiles%\BayesTS`, shows the licence, offers to add
@@ -880,7 +883,7 @@ the directory — NSIS requires `/D` last and unquoted, even when the path
 contains spaces:
 
 ```bat
-BayesTS-0.2.0-Windows-AMD64.exe /S /D=C:\tools\BayesTS
+BayesTS-0.3.0-Windows-AMD64.exe /S /D=C:\tools\BayesTS
 "C:\tools\BayesTS\Uninstall.exe" /S
 ```
 
@@ -917,7 +920,7 @@ is assembled at configure time rather than fixed.
 cpack --config build/bin/my-windows-release/CPackSourceConfig.cmake
 ```
 
-Produces `BayesTS-0.2.0-src.zip` and `.tar.gz`. The ignore list drops the build
+Produces `BayesTS-0.3.0-src.zip` and `.tar.gz`. The ignore list drops the build
 tree, `.git/`, `CMakeUserPresets.json` and every `*.h5`, since model files are
 derived data and run to hundreds of megabytes.
 
@@ -940,7 +943,7 @@ cmake -S . -B build/bin/linux-deb -G Ninja \
 cmake --build build/bin/linux-deb
 (cd build/bin/linux-deb && cpack -G DEB)
 
-sudo apt install ./build/bin/linux-deb/bayests_0.2.0_ubuntu24.04_amd64.deb
+sudo apt install ./build/bin/linux-deb/bayests_0.3.0_ubuntu24.04_amd64.deb
 ```
 
 The file name carries the distribution and release it was built on, because the
@@ -959,7 +962,7 @@ sudo snap install snapcraft --classic
 sudo snap install lxd && sudo lxd init --auto
 
 snapcraft                                       # builds for the host architecture
-sudo snap install --dangerous ./bayests_0.2.0_amd64.snap
+sudo snap install --dangerous ./bayests_0.3.0_amd64.snap
 bayests
 ```
 
@@ -970,7 +973,7 @@ publish, register the name once and upload:
 ```bash
 snapcraft login
 snapcraft register bayests
-snapcraft upload --release=edge ./bayests_0.2.0_amd64.snap
+snapcraft upload --release=edge ./bayests_0.3.0_amd64.snap
 ```
 
 The version is not written in `snapcraft.yaml`. It is read out of
