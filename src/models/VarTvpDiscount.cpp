@@ -8,7 +8,7 @@
 // model from a file on disk: deciding whether the work has already been done,
 // reading the input, and putting the results back.
 //
-// Three things differ from the eighteen samplers beside it, and all three come
+// Three things differ from the twenty samplers beside it, and all three come
 // from the same fact -- this model has an answer rather than a chain:
 //
 // - The stage that would draw the coefficients *estimates* them. It is still

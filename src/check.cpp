@@ -166,7 +166,10 @@ void print_report(const std::string &algorithm, const ModelCheck &check)
 	// let something drift over the horizon, and carrying each draw's state
 	// forward before the density is taken is not written yet; a structural
 	// model is refused for good, its regressors holding the contemporaneous
-	// observations and its density the Jacobian of A_0.
+	// observations and its density the Jacobian of A_0. The two discounted
+	// models are scored like any other -- VarTvpDiscount exactly, its filter
+	// carrying itself through the realised values, and VecTvpDiscount by
+	// simulation as every VEC is.
 	const bool can_be_scored =
 		!spec.structural &&
 		(algorithm == "VarNormalWishart" || algorithm == "VarNormalGamma" ||
@@ -175,7 +178,8 @@ void print_report(const std::string &algorithm, const ModelCheck &check)
 		 algorithm == "VecNormalWishart" || algorithm == "VecNormalGamma" ||
 		 algorithm == "VecKlgs2010" || algorithm == "VecNormalStochvol" ||
 		 algorithm == "VecTvpWishart" || algorithm == "VecTvpGamma" ||
-		 algorithm == "VecTvpStochvol" || algorithm == "DfmNormalGamma" ||
+		 algorithm == "VecTvpStochvol" || algorithm == "VarTvpDiscount" ||
+		 algorithm == "VecTvpDiscount" || algorithm == "DfmNormalGamma" ||
 		 algorithm == "DfmNormalStochvol" || algorithm == "DfmTvpGamma" ||
 		 algorithm == "DfmTvpStochvol");
 	if (check.test_periods > 0)
@@ -191,17 +195,31 @@ void print_report(const std::string &algorithm, const ModelCheck &check)
 		}
 		std::cout << "\n";
 	}
-	std::cout << "  chain: " << spec.iterations << " draws kept after " << spec.burnin
-	          << " burn-in";
-	if (spec.thin > 1)
+	// The discounted models have no chain to describe: their posterior is closed
+	// form, `burnin` and `thin` are refused at anything but 0 and 1, and
+	// `iterations` is how many i.i.d. paths a forecast draws. Printing "draws
+	// kept after a burn-in" for them would describe a sweep that never runs.
+	const bool has_chain = algorithm != "VarTvpDiscount" && algorithm != "VecTvpDiscount";
+	if (has_chain)
 	{
-		std::cout << ", one in " << spec.thin << ", so " << spec.draws() << " run";
+		std::cout << "  chain: " << spec.iterations << " draws kept after " << spec.burnin
+		          << " burn-in";
+		if (spec.thin > 1)
+		{
+			std::cout << ", one in " << spec.thin << ", so " << spec.draws() << " run";
+		}
+		std::cout << "\n";
 	}
-	std::cout << "\n";
+	else
+	{
+		std::cout << "  draws: " << spec.iterations
+		          << " i.i.d. forecast paths; no chain, the posterior being closed form\n";
+	}
 	std::cout << "  seed: "
 	          << (check.seed ? std::to_string(*check.seed)
 	                         : std::string("none, so the draws follow the generator's state when the "
 	                                       "model's turn comes"))
+	          << (has_chain ? "" : " -- the estimate itself draws nothing and repeats to the bit")
 	          << "\n";
 	if (check.has_posterior)
 	{

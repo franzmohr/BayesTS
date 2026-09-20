@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright (c) 2026 Franz X. Mohr
 
-// Builds a complete model file for every registered sampler, so that all
-// fifteen can be put through the same before/after fingerprint comparison from
-// a clean clone. No model file is checked in -- *.h5 is gitignored, and a
+// Builds a complete model file for every registered algorithm, so that all
+// twenty-two can be put through the same before/after fingerprint comparison
+// from a clean clone. No model file is checked in -- *.h5 is gitignored, and a
 // recorded one is mostly posterior draws -- so this tool writes one from
 // scratch.
 //
@@ -11,14 +11,18 @@
 //
 //     model       VarNormalWishart | VarNormalGamma | VarNormalStochvol
 //                 | VarTvpGamma | VarTvpWishart | VarTvpStochvol
+//                 | VarNormalAld | VarTvpAld | VarTvpDiscount
 //                 | VecKlgs2010 | VecNormalWishart | VecNormalGamma
 //                 | VecNormalStochvol | VecTvpGamma | VecTvpWishart
-//                 | VecTvpStochvol | DfmNormalGamma | DfmNormalStochvol
-//                 | DfmTvpGamma | DfmTvpStochvol
+//                 | VecTvpStochvol | VecTvpDiscount
+//                 | DfmNormalGamma | DfmNormalStochvol
+//                 | DfmTvpGamma | DfmTvpStochvol | FavarNormalWishart
 //     varsel      none | ssvs | bvs        (ssvs reaches the four models with
 //                                           constant coefficients and no
 //                                           stochastic volatility only;
-//                                           VecKlgs2010 takes none at all)
+//                                           VecKlgs2010, the factor models and
+//                                           the two discounted ones take none
+//                                           at all)
 //     covar       0 | 1                    the "+covar" error specification
 //     structural  0 | 1                    (refused with a Wishart error
 //                                           precision or a covariance block --

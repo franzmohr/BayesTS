@@ -63,8 +63,8 @@ seen from R.
 
 `error` is load-bearing for exactly two values, and the spelling is
 model-specific: `gamma+covar` switches the covariance block on for the gamma
-models, `sv+covar` for the stochastic volatility models. The twelve readers of
-models with no `psi` block never compare it.
+models, `sv+covar` for the stochastic volatility models. The fourteen readers
+of models with no `psi` block never compare it.
 
 ## `/model/priors/psi` — attribute
 

@@ -109,9 +109,9 @@ Two rules that break the host silently rather than here:
 - The `error` attribute turns the covariance block on and its spelling is
   model-specific: `gamma+covar` for the gamma models, `sv+covar` for
   stochastic volatility. Those are the only two values that switch anything.
-  The twelve readers of models with no psi block -- the Wishart family, the
-  quantile pair, `VecKlgs2010` and the factor models -- pass `nullptr`, so on
-  those the attribute is descriptive only.
+  The fourteen readers of models with no psi block -- the Wishart family, the
+  quantile pair, the discounted pair, `VecKlgs2010` and the factor models --
+  pass `nullptr`, so on those the attribute is descriptive only.
 - Exit codes are load-bearing: 1 means the run started and something failed,
   2 means it never started (unusable command line).
 

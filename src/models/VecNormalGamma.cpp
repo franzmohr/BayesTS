@@ -75,7 +75,7 @@ void VecNormalGamma::forecast(const ModelLocation &location_arg)
     // an absent attribute -- every -nofcst fixture leaves it out -- and just as
     // much a written h <= 0, which is how R and Python callers spell "no
     // forecast". Five of these front-ends used to print "Error processing ..."
-    // here and the other thirteen returned in silence; all eighteen are silent
+    // here and the other thirteen returned in silence; all of them are silent
     // now, because none of them has failed.
     if (bayests::hdf5_io::optional_attribute_int(file, "/model", "h", 0) <= 0)
     {
