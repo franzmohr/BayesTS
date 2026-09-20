@@ -4,6 +4,7 @@
 #include "bayests/var_tvp_discount.h"
 
 #include "core/models/discount_support.h"
+#include "core/models/predictive_score.h"
 
 #include <cmath>
 #include <stdexcept>
@@ -268,10 +269,16 @@ VarTvpDiscountEstimator::predictive_log_density(const VarTvpDiscountInput &input
 
     const arma::uword k = static_cast<arma::uword>(input.spec.k);
     const arma::uword scored = input.test.y.n_rows;
-    if (input.forecast.x.n_rows < scored)
-    {
-        throw std::invalid_argument("the forecast regressors do not cover the scored periods");
-    }
+
+    // The lag blocks of `/data/forecast/x` hold whatever the caller put there,
+    // which for a host that has only asked for a forecast is a placeholder: a
+    // forecast overwrites them as it simulates. This recursion does not
+    // simulate, so it has to fill them from what was realised, exactly as every
+    // other VAR here scores. Reading the rows raw scored the first period
+    // correctly and then fed the filter a placeholder, which left the state --
+    // and every period after the first -- not a number.
+    const arma::mat x =
+        core::realised_regressors(input.forecast.x, input.test.y, input.spec.k, input.spec.p);
 
     const arma::uword last = posterior.periods() - 1;
     const arma::uword n_reg = input.forecast.x.n_cols;
@@ -288,7 +295,7 @@ VarTvpDiscountEstimator::predictive_log_density(const VarTvpDiscountInput &input
     arma::mat out(1, scored);
     for (arma::uword t = 0; t < scored; t++)
     {
-        out(0, t) = state.step(input.forecast.x.row(t).t(), input.test.y.row(t).t(),
+        out(0, t) = state.step(x.row(t).t(), input.test.y.row(t).t(),
                                input.spec.delta_beta, input.spec.delta_sigma);
     }
     return out;
