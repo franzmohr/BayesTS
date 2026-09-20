@@ -324,6 +324,59 @@ heading, and move down into a version section when one is cut.
   release would suggest. CONTRIBUTING.md §*Branches* states the policy. This is
   process only: no source file changed and no draw moves.
 
+### Fixed
+
+- **A factor model's score filter keeps its covariance positive semi-definite.**
+  `score_factor_forecast()` updated it in the short form `P - K F K'`, a
+  difference of two positive semi-definite matrices, and argued that was safe
+  because the variance is rebuilt from the transition every period. It is not:
+  `state_noise` carries `diag(v_var)` in the leading `n x n` block and zeros
+  elsewhere, so `Q` is singular for any transition of order above one, and the
+  lagged blocks of `P` are never refreshed by it — they only shift down
+  through `T`. Rounding error accumulates in exactly those blocks until `P`
+  drifts indefinite, and the definiteness check then rejects a forecast
+  variance that is mathematically fine, throwing *"the one step ahead forecast
+  variance of a scored period is not positive definite"* and failing the run.
+
+  The update is now the Joseph form,
+  `P = (I - K Z) P (I - K Z)' + K R K'`, a sum of two positive semi-definite
+  terms and so one whatever rounding does. Beside it, `F` is factorised with a
+  Cholesky rather than put through `arma::log_det()`: `F` is symmetric
+  positive definite by construction, so a Cholesky is the test that matches it
+  — it fails exactly when the matrix is not one, where `log_det` decides from
+  an LU pivot count — and the same factor carries the determinant and both
+  solves.
+
+  **Scores change by a rounding error.** Both the determinant and the two solves
+  take a different arithmetic path, so the last digits of a factor model's
+  `/posterior/forecast/loglik` move. No fixture reaches this code — none
+  carries `/data/test/y` — so the fingerprint comparison is silent across the
+  change,
+  all 106 unchanged, and what pins it is `unit.factor_score`, which compares the
+  summed score with the closed-form joint log density of the realised stretch
+  and holds to `1e-10` either side. That absence of a golden fixture is how this
+  reached a tag: the only thing exercising the filter is that one unit test, and
+  a `*-score` fixture would put it in front of every CI job instead.
+
+  Whether the drift crossed zero depended on which BLAS rounded which way. It
+  passed on two toolchains and failed on a third, which is why it survived to a
+  release build rather than being caught where it was written.
+
+- **The `.sha256` beside each package can be read by `sha256sum -c`.** CPack
+  writes its `<hash>  <name>` line through a text-mode stream, so on Windows it
+  ended CRLF and `sha256sum -c` took the carriage return as part of the file
+  name: *"No such file or directory"*, then `FAILED`, which reads like a corrupt
+  download rather than a formatting detail. The archives were never affected.
+  It reached the releases rather than only a local build, the Windows packages
+  being built on a Windows runner while the Linux ones beside them are LF.
+
+  `CPACK_PACKAGE_CHECKSUM` is off and `cmake/normalise_checksums.cmake` writes
+  the file instead. Correcting CPack's own afterwards is not available: the
+  post-build hook runs after the package is written and *before* its checksum
+  is, and `CPACK_PACKAGE_FILES` names the package inside its staging directory
+  rather than where it ends up. The format is unchanged — the hash, two spaces
+  and the base name — so anything that read the old files reads these.
+
 ## 0.2.0 — 2026-09-15
 
 ### Added
