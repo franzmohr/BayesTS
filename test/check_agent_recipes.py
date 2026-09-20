@@ -452,6 +452,21 @@ class Checker:
             "/posterior/forecast/loglik": (n, vec["iterations"]),
         })
 
+        # A drifting model is scored under states carried forward, so it goes
+        # through code neither of the two above touches: the walk, and the
+        # precision rebuilt at every scored period.
+        (d / "tvp").mkdir()
+        tvp_code = self.code("references/recipes.md", "A time-varying model", 0)
+        tvp = self.run_python(d / "tvp", inside_with(self.code(*VAR, 0), tvp_code),
+                              replacing=True)
+        with h5py.File(d / "tvp" / "var.h5", "a") as f:
+            del f["/initial/u_sigma_inv"]
+            f.create_dataset("/data/test/y", data=np.zeros((tvp["k"], n)))
+        self.posterior(d / "tvp", "var.h5")
+        expect_shapes(d / "tvp" / "var.h5", {
+            "/posterior/forecast/loglik": (n, tvp["iterations"]),
+        })
+
         # results.md reads a file called model.h5.
         shutil.copy(d / "var.h5", d / "model.h5")
         scored = self.run_python(d, self.code("references/results.md", "The score", 0))
