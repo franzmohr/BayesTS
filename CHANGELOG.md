@@ -64,6 +64,33 @@ heading, and move down into a version section when one is cut.
 
 ### Changed
 
+- **`ssvs` refuses three priors it could not honour.** The sweep draws each
+  inclusion indicator by weighing `N(0, tau0²)` against `N(0, tau1²)` at its
+  coefficient alone, which is George, Sun and Ni (2008, eq. 12 with R = I). The
+  coefficient draw read the prior as the file gave it, though, so a file that
+  departed from the paper had the two halves of one Gibbs step drawing from
+  conditionals of different models, and the chain targeted neither. Refused
+  now, at each selected position of `a` and of `psi`, in the four models that
+  offer SSVS:
+
+  * a non-zero prior mean -- the spike and slab are centred at zero, and a
+    Minnesota mean of 1 on an own first lag was drawn around 1 and scored
+    around 0;
+  * a prior precision with anything off the diagonal in that row or column --
+    the indicators are independent given the coefficients only when the
+    selected coefficients are a priori independent of everything else;
+  * `tau0` not smaller than `tau1` -- validation checked both were positive and
+    nothing more, so a swapped pair ran and every indicator read backwards.
+
+  The documentation now also says that the diagonal of `v_inv` at a selected
+  position is read for the first draw only, and gives the paper's guidance on
+  choosing `tau0` and `tau1`.
+
+  **Draws are unchanged** for every file still accepted: only `validate()`
+  moved, and a fingerprint recording over all 112 fixtures before and after
+  says 112 unchanged, 0 moved. A file now refused was sampling a model other
+  than the one it described, and has no numbers worth keeping.
+
 - **The agent documentation now says what `bvs` needs from the coefficient
   prior, and what `include` does not cover.** Two ways of getting a run that
   finishes, writes a full posterior and answers a different question than the

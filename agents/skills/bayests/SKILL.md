@@ -162,6 +162,41 @@ say the model that ran was not the model in the file. Start `a_lambda` at all
 ones unless you mean an outright restriction, and let `include` decide what
 moves.
 
+### `ssvs` takes over the prior at the selected positions
+
+SSVS is George, Sun and Ni (2008): each selected coefficient gets the mixture
+`N(0, tau0²)` (the spike, "excluded") or `N(0, tau1²)` (the slab, "included"),
+and its indicator is drawn by weighing the two densities at the current draw.
+That draw looks at the coefficient alone, which is only right under the paper's
+prior, so three files are **refused** rather than sampled under a prior the
+indicators are not scored against:
+
+- a non-zero `/priors/a/mu` at a selected position. Both components are
+  centred at zero; a Minnesota mean of 1 on an own first lag is a prior to
+  shrink towards, not a coefficient to select — leave it out of `include`, or
+  use `bvs`;
+- a `/priors/a/v_inv` with anything off the diagonal in the row or column of a
+  selected position. The indicators are independent given the coefficients only
+  when the prior makes the selected ones independent of everything else;
+- `tau0` not smaller than `tau1` at a selected position. Swapped, the chain
+  would run and every indicator would mean the opposite of what it says.
+
+The same holds for `/priors/psi` under a covariance block. **The diagonal of
+`v_inv` at a selected position is not a prior you get to choose**: the sweep
+overwrites it with `1/tau0²` or `1/tau1²` every draw, so the file's value is
+used for the first coefficient draw only and then never again. Put what you
+believe about the coefficient's scale into `tau1` instead.
+
+Choosing the two: `tau0` small enough that a coefficient within about
+`3·tau0` of zero makes no difference to the fit, `tau1` wide enough that
+`N(0, tau1²)` covers every value you would find plausible. The paper's
+semi-automatic default is to scale both by the least-squares standard error of
+the coefficient, `tau0 = 0.1·se` and `tau1 = 10·se`; its simulations use the
+flat pair `(0.1, 5)`. On `psi` the scale is that of BayesTS's unit triangular
+factor, whose elements are the paper's `ψ_ij` divided by its `ψ_jj`: the zero
+pattern is the same, so the same restrictions are selected, but `kappa` values
+tuned for the paper's parametrisation do not carry over unchanged.
+
 ### `bvs` needs a coefficient prior that is not flat
 
 BVS excludes a coefficient by zeroing its regressor, so while it is out its
