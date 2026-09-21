@@ -55,6 +55,8 @@ are refusals with reasons, not unimplemented features.
 | `ssvs` with a non-zero prior mean at a selected position | The spike and slab are both centred at zero, and the indicators are scored as if they were. See the `varsel` section of `SKILL.md` |
 | `ssvs` with a prior precision that couples a selected position to any other | Each indicator is drawn from its own coefficient alone, which is the posterior only when the selected coefficients are a priori independent of everything else |
 | `ssvs` with `tau0 >= tau1` at a selected position | The spike must be the narrower component, or every indicator reads backwards |
+| `omega_v` beside `shape`/`rate` in the same block of a time-varying model (`/priors/a`, `/priors/psi`, or `/priors/u_sigma` for the log-volatilities) | They are two priors on one random walk -- a normal on the signed standard deviation of its innovations, and an inverse gamma on their variance -- and either reading would ignore half of what the file says, so neither is chosen |
+| An `omega_v` that is not finite and greater than zero | It is the variance of a normal prior, and so also the prior mean of the innovation variance |
 | A constant VEC with a non-zero `/priors/a/mu`, or non-zero `/priors/a/v_inv` coupling, on the first `k*rank` positions | The loadings' prior is Koop, León-González and Strachan's, centred at zero and independent of the other coefficients, and the sampler assumes it is |
 | A negative `/priors/beta/v_inv`, or a `p_tau_inv` that is not positive definite while `v_inv > 0` | Not a prior: a negative precision, or a `P_tau` with no inverse |
 | `/priors/beta/g_inv` on any constant VEC but `VecNormalStochvol` | The other three take `G` from the error covariance and would never read it |
