@@ -37,6 +37,10 @@ VecTvpStochvolInput read_input(const ModelFile &file)
         input.a_prior.sigma = read_gamma_prior(file, "/priors/a");
         input.a_prior.initial_state = read_normal_prior(file, "/priors/a");
 
+        // The non-centred parameterisation, in place of shape and rate. Which
+        // one the file chose is decided by validate(), which refuses both.
+        read_vec_if_present(file, "/priors/a/omega_v", input.a_prior.omega_v);
+
         // BVS is the only scheme this model implements. An SSVS file is left
         // unread here and rejected by validate(), which can say why.
         if (input.spec.varsel == VarSelection::bvs)
@@ -65,6 +69,7 @@ VecTvpStochvolInput read_input(const ModelFile &file)
 
         input.psi_prior.sigma = read_gamma_prior(file, "/priors/psi");
         input.psi_prior.initial_state = read_normal_prior(file, "/priors/psi");
+        read_vec_if_present(file, "/priors/psi/omega_v", input.psi_prior.omega_v);
 
         // Selection for the covariance block is declared in its own group, so
         // it can differ from the model's.
@@ -84,6 +89,7 @@ VecTvpStochvolInput read_input(const ModelFile &file)
     read_vec_if_present(file, "/priors/u_sigma/offset", input.u_sigma_prior.offset);
     read_vec_if_present(file, "/priors/u_sigma/shape", input.u_sigma_prior.state.sigma.shape);
     read_vec_if_present(file, "/priors/u_sigma/rate", input.u_sigma_prior.state.sigma.rate);
+    read_vec_if_present(file, "/priors/u_sigma/omega_v", input.u_sigma_prior.state.omega_v);
     read_vec_if_present(file, "/priors/u_sigma/mu", input.u_sigma_prior.state.initial_state.mu);
     read_mat_if_present(file, "/priors/u_sigma/v_inv",
                         input.u_sigma_prior.state.initial_state.v_inv);
@@ -182,6 +188,7 @@ void write_coefficients(const ModelFile &file, const VecTvpStochvolDraws &draws)
         {
             write_draws(file, "/posterior/a/lambda", draws.a_lambda);
         }
+        write_noncentred(file, "/posterior/a", draws.a_noncentred);
     }
 
     // The cointegration path. Without it `a` carries only the loadings, so
@@ -209,11 +216,13 @@ void write_coefficients(const ModelFile &file, const VecTvpStochvolDraws &draws)
         {
             write_draws(file, "/posterior/psi/lambda", draws.psi_lambda);
         }
+        write_noncentred(file, "/posterior/psi", draws.psi_noncentred);
     }
 
     write_draws(file, "/posterior/u_omega_inv/coeffs", draws.u_omega_inv);
     write_draws(file, "/posterior/u_sigma_inv/coeffs", draws.u_sigma_inv);
     write_draws(file, "/posterior/u_sigma_inv/sigma", draws.h_sigma);
+    write_noncentred(file, "/posterior/u_sigma_inv", draws.h_noncentred);
 }
 
 } // namespace bayests::hdf5_io::vec_tvp_stochvol
