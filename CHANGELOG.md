@@ -239,6 +239,50 @@ heading, and move down into a version section when one is cut.
 
 ### Fixed
 
+- **A simulated forecast could turn NaN once a log-volatility drifted far.**
+  Under `forecast_states = "simulate"` the error at each horizon was drawn
+  through `core::covariance_root()`, which inverted the rebuilt precision
+  `Psi' diag(exp(-h)) Psi` with `solve()` and took the square roots of the
+  inverse's eigenvalues. Once the simulated log-volatilities had drifted far
+  apart that inverse was ill-conditioned: it came back slightly asymmetric
+  (Armadillo's `eig_sym(): given matrix is not symmetric`) and with an
+  eigenvalue a rounding error below zero, whose square root put a NaN into
+  every variable from that horizon on. Seen as one draw in 2000 in 4 of 84
+  expanding windows of a four-variable `VarTvpStochvol` (`sv+covar`) after
+  2020; `hold` never triggered it.
+
+  The covariance block models now build the root from the factorisation they
+  have instead of from the precision it multiplies out to: the covariance is
+  `B B'` with `B = Psi⁻¹ diag(variances)^½`, a unit triangular solve no
+  volatility can make ill-conditioned, and its symmetric root is `U S U'` for
+  `B = U S V'`, whose singular values cannot be negative. That is the new
+  overload `core::covariance_root(psi, variances)` in
+  `src/core/models/forecast_states.h`, called with `exp(h)` by
+  `VarNormalStochvol`, `VarTvpStochvol`, `VecNormalStochvol` and
+  `VecTvpStochvol`, and with `1 / u_omega_inv` by `VarTvpGamma` and
+  `VecTvpGamma`. The one-argument `covariance_root(precision)`, which
+  `VecTvpWishart`, `VecTvpGamma` without a covariance block and now
+  `FavarNormalWishart` call, symmetrises before `eig_sym()` and sets a
+  negative eigenvalue to zero; `FavarNormalWishart`'s private copy of it,
+  which did the same with `abs()`, is gone.
+
+  **Draws change by a rounding error.** It is the same root of the same
+  matrix, so the draws are those of the old route wherever it produced a
+  number. Over the full fingerprint recording (399 tests, 120 fixtures) 30
+  fixtures moved, all of them of the six models above, and in each only
+  `/posterior/forecast/forecasts`, by at most 1.4e-15 relatively. Nothing else
+  moved: no estimated draw, no log likelihood, no `hold` forecast, and no
+  model outside the six. Most fixtures of the six without a covariance block
+  did not move either, the diagonal root coming out bit-identical. On the Austrian file that showed the fault the 1999 draws
+  the old route got right move by a median 7e-15 and at most 1.6e-6
+  relatively -- the accuracy the inverse was losing there -- and the twelve
+  NaN values of the remaining draw are finite. `unit.forecast_states` gains
+  two cases: the root of a covariance whose log-volatilities start 36 apart
+  (the route through the precision finds an eigenvalue of -3.5e-19 there),
+  and all four stochastic volatility forecasts from there with steps of
+  variance 4 over twelve horizons, which must be finite everywhere; on the old
+  route between 46 000 and 85 000 of their 96 000 values were not.
+
 - **`VecNormalGamma` drew its error precisions without the cointegration space
   prior's term.** The prior of Koop, León-González and Strachan (2010) scales
   the loadings by the error covariance, `alpha | beta, Sigma ~ N(0, v⁻¹

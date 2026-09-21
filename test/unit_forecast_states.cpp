@@ -36,6 +36,12 @@
 ///   - a VEC's log-volatility: no cointegration and no lags, so y_t = y_{t-1} +
 ///     u_t from zero, gives E[y_{T+i}^2] = sum_{j <= i} exp(j s / 2).
 ///
+/// And one case that is not statistical: log-volatilities that start far apart
+/// and drift further, under a covariance block, must still forecast finite
+/// numbers. Drawing the error through the inverse of Psi' diag(exp(-h)) Psi put
+/// a NaN into every variable from the first horizon where that inverse had an
+/// eigenvalue a rounding error below zero.
+///
 /// These are statistical statements. Each is checked to 5 percent with enough
 /// draws that the Monte Carlo standard error is about 1 percent or less, and
 /// under `hold` every one of them lands far outside that band.
@@ -51,6 +57,7 @@
 #include "bayests/vec_normal_stochvol.h"
 #include "bayests/vec_tvp_stochvol.h"
 #include "bayests/vec_tvp_wishart.h"
+#include "core/models/forecast_states.h"
 
 #include <cmath>
 #include <cstdio>
@@ -478,6 +485,100 @@ void vec_volatility_drifts(const char *name)
     check("simulated, a posterior without h_sigma is refused", refused);
 }
 
+/// A unit lower triangular Psi with a free element in every position.
+arma::mat far_drift_psi()
+{
+    return {{1.0, 0.0, 0.0, 0.0},
+            {0.9, 1.0, 0.0, 0.0},
+            {-1.3, 2.1, 1.0, 0.0},
+            {0.4, -0.7, 1.6, 1.0}};
+}
+
+/// Log-volatilities 36 apart: a condition number around 1e16 before any drift.
+arma::vec far_drift_h()
+{
+    return {-18.0, 18.0, -9.0, 9.0};
+}
+
+void covariance_root_far_apart()
+{
+    std::printf("the error's root under log-volatilities far apart\n");
+
+    const arma::mat psi = far_drift_psi();
+    const arma::vec variances = arma::exp(far_drift_h());
+    const arma::mat root = bayests::core::covariance_root(psi, variances);
+
+    // What the route through the precision gets from the same matrix, for the
+    // record rather than as a check: whether it lands below zero depends on
+    // the BLAS.
+    arma::vec eigval;
+    arma::mat eigvec;
+    const arma::mat precision = arma::trans(psi) * arma::diagmat(1.0 / variances) * psi;
+    arma::eig_sym(eigval, eigvec,
+                  arma::symmatu(arma::solve(precision, arma::eye<arma::mat>(4, 4))));
+    std::printf("    through the precision, the smallest eigenvalue is %.3e\n", eigval.min());
+
+    const arma::mat factor =
+        arma::solve(arma::trimatl(psi), arma::mat(arma::diagmat(arma::sqrt(variances))));
+    const arma::mat covariance = factor * arma::trans(factor);
+    check("the root is finite", root.is_finite());
+    check("the root is symmetric", arma::norm(root - arma::trans(root), "fro") <=
+                                       1e-12 * arma::norm(root, "fro"));
+    check("the root squares to the covariance",
+          arma::norm(root * root - covariance, "fro") <= 1e-10 * arma::norm(covariance, "fro"));
+
+    // With the covariance block switched off the root is the standard deviations.
+    const arma::mat diagonal =
+        bayests::core::covariance_root(arma::eye<arma::mat>(4, 4), variances);
+    check("without Psi, the root is diag(exp(h / 2))",
+          arma::approx_equal(diagonal, arma::mat(arma::diagmat(arma::exp(far_drift_h() / 2))),
+                             "reldiff", 1e-12));
+}
+
+/// Both stochastic volatility VARs and both VECs under a covariance block, from
+/// log-volatilities far apart that then take steps of variance 4 for twelve
+/// horizons: every forecast must be a number.
+template <typename Sampler, typename Input, typename Draws>
+void far_drift_stays_finite(const char *name, const bool vec)
+{
+    std::printf("%s: log-volatilities that drift far apart\n", name);
+
+    constexpr int k = 4;
+    constexpr int h = 12;
+    constexpr arma::uword draws = 2000;
+
+    Input input;
+    input.spec.k = k;
+    input.spec.h = h;
+    input.spec.covar = true;
+    if (vec)
+    {
+        // No cointegration and no lags: the level VAR is a random walk.
+        input.forecast.x = arma::zeros<arma::mat>(h, k);
+    }
+
+    const arma::mat psi = far_drift_psi();
+    Draws posterior;
+    posterior.psi = arma::repmat(arma::vectorise(psi), 1, draws);
+    posterior.u_omega_inv = arma::repmat(arma::exp(-far_drift_h()), 1, draws);
+    posterior.u_sigma_inv = arma::repmat(
+        arma::vectorise(arma::trans(psi) * arma::diagmat(arma::exp(-far_drift_h())) * psi), 1,
+        draws);
+    posterior.h_sigma = arma::mat(k, draws, arma::fill::value(4.0));
+    if constexpr (requires { posterior.psi_sigma; })
+    {
+        posterior.psi_sigma = arma::mat(k * (k - 1) / 2, draws, arma::fill::value(0.01));
+    }
+
+    bayests::NullReporter reporter;
+    const arma::mat simulated = Sampler{}.forecast(input, posterior, reporter).values;
+    unsigned long long non_finite = 0;
+    simulated.for_each([&](const double value) { non_finite += std::isfinite(value) ? 0 : 1; });
+    std::printf("    %llu of %llu forecasts not finite\n", non_finite,
+                static_cast<unsigned long long>(simulated.n_elem));
+    check("every simulated forecast is finite", simulated.is_finite());
+}
+
 } // namespace
 
 int main()
@@ -501,6 +602,15 @@ int main()
                           bayests::VecNormalStochvolDraws>("VecNormalStochvol");
     vec_volatility_drifts<bayests::VecTvpStochvolSampler, bayests::VecTvpStochvolInput,
                           bayests::VecTvpStochvolDraws>("VecTvpStochvol");
+    covariance_root_far_apart();
+    far_drift_stays_finite<bayests::VarTvpStochvolSampler, bayests::VarTvpStochvolInput,
+                           bayests::VarTvpStochvolDraws>("VarTvpStochvol", false);
+    far_drift_stays_finite<bayests::VarNormalStochvolSampler, bayests::VarNormalStochvolInput,
+                           bayests::VarNormalStochvolDraws>("VarNormalStochvol", false);
+    far_drift_stays_finite<bayests::VecTvpStochvolSampler, bayests::VecTvpStochvolInput,
+                           bayests::VecTvpStochvolDraws>("VecTvpStochvol", true);
+    far_drift_stays_finite<bayests::VecNormalStochvolSampler, bayests::VecNormalStochvolInput,
+                           bayests::VecNormalStochvolDraws>("VecNormalStochvol", true);
 
     if (failures > 0)
     {
