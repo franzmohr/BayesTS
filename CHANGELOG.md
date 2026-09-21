@@ -365,6 +365,21 @@ heading, and move down into a version section when one is cut.
   `VecTvpDiscount` scores through `score_vec_forecast()`, which fills the blocks
   already.
 
+- **The non-centred prior is documented outside `model-file.md` too.** The
+  README said nothing about `omega_v`: its `/priors/a`, `/priors/psi` and
+  `/priors/u_sigma` rows still gave `shape`/`rate` as the only prior on a random
+  walk, and its `/posterior/` row did not name the three datasets a non-centred
+  block writes. It now has a paragraph on which four models take the prior and
+  what it buys, the prior and output rows, and the Frühwirth-Schnatter and
+  Wagner (2010) reference. `algorithms.md` calls its table the full list of
+  refusals and was missing the two this prior adds: `omega_v` beside
+  `shape`/`rate` in one block, and an `omega_v` that is not finite and greater
+  than zero. And in `src/core/inputs.cpp` the doc comment of
+  `validate_tvp_block()` had ended up above `validate_state_variance_prior()`,
+  inserted between the two, so the new function's documentation began with
+  parameters it does not take; it is back where it belongs. Documentation
+  only: no code path changes and no draw moves.
+
 ## 0.3.0 — 2026-09-20
 
 ### Added
