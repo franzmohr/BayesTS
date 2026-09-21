@@ -26,7 +26,7 @@ A run writes back into the same file, under `/posterior` (or under
 | `/posterior/v_sigma_inv/coeffs` | `(n_factors, iterations)`, or `(n_factors*tt, iterations)` under stochastic volatility; `(n_state*n_state, iterations)` for a FAVAR | `coefficients`, for a factor model |
 | `/posterior/forecast/forecasts` | `(h*k, iterations)`; `(h*(k + n_obs_factors), iterations)` for a FAVAR | `forecasts` |
 | `/posterior/loglik` | `(tt, iterations)`; `(tt, 1)` for the two `*TvpDiscount` models | `loglik` |
-| `<block>/omega` | `(n, iterations)` | `coefficients`, for a `VarTvpStochvol` block whose prior sets `omega_v`: the signed standard deviation of the random walk's innovations. `<block>` is `/posterior/a`, `/posterior/psi` or `/posterior/u_sigma_inv`, beside that block's `sigma`, which is still written, as `omega^2` |
+| `<block>/omega` | `(n, iterations)` | `coefficients`, for a `VarTvpStochvol` or `VarTvpGamma` block whose prior sets `omega_v`: the signed standard deviation of the random walk's innovations. `<block>` is `/posterior/a`, `/posterior/psi` or, for `VarTvpStochvol`, `/posterior/u_sigma_inv`, beside that block's `sigma`, which is still written, as `omega^2` |
 | `<block>/omega_log_zero` | `(n, iterations)` | The same: per state, the log density at zero of `omega`'s conditional posterior. See below |
 | `<block>/omega_log_zero_joint` | `(1, iterations)` | The same for the whole block at once |
 

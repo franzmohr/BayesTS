@@ -38,7 +38,8 @@
 //     --noncentred
 //                 writes omega_v in place of shape and rate in every prior on
 //                 how far a random walk moves: the non-centred parameterisation.
-//                 Refused for any model but VarTvpStochvol, the one that reads it.
+//                 Refused for any model but VarTvpStochvol and VarTvpGamma, the
+//                 two that read it.
 //     --hold-states
 //                 writes /model/forecast_states = "hold", so the forecast keeps
 //                 the last in-sample states rather than simulating them forward.
@@ -596,8 +597,11 @@ void write_var_normal_stochvol(const ModelFile &file, const std::string &varsel,
     }
 }
 
+/// `noncentred` puts the normal prior on the signed standard deviation in place
+/// of the inverse gamma on the variance, for the coefficients and the
+/// covariance block, at the prior mean of the variance the inverse gamma has.
 void write_var_tvp_gamma(const ModelFile &file, const std::string &varsel, bool covar,
-                         const Layout &layout)
+                         const Layout &layout, bool noncentred = false)
 {
     const arma::uword nparams = static_cast<arma::uword>(layout.nparams);
     const arma::uword n_psi = static_cast<arma::uword>(layout.n_psi);
@@ -610,8 +614,15 @@ void write_var_tvp_gamma(const ModelFile &file, const std::string &varsel, bool 
               arma::mat(arma::diagmat(arma::vec(nparams, arma::fill::value(100.0)))));
     write_row(file, "/initial/a_init", arma::vec(nparams, arma::fill::zeros));
 
-    write_row(file, "/priors/a/shape", arma::vec(nparams, arma::fill::value(3.0)));
-    write_row(file, "/priors/a/rate", arma::vec(nparams, arma::fill::value(0.01)));
+    if (noncentred)
+    {
+        write_row(file, "/priors/a/omega_v", arma::vec(nparams, arma::fill::value(0.005)));
+    }
+    else
+    {
+        write_row(file, "/priors/a/shape", arma::vec(nparams, arma::fill::value(3.0)));
+        write_row(file, "/priors/a/rate", arma::vec(nparams, arma::fill::value(0.01)));
+    }
     write_row(file, "/priors/a/mu", arma::vec(nparams, arma::fill::zeros));
     write_mat(file, "/priors/a/v_inv", arma::eye<arma::mat>(nparams, nparams));
 
@@ -633,8 +644,15 @@ void write_var_tvp_gamma(const ModelFile &file, const std::string &varsel, bool 
                   arma::mat(arma::diagmat(arma::vec(n_psi, arma::fill::value(100.0)))));
         write_row(file, "/initial/psi_init", arma::vec(n_psi, arma::fill::zeros));
 
-        write_row(file, "/priors/psi/shape", arma::vec(n_psi, arma::fill::value(3.0)));
-        write_row(file, "/priors/psi/rate", arma::vec(n_psi, arma::fill::value(0.01)));
+        if (noncentred)
+        {
+            write_row(file, "/priors/psi/omega_v", arma::vec(n_psi, arma::fill::value(0.005)));
+        }
+        else
+        {
+            write_row(file, "/priors/psi/shape", arma::vec(n_psi, arma::fill::value(3.0)));
+            write_row(file, "/priors/psi/rate", arma::vec(n_psi, arma::fill::value(0.01)));
+        }
         write_row(file, "/priors/psi/mu", arma::vec(n_psi, arma::fill::zeros));
         write_mat(file, "/priors/psi/v_inv", arma::eye<arma::mat>(n_psi, n_psi));
 
@@ -2005,9 +2023,10 @@ int main(int argc, char *argv[])
                      "DfmNormalStochvol, DfmTvpGamma, DfmTvpStochvol\n";
         return 2;
     }
-    if (noncentred && model != "VarTvpStochvol")
+    if (noncentred && model != "VarTvpStochvol" && model != "VarTvpGamma")
     {
-        std::cerr << "Only VarTvpStochvol reads the non-centred prior omega_v so far\n";
+        std::cerr << "Only VarTvpStochvol and VarTvpGamma read the non-centred prior omega_v "
+                     "so far\n";
         return 2;
     }
     if (coint_rho && model != "VecTvpWishart" && model != "VecTvpGamma" &&
@@ -2218,7 +2237,7 @@ int main(int argc, char *argv[])
         }
         else
         {
-            write_var_tvp_gamma(file, varsel, covar, layout);
+            write_var_tvp_gamma(file, varsel, covar, layout, noncentred);
         }
 
         std::cout << "wrote " << dest.string() << group_suffix << " (" << model << ", varsel=" << varsel

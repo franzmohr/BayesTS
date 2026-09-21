@@ -34,6 +34,10 @@ VarTvpGammaInput read_input(const ModelFile &file)
         input.a_prior.sigma = read_gamma_prior(file, "/priors/a");
         input.a_prior.initial_state = read_normal_prior(file, "/priors/a");
 
+        // The non-centred parameterisation, in place of shape and rate. Which
+        // one the file chose is decided by validate(), which refuses both.
+        read_vec_if_present(file, "/priors/a/omega_v", input.a_prior.omega_v);
+
         // BVS is the only scheme this model implements. An SSVS file is left
         // unread here and rejected by validate(), which can say why.
         if (input.spec.varsel == VarSelection::bvs)
@@ -53,6 +57,7 @@ VarTvpGammaInput read_input(const ModelFile &file)
 
         input.psi_prior.sigma = read_gamma_prior(file, "/priors/psi");
         input.psi_prior.initial_state = read_normal_prior(file, "/priors/psi");
+        read_vec_if_present(file, "/priors/psi/omega_v", input.psi_prior.omega_v);
 
         // Selection for the covariance block is declared in its own group, so
         // it can differ from the model's.
@@ -141,6 +146,7 @@ void write_coefficients(const ModelFile &file, const VarTvpGammaDraws &draws)
         {
             write_draws(file, "/posterior/a/lambda", draws.a_lambda);
         }
+        write_noncentred(file, "/posterior/a", draws.a_noncentred);
     }
 
     if (draws.has_psi())
@@ -151,6 +157,7 @@ void write_coefficients(const ModelFile &file, const VarTvpGammaDraws &draws)
         {
             write_draws(file, "/posterior/psi/lambda", draws.psi_lambda);
         }
+        write_noncentred(file, "/posterior/psi", draws.psi_noncentred);
     }
 
     write_draws(file, "/posterior/u_omega_inv/coeffs", draws.u_omega_inv);

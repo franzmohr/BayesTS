@@ -412,6 +412,18 @@ void write_draws(const ModelFile &file, const std::string &dataset, const arma::
     write_armadillo_matrix_to_hdf5(file, dataset, arma::trans(draws), true);
 }
 
+void write_noncentred(const ModelFile &file, const std::string &group,
+                      const NoncentredStateDraws &draws)
+{
+    if (draws.empty())
+    {
+        return;
+    }
+    write_draws(file, group + "/omega", draws.omega);
+    write_draws(file, group + "/omega_log_zero", draws.log_zero);
+    write_draws(file, group + "/omega_log_zero_joint", draws.log_zero_joint);
+}
+
 void write_posterior_path(const ModelFile &file, const std::string &dataset, const arma::mat &path)
 {
     // The same orientation write_draws() gives a chain -- one row per quantity

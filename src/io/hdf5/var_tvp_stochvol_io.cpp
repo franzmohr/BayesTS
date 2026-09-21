@@ -154,25 +154,6 @@ VarTvpStochvolDraws read_forecast_coefficients(const ModelFile &file,
     return draws;
 }
 
-namespace
-{
-
-/// The three datasets a non-centred block adds beside its `sigma`, under the
-/// same group. Nothing is written for a centred block.
-void write_noncentred(const ModelFile &file, const std::string &group,
-                      const NoncentredStateDraws &draws)
-{
-    if (draws.empty())
-    {
-        return;
-    }
-    write_draws(file, group + "/omega", draws.omega);
-    write_draws(file, group + "/omega_log_zero", draws.log_zero);
-    write_draws(file, group + "/omega_log_zero_joint", draws.log_zero_joint);
-}
-
-} // namespace
-
 void write_coefficients(const ModelFile &file, const VarTvpStochvolDraws &draws)
 {
     ensure_group(file, "/posterior");

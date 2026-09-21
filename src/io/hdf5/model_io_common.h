@@ -182,6 +182,12 @@ arma::mat read_precision(const ModelFile &file, const VarSpec &spec, arma::uword
 
 void write_draws(const ModelFile &file, const std::string &dataset, const arma::mat &draws);
 
+/// The three datasets a block drawn under the non-centred parameterisation adds
+/// beside its `sigma` -- `omega`, `omega_log_zero` and `omega_log_zero_joint`
+/// under `group`. Writes nothing for a centred block.
+void write_noncentred(const ModelFile &file, const std::string &group,
+                      const NoncentredStateDraws &draws);
+
 /// A per-period posterior quantity, for the discounted models, whose output is
 /// a posterior rather than a chain.
 ///

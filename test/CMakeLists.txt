@@ -548,6 +548,10 @@ bayests_add_model_fixture(VarTvpStochvol-bvs-covar  VarTvpStochvol bvs  1 0 4)
 # all three random walks non-centred at once.
 bayests_add_model_fixture(VarTvpStochvol-noncentred           VarTvpStochvol none 0 0 4 --noncentred)
 bayests_add_model_fixture(VarTvpStochvol-noncentred-bvs-covar VarTvpStochvol bvs  1 0 4 --noncentred)
+# The same two rows for VarTvpGamma, which has the coefficient and covariance
+# random walks and a constant error precision.
+bayests_add_model_fixture(VarTvpGamma-noncentred              VarTvpGamma    none 0 0 4 --noncentred)
+bayests_add_model_fixture(VarTvpGamma-noncentred-bvs-covar    VarTvpGamma    bvs  1 0 4 --noncentred)
 
 # The dynamic factor model. Its own dimensions -- six series, two factors, a
 # transition of order two -- written by the DFM block at the bottom of
