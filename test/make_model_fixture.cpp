@@ -38,8 +38,8 @@
 //     --noncentred
 //                 writes omega_v in place of shape and rate in every prior on
 //                 how far a random walk moves: the non-centred parameterisation.
-//                 Refused for any model but VarTvpStochvol, VarTvpGamma and
-//                 VecTvpStochvol, the three that read it.
+//                 Refused for any model but VarTvpStochvol, VarTvpGamma,
+//                 VecTvpStochvol and VecTvpGamma, the four that read it.
 //     --hold-states
 //                 writes /model/forecast_states = "hold", so the forecast keeps
 //                 the last in-sample states rather than simulating them forward.
@@ -1289,16 +1289,19 @@ void write_vec_tvp_wishart(const ModelFile &file, const std::string &varsel, arm
     write_mat(file, "/initial/u_sigma_inv", arma::eye<arma::mat>(kK, kK));
 }
 
+/// `noncentred` switches the coefficients and the covariance block to the
+/// normal prior on their signed standard deviation. The cointegration space
+/// keeps its fixed unit state variance, and the error precision its gamma prior.
 void write_vec_tvp_gamma(const ModelFile &file, const std::string &varsel, bool covar,
-                         arma::uword nparams)
+                         arma::uword nparams, bool noncentred = false)
 {
-    write_vec_tvp_coefficients(file, varsel, nparams);
+    write_vec_tvp_coefficients(file, varsel, nparams, noncentred);
     write_vec_tvp_coint(file);
     write_vec_gamma_errors(file, "/initial/u_omega_inv");
 
     if (covar)
     {
-        write_vec_tvp_psi(file, varsel, kK * (kK - 1) / 2);
+        write_vec_tvp_psi(file, varsel, kK * (kK - 1) / 2, noncentred);
     }
 }
 
@@ -1839,7 +1842,7 @@ bool write_vec_model(const ModelFile &file, const std::string &model, const std:
     }
     else if (model == "VecTvpGamma")
     {
-        write_vec_tvp_gamma(file, varsel, covar, nparams);
+        write_vec_tvp_gamma(file, varsel, covar, nparams, noncentred);
     }
     else if (model == "VecTvpStochvol")
     {
@@ -2042,10 +2045,10 @@ int main(int argc, char *argv[])
         return 2;
     }
     if (noncentred && model != "VarTvpStochvol" && model != "VarTvpGamma" &&
-        model != "VecTvpStochvol")
+        model != "VecTvpStochvol" && model != "VecTvpGamma")
     {
-        std::cerr << "Only VarTvpStochvol, VarTvpGamma and VecTvpStochvol read the non-centred "
-                     "prior omega_v so far\n";
+        std::cerr << "Only VarTvpStochvol, VarTvpGamma, VecTvpStochvol and VecTvpGamma read the "
+                     "non-centred prior omega_v so far\n";
         return 2;
     }
     if (coint_rho && model != "VecTvpWishart" && model != "VecTvpGamma" &&
