@@ -124,6 +124,23 @@ heading, and move down into a version section when one is cut.
 
 ### Changed
 
+- **The four constant VECs refuse a prior the cointegration sampler cannot
+  honour.** The collapsed sampler of Koop, León-González and Strachan (2010)
+  relies on the loadings' prior being centred at zero and independent of every
+  other coefficient (Proposition 1, eq. 8). It rebuilds that prior's precision
+  block every draw, and the file's mean and cross-precision were read as given,
+  so a non-zero value in either made the three Gibbs blocks condition on three
+  different priors. Refused now, in `VecNormalWishart`, `VecKlgs2010`,
+  `VecNormalGamma` and `VecNormalStochvol`:
+  * a non-zero `/priors/a/mu` on the first `k*rank` positions;
+  * a non-zero `/priors/a/v_inv` between those positions and any other;
+  * a negative `/priors/beta/v_inv`;
+  * a `p_tau_inv` that is not positive definite while `v_inv > 0`;
+  * `/priors/beta/g_inv` anywhere but `VecNormalStochvol`.
+
+  *Draws are unchanged* for every file still accepted: `VecNormalWishart` and
+  `VecKlgs2010` are bit-identical in the fingerprint recording above.
+
 - **The agent documentation says how `VarTvpStochvol` relates to Primiceri
   (2005), and builds his priors.** `algorithms.md` gains *VarTvpStochvol and
   Primiceri (2005)*: the sampler draws the mixture indicators in the order Del
@@ -192,6 +209,46 @@ heading, and move down into a version section when one is cut.
   was touched.
 
 ### Fixed
+
+- **`VecNormalGamma` drew its error precisions without the cointegration space
+  prior's term.** The prior of Koop, León-González and Strachan (2010) scales
+  the loadings by the error covariance, `alpha | beta, Sigma ~ N(0, v⁻¹
+  (beta' P⁻¹ beta)⁻¹ ⊗ Sigma)`, so its density is also a factor in Sigma's
+  posterior. `VecNormalWishart` has always included it, as the paper's eq. (8).
+  `VecNormalGamma` left it out on the grounds that independent gammas had no
+  conjugate form for it. Given Psi they do. The term is `rank`
+  pseudo-observations `L` with `L L' = v alpha (beta' P⁻¹ beta) alpha'`
+  (`core::coint_prior_pseudo_errors()`). They are appended to the errors, so
+  each `omega_i` gains `r/2` on its shape and `(Psi L L' Psi')_ii / 2` on its
+  rate, and the covariance block `psi`, BVS scoring included, gains the
+  matching quadratic.
+
+  **Draws change** for `VecNormalGamma` with any cointegration term — every
+  configuration with `rank > 0`, with or without a covariance block or
+  selection. The new numbers are the right ones. With one variable a Wishart
+  on the precision is a gamma, so `VecNormalWishart` and `VecNormalGamma` with
+  matching priors are the same model. `unit.coint_klgs_prior` now finds their
+  posterior means of the precision within 0.07% of each other, against 2.6%
+  apart with the term left out: the test fails when the term is removed. On
+  the fixtures, the posterior mean of the precision of `VecNormalGamma-plain`
+  rises by 3.7%. At its weak shrinkage (`v = 0.1`) the added shape dominates.
+
+- **`VecNormalStochvol`'s loadings prior was scaled by a G that moved with the
+  volatilities.** `G⁻¹` was the average per-period precision of the current
+  draw, recomputed after every volatility draw. That made the prior on
+  `alpha` a function of `h` which `h`'s own draw never saw, so the chain was
+  not a Gibbs sampler for any prior. The paper allows any fixed, known G
+  (p. 228, eq. 7), and G is now fixed for the whole run. It is the new
+  optional `/priors/beta/g_inv` (`ConstantCointSpacePrior::g_inv`) when given.
+  Otherwise it is the same average, taken once from the starting values.
+
+  **Draws change** for `VecNormalStochvol` with `rank > 0`, in every
+  configuration. The fixtures move by the difference between a G re-averaged
+  every draw and one fixed at the start.
+
+  Both verified with the full fingerprint recording: 15 of 118 fixtures moved,
+  the eight `VecNormalGamma` and seven `VecNormalStochvol` ones, and nothing
+  else. `VecNormalWishart` and `VecKlgs2010` are bit-identical.
 
 - **`VarTvpDiscount` scored only the first horizon; every one after it came back
   as not a number.** `predictive_log_density()` read the rows of

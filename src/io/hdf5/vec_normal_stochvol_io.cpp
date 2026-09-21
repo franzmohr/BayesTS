@@ -73,6 +73,9 @@ VecNormalStochvolInput read_input(const ModelFile &file)
     if (input.use_beta())
     {
         input.beta_prior = read_coint_space_prior_constant(file, "/priors/beta");
+        // G^-1 of the loadings' prior, optional: absent, the sampler fixes it
+        // from the starting volatilities. See ConstantCointSpacePrior::g_inv.
+        read_mat_if_present(file, "/priors/beta/g_inv", input.beta_prior.g_inv);
         input.initial.beta = read_vec(file, "/initial/beta");
     }
 
