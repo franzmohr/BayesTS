@@ -40,7 +40,8 @@
 /// and drift further, under a covariance block, must still forecast finite
 /// numbers. Drawing the error through the inverse of Psi' diag(exp(-h)) Psi put
 /// a NaN into every variable from the first horizon where that inverse had an
-/// eigenvalue a rounding error below zero.
+/// eigenvalue a rounding error below zero. A held forecast from that same
+/// precision, in any of the six VARs, must be finite for the same reason.
 ///
 /// These are statistical statements. Each is checked to 5 percent with enough
 /// draws that the Monte Carlo standard error is about 1 percent or less, and
@@ -50,7 +51,9 @@
 #include "bayests/dfm_tvp_gamma.h"
 #include "bayests/dfm_tvp_stochvol.h"
 #include "bayests/reporter.h"
+#include "bayests/var_normal_gamma.h"
 #include "bayests/var_normal_stochvol.h"
+#include "bayests/var_normal_wishart.h"
 #include "bayests/var_tvp_gamma.h"
 #include "bayests/var_tvp_stochvol.h"
 #include "bayests/var_tvp_wishart.h"
@@ -579,6 +582,34 @@ void far_drift_stays_finite(const char *name, const bool vec)
     check("every simulated forecast is finite", simulated.is_finite());
 }
 
+/// Every VAR's forecast from a precision that stays where the sample ends, set
+/// to the badly conditioned one above: its inverse has an eigenvalue a rounding
+/// error below zero, and every forecast must still be a number.
+template <typename Sampler, typename Input, typename Draws>
+void held_far_apart_stays_finite(const char *name)
+{
+    std::printf("%s: held, from log-volatilities far apart\n", name);
+
+    constexpr int k = 4;
+    constexpr int h = 4;
+    constexpr arma::uword draws = 500;
+
+    Input input;
+    input.spec.k = k;
+    input.spec.h = h;
+    input.spec.forecast_states = ForecastStates::hold;
+
+    const arma::mat psi = far_drift_psi();
+    Draws posterior;
+    posterior.u_sigma_inv = arma::repmat(
+        arma::vectorise(arma::trans(psi) * arma::diagmat(arma::exp(-far_drift_h())) * psi), 1,
+        draws);
+
+    bayests::NullReporter reporter;
+    check("every held forecast is finite",
+          Sampler{}.forecast(input, posterior, reporter).values.is_finite());
+}
+
 } // namespace
 
 int main()
@@ -611,6 +642,18 @@ int main()
                            bayests::VecTvpStochvolDraws>("VecTvpStochvol", true);
     far_drift_stays_finite<bayests::VecNormalStochvolSampler, bayests::VecNormalStochvolInput,
                            bayests::VecNormalStochvolDraws>("VecNormalStochvol", true);
+    held_far_apart_stays_finite<bayests::VarNormalWishartSampler, bayests::VarNormalWishartInput,
+                                bayests::VarNormalWishartDraws>("VarNormalWishart");
+    held_far_apart_stays_finite<bayests::VarNormalGammaSampler, bayests::VarNormalGammaInput,
+                                bayests::VarNormalGammaDraws>("VarNormalGamma");
+    held_far_apart_stays_finite<bayests::VarNormalStochvolSampler, bayests::VarNormalStochvolInput,
+                                bayests::VarNormalStochvolDraws>("VarNormalStochvol");
+    held_far_apart_stays_finite<bayests::VarTvpWishartSampler, bayests::VarTvpWishartInput,
+                                bayests::VarTvpWishartDraws>("VarTvpWishart");
+    held_far_apart_stays_finite<bayests::VarTvpGammaSampler, bayests::VarTvpGammaInput,
+                                bayests::VarTvpGammaDraws>("VarTvpGamma");
+    held_far_apart_stays_finite<bayests::VarTvpStochvolSampler, bayests::VarTvpStochvolInput,
+                                bayests::VarTvpStochvolDraws>("VarTvpStochvol");
 
     if (failures > 0)
     {

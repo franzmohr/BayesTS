@@ -239,6 +239,31 @@ heading, and move down into a version section when one is cut.
 
 ### Fixed
 
+- **A forecast from a precision that does not move goes through
+  `core::covariance_root()` as well.** The six VARs' forecasts --
+  `VarNormalWishart`, `VarNormalGamma` and `VarNormalStochvol`, and the three
+  `VarTvp*` under `forecast_states = "hold"` or without a covariance block --
+  each carried an inline copy of the unguarded route the entry below replaces:
+  `eig_sym(solve(u_sigma_inv, I))`, then `Q Λ^½ Q'` at every horizon. A drawn
+  precision badly conditioned enough gave it an eigenvalue a rounding error
+  below zero, and so a NaN in every variable of that draw. They now take
+  `covariance_root(u_sigma_inv)` once per draw, which symmetrises and floors
+  that eigenvalue at zero, and the three that had two branches for adding the
+  error have one. The held path reads only `u_sigma_inv`, as before, so a
+  posterior without `u_omega_inv` or `psi` still forecasts.
+
+  **Draws change by a rounding error**, because `Q Λ^½ Q' e` is now evaluated
+  as one root times `e` rather than in whatever order Armadillo chose for the
+  four-term product. Over the full fingerprint recording (399 tests, 120
+  fixtures) 20 fixtures moved, only in `/posterior/forecast/forecasts` and by
+  at most 5.9e-16 relatively: the constant-coefficient VARs, the `*-hold`
+  fixtures of the time varying ones, and the VECs whose forecast is the level
+  VAR's through `VarNormalWishartSampler::forecast()` -- `VecKlgs2010`, the
+  constant VECs and the time varying ones under `hold`. No estimated draw, log
+  likelihood or simulated forecast moved. `unit.forecast_states` gains a held
+  forecast from the badly conditioned precision of the entry below for all
+  six VARs; every one of them fails on the old route.
+
 - **A simulated forecast could turn NaN once a log-volatility drifted far.**
   Under `forecast_states = "simulate"` the error at each horizon was drawn
   through `core::covariance_root()`, which inverted the rebuilt precision
