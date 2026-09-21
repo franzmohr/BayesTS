@@ -141,6 +141,7 @@ yet, and warns where there are some but `/model` asks for no horizon.
 | `/priors/u_sigma` | `df` (scalar), `scale` `(k, k)` | The Wishart models |
 | `/priors/u_sigma` | `shape` `(1, k)`, `rate` `(1, k)` | The gamma models |
 | `/priors/u_sigma` | `offset`, `sigma`, `shape`, `rate`, `mu` `(1, k)` and `v_inv` `(k, k)` | The stochastic volatility models |
+| `/priors/a`, `/priors/psi`, `/priors/u_sigma` | `omega_v` in place of `shape`/`rate` | `VarTvpStochvol` only: the non-centred parameterisation of that block's random walk. See below |
 | `/priors/u_scale` | `shape` `(1, k)`, `rate` `(1, k)` | The two `*Ald` models: the scale of the asymmetric Laplace |
 | `/priors/beta` | `v_inv` (scalar), `p_tau_inv` `(k_beta, k_beta)` | The constant VECs: the cointegration space prior |
 | `/priors/beta` | `mu`, `v_inv`, optional `rho`, optional `rho_min`/`rho_max`, optional `p_tau` `(k_beta, k_beta)` | The time-varying VECs — a state equation rather than a shrinkage. See below |
@@ -149,6 +150,36 @@ yet, and warns where there are some but `/model` asks for no horizon.
 | `/priors/v_sigma` | `shape` `(1, n_factors)`, `rate` `(1, n_factors)` | `DfmNormalGamma` and `DfmTvpGamma`: the factor innovation precisions |
 | `/priors/v_sigma` | `offset`, `sigma`, `shape`, `rate`, `mu` `(1, n_factors)` and `v_inv` `(n_factors, n_factors)` | `DfmNormalStochvol` and `DfmTvpStochvol`: the factor innovations' log-volatilities, the same group `/priors/u_sigma` is for the series, at the width of the factors |
 | `/priors/v_sigma` | `df`, `scale` `(n_state, n_state)` | `FavarNormalWishart`: its state innovation precision is a matrix |
+
+### The non-centred random walk and the test for time variation
+
+`VarTvpStochvol` reads each of its three random walks -- the coefficients
+(`/priors/a`), the covariance block (`/priors/psi`) and the log-volatility
+(`/priors/u_sigma`) -- in one of two parameterisations, block by block:
+
+- **Centred**, the default: `shape` and `rate`, an inverse gamma on the variance
+  of the innovations.
+- **Non-centred**: `omega_v` `(1, n)`, with `n` the block's width, in place of
+  `shape` and `rate`. It is the variance of a normal prior on the *signed
+  standard deviation* of the innovations, `omega ~ N(0, omega_v)` with the
+  variance equal to `omega^2` (Frühwirth-Schnatter and Wagner 2010), so
+  `omega_v` is also the prior mean of that variance. It must be finite and
+  greater than zero.
+
+A block that has both `omega_v` and `shape`/`rate` is refused rather than read
+one way or the other. The starting values are the centred ones: the chain starts
+`omega` at the square root of the variance `/initial/a_sigma_inv`,
+`/initial/psi_sigma_inv` or `/priors/u_sigma/sigma` gives, which therefore has to
+be strictly positive.
+
+What the non-centred form buys is that "this state does not move" is
+`omega = 0`, a point *inside* the prior rather than at the edge of it, so its
+Bayes factor is a Savage-Dickey density ratio that one run of the time-varying
+model estimates (Chan 2018). The draws for it are written beside the block's
+`sigma`; `results.md` has them and the formula.
+
+Only `VarTvpStochvol` reads `omega_v` so far. On any other model it is a dataset
+nothing reads, which `bayests check` warns about, and the model runs centred.
 
 `rho` is the autoregression of a time-varying VEC's cointegration state
 equation. It must lie in `(0, 1]`; 1 is the random walk. Giving **both**

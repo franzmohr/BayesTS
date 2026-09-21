@@ -140,11 +140,25 @@ struct GammaPrior
 /// to the next, and where it starts.
 struct RandomWalkPrior
 {
-    /// Inverse gamma on the variance of the state innovations.
+    /// Inverse gamma on the variance of the state innovations. The centred
+    /// parameterisation, and the one a file means unless it sets `omega_v`.
     GammaPrior sigma;
+
+    /// Prior variances of the signed standard deviations of the non-centred
+    /// parameterisation of Frühwirth-Schnatter and Wagner (2010),
+    /// \f$\omega_i \sim N(0, V_{\omega,i})\f$ with \f$\sigma_i = \omega_i^2\f$ --
+    /// so a prior mean of \f$V_{\omega,i}\f$ for the variance. Setting it replaces
+    /// `sigma`, and the two are not accepted together. It is what makes the
+    /// constant model a point in the interior of the prior, which the
+    /// Savage-Dickey test for time variation of Chan (2018) needs; see
+    /// src/core/models/noncentred_support.h. Only the models that say so read
+    /// it -- VarTvpStochvol, so far.
+    arma::vec omega_v;
 
     /// Normal on the state of the period before the sample.
     NormalPrior initial_state;
+
+    bool noncentred() const { return omega_v.n_elem > 0; }
 };
 
 /// Everything the stochastic volatility block reads beyond the state equation.

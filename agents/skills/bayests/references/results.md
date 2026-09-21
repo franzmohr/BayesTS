@@ -26,9 +26,39 @@ A run writes back into the same file, under `/posterior` (or under
 | `/posterior/v_sigma_inv/coeffs` | `(n_factors, iterations)`, or `(n_factors*tt, iterations)` under stochastic volatility; `(n_state*n_state, iterations)` for a FAVAR | `coefficients`, for a factor model |
 | `/posterior/forecast/forecasts` | `(h*k, iterations)`; `(h*(k + n_obs_factors), iterations)` for a FAVAR | `forecasts` |
 | `/posterior/loglik` | `(tt, iterations)`; `(tt, 1)` for the two `*TvpDiscount` models | `loglik` |
+| `<block>/omega` | `(n, iterations)` | `coefficients`, for a `VarTvpStochvol` block whose prior sets `omega_v`: the signed standard deviation of the random walk's innovations. `<block>` is `/posterior/a`, `/posterior/psi` or `/posterior/u_sigma_inv`, beside that block's `sigma`, which is still written, as `omega^2` |
+| `<block>/omega_log_zero` | `(n, iterations)` | The same: per state, the log density at zero of `omega`'s conditional posterior. See below |
+| `<block>/omega_log_zero_joint` | `(1, iterations)` | The same for the whole block at once |
 
 A factor model's `u_sigma_inv` is diagonal by assumption, so it stores `k` per
 draw rather than `k*k`, and `k*tt` where it moves with time.
+
+## Testing for time variation
+
+A block estimated non-centred (`omega_v`, see `model-file.md`) writes what the
+Savage-Dickey density ratio of Chan (2018) needs. The log Bayes factor of "state
+`i` moves" against "state `i` is constant at where it starts" is
+
+    log BF_i = log N(0; 0, omega_v[i]) - log mean_d exp(omega_log_zero[i, d])
+
+-- the prior density of `omega_i` at zero, less the log of the average over the
+draws of the conditional posterior density there. Positive favours time
+variation. Average in logs (subtract the maximum before exponentiating): the
+ordinates can be far from one.
+
+`omega_log_zero_joint` gives the same for "every state in the block moves"
+against "none does", with the prior term summed over the block. That is not
+"some state moves": a block in which one state moves and many stand still can
+come out against time variation, each state that stands still costing about a
+log point. The joint ordinate is not the sum of the per-state ones either,
+except for `/posterior/u_sigma_inv`, whose states are independent given the
+draw whenever `/priors/u_sigma/v_inv` is diagonal.
+
+The estimate is noisiest where the Bayes factor is large -- the ordinate is then
+an average of tiny numbers -- so report a numerical standard error beside it,
+from batch means or from several chains. The sign of `omega` is not identified,
+so its draws are symmetric about zero and bimodal where the state moves; its
+magnitude, and `sigma`, are what to read.
 
 ## The discounted pair writes a posterior, not draws
 
