@@ -222,6 +222,65 @@ step quantile is not that either. `validate_ald_spec()` in `src/core/inputs.cpp`
 holds both, so a file carrying either is refused before a chain is spent on it,
 and `forecast()` throws if it is somehow reached.
 
+Priors are refused too, where a sampler's Gibbs blocks would otherwise condition
+on different models and the chain target neither. Both sets below exist because
+the file's prior was read as given by one block and assumed by another:
+
+- **SSVS** (`validate_ssvs_normal_prior()`): at every selected position of `a`
+  and `psi`, a non-zero prior mean, anything off the diagonal of `v_inv` in that
+  row or column, and `tau0 >= tau1`. The sweep is George, Sun and Ni (2008,
+  eq. 12 with R = I), which scores each coefficient alone against a zero-centred
+  spike and slab.
+- **The four constant VECs** (`validate_constant_coint_block()`,
+  `validate_coint_loadings_prior()`): a non-zero `/priors/a/mu` on the first
+  `k*rank` positions, cross-precision between those and any other coefficient,
+  a negative `/priors/beta/v_inv`, a non-positive-definite `p_tau_inv` while
+  `v_inv > 0`, and `g_inv` anywhere but `VecNormalStochvol`. The collapsed
+  sampler of Koop, León-González and Strachan (2010, Prop. 1) rebuilds the
+  loadings' prior each draw and needs it zero-centred and independent.
+
+**BVS is warned about, not refused.** A prior variance above about 100 at a
+selected position (Korobilis 2013) makes the inclusion probabilities describe
+the prior. `flat_selection_prior()` / `flat_selection_message()` in
+`include/bayests/priors.h` hold the test and the one wording; `bayests check`
+prints it and the seven constant-coefficient `bvs` samplers say it through
+`Reporter::message()` (`report_flat_selection_prior()` in `model_support.h`), so
+an embedded host hears it too. The exit code stays 0. A new sampler offering
+`bvs` should make the same call — it consumes no random numbers.
+
+### The non-centred random walks
+
+`VarTvpStochvol`, `VecTvpStochvol`, `VarTvpGamma` and `VecTvpGamma` read each
+random walk block in one of two parameterisations: the centred default
+(`shape`/`rate`, inverse gamma on the state variance) or, with `omega_v` in its
+place, the non-centred one of Frühwirth-Schnatter and Wagner (2010),
+`x_t = x_0 + omega * x~_t`, `omega ~ N(0, omega_v)`. The blocks are `a` and
+`psi` everywhere and `u_sigma` in the two stochvol models; a VEC's cointegration
+space is never one of them, its unit state variance being what pins beta's
+scale. Both priors on one block is refused.
+
+The point of it is the Savage-Dickey test for time variation (Chan 2018):
+`omega = 0` is interior, so the sampler writes `<block>/omega`,
+`omega_log_zero` and `omega_log_zero_joint` beside `sigma` (which is still
+written, as `omega^2`, so everything downstream reads the block unchanged).
+The pieces, to reuse rather than copy when extending it to another model:
+
+- `draw_noncentred_path()` in `src/core/models/noncentred_support.h` — the
+  standardised path, then `(x_0, omega)` jointly, then a sign switch. It takes
+  the error covariance as one block or one per period.
+- `validate_state_variance_prior()` in `src/core/inputs.cpp` — accepts either
+  prior and refuses both.
+- `write_noncentred()` in `src/io/hdf5/model_io_common.cpp` — the three
+  outputs; the reader just fills `omega_v` in the `RandomWalkPrior`.
+- `unit.noncentred` — ordinates against their analytic marginal, and runs on
+  simulated data where nothing moves, where a volatility jumps and where an
+  intercept shifts; the Bayes factors must land on the generating side. A new
+  model gets a case here plus a `<Model>-noncentred` and a
+  `<Model>-noncentred-bvs-covar` fixture.
+
+Every model added so far left draws bit-identical for files without `omega_v`;
+that is the fingerprint check to run.
+
 ## Adding a model
 
 Work bottom-up, in the order in `CONTRIBUTING.md` §"The order to add the files
@@ -274,7 +333,7 @@ they shift in the last digits with the compiler, the BLAS and the CPU. The
 `fingerprints.yml` workflow runs the same base-vs-head comparison on every PR.
 
 A fingerprint recording is not something to read in full: the suite at `-V` is
-about 1.6 MB (374 tests from a clean clone), and a recording of it around
+well over 1.5 MB (400 tests, 120 fixtures, from a clean clone), and a recording of it around
 200 KB. Redirect, then read the reduction — both scripts do this by design, and
 neither `ctest -V` nor a `test/baselines/` file belongs on a terminal it is not
 being paged through. The same goes for a green `ctest` run: `> /tmp/ctest.log
@@ -311,6 +370,30 @@ core have to tell their users the same thing.
 
 New source files need the `SPDX-License-Identifier: BSD-3-Clause` header every
 existing one carries. Assisted commits get a `Co-Authored-By` trailer.
+
+*Unreleased* is also the best record of work in flight: each entry names the
+functions, fixtures and unit tests it added and the fingerprint count it was
+verified over. Read it before starting on anything that extends recent work,
+and when an entry's model gains a sibling, write the new entry the same way.
+
+## Branches, the push gate and releases
+
+`CONTRIBUTING.md` has the detail; the rules that shape a session:
+
+- `main` is the development version. Each piece of work is a short-lived
+  branch off it, merged back with `--no-ff` (the history is one
+  `Merge branch '<name>'` per piece) and deleted. There is no release or `dev`
+  branch.
+- A release is an annotated `v<version>` tag on `main` plus a GitHub release.
+  `CONTRIBUTING.md` §"Cutting a release" lists the seven steps in order —
+  `project(VERSION)`, folding *Unreleased* into a dated section, `CITATION.cff`,
+  then the Zenodo DOI in a follow-up commit.
+- `.githooks/pre-push` (enabled per clone with
+  `git config core.hooksPath .githooks`) builds and tests the pushed commits in
+  the `docker/` CI image, Debug and Release, and fails closed without Docker.
+  `docker/ci.sh` runs the same Linux jobs against the working tree on demand;
+  `docker/README.md` has the variants. A fingerprint recorded in the container
+  compares only with another recorded there.
 
 ## The agent documentation
 
