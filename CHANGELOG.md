@@ -29,6 +29,34 @@ heading, and move down into a version section when one is cut.
 
 ### Added
 
+- **A non-centred parameterisation of `VarTvpStochvol`'s random walks, and with
+  it a test for whether each one moves at all.** Setting `omega_v` in place of
+  `shape` and `rate` under `/priors/a`, `/priors/psi` or `/priors/u_sigma`
+  writes that block's random walk as `x_t = x_0 + omega * x~_t` with `x~_t` a
+  standard random walk, and puts a normal prior `N(0, omega_v)` on the signed
+  standard deviation `omega` (Frühwirth-Schnatter and Wagner 2010; for the
+  log-volatility, Kastner and Frühwirth-Schnatter 2014). Each draw takes the
+  standardised path, then `(x_0, omega)` jointly as a regression on it, then a
+  random sign switch. Because "the state does not move" is then `omega = 0`, a
+  point inside the prior, the Bayes factor for time variation is a
+  Savage-Dickey density ratio that one run estimates (Chan 2018): the sampler
+  writes `omega` and the log density at zero of its conditional posterior,
+  per state and per block, as `<block>/omega`, `<block>/omega_log_zero` and
+  `<block>/omega_log_zero_joint`. `sigma` is still written, as `omega^2`, so
+  forecasts, scores and everything else downstream read the block as before.
+  A block given both priors is refused. The blocks are switched one by one, so
+  a file can, say, test its volatilities while keeping its coefficients
+  centred. `unit.noncentred` checks the ordinates against the normal they are
+  the marginals of, and runs the sampler on simulated data where nothing moves,
+  where one volatility jumps and where one intercept shifts: the Bayes factors
+  land on the side the data were generated on. Two fixtures,
+  `VarTvpStochvol-noncentred` and `VarTvpStochvol-noncentred-bvs-covar`, put
+  the path through `golden.*` and `check.*`, and the golden harness now
+  fingerprints the nine new datasets. *Draws are unchanged* for every file
+  without `omega_v`: the full fingerprint recording, all 112 fixtures, is
+  identical before and after, the only difference being the absent lines for
+  the nine new datasets.
+
 - **A warning when `bvs` is selecting against a prior too flat to select
   against, from `bayests check` and from the run itself.** BVS draws an excluded coefficient from its prior and then
   scores that draw against the data, so the flatter the prior the harder it is

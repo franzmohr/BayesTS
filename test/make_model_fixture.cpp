@@ -35,6 +35,10 @@
 //                 same file can be read back by `bayests <command> --group`, so
 //                 a run over a nested model is comparable to one over a model at
 //                 the root.
+//     --noncentred
+//                 writes omega_v in place of shape and rate in every prior on
+//                 how far a random walk moves: the non-centred parameterisation.
+//                 Refused for any model but VarTvpStochvol, the one that reads it.
 //     --hold-states
 //                 writes /model/forecast_states = "hold", so the forecast keeps
 //                 the last in-sample states rather than simulating them forward.
@@ -649,7 +653,12 @@ void write_var_tvp_gamma(const ModelFile &file, const std::string &varsel, bool 
 
 /// The coefficient block every time-varying parameter model shares: a path, the
 /// precision of its innovations and the state it starts from.
-void write_tvp_coefficients(const ModelFile &file, const std::string &varsel, arma::uword nparams)
+///
+/// `noncentred` writes the normal prior on the signed standard deviation in
+/// place of the inverse gamma on the variance, with the prior mean of the
+/// variance the inverse gamma has -- rate over shape less one, 0.005.
+void write_tvp_coefficients(const ModelFile &file, const std::string &varsel, arma::uword nparams,
+                            bool noncentred = false)
 {
     // The state innovation variances are stored inverted; the sampler flips the
     // diagonal back on the way in. A tight prior keeps the random walk from
@@ -659,8 +668,15 @@ void write_tvp_coefficients(const ModelFile &file, const std::string &varsel, ar
               arma::mat(arma::diagmat(arma::vec(nparams, arma::fill::value(100.0)))));
     write_row(file, "/initial/a_init", arma::vec(nparams, arma::fill::zeros));
 
-    write_row(file, "/priors/a/shape", arma::vec(nparams, arma::fill::value(3.0)));
-    write_row(file, "/priors/a/rate", arma::vec(nparams, arma::fill::value(0.01)));
+    if (noncentred)
+    {
+        write_row(file, "/priors/a/omega_v", arma::vec(nparams, arma::fill::value(0.005)));
+    }
+    else
+    {
+        write_row(file, "/priors/a/shape", arma::vec(nparams, arma::fill::value(3.0)));
+        write_row(file, "/priors/a/rate", arma::vec(nparams, arma::fill::value(0.01)));
+    }
     write_row(file, "/priors/a/mu", arma::vec(nparams, arma::fill::zeros));
     write_mat(file, "/priors/a/v_inv", arma::eye<arma::mat>(nparams, nparams));
 
@@ -727,20 +743,31 @@ void write_var_tvp_wishart(const ModelFile &file, const std::string &varsel, con
     write_mat(file, "/initial/u_sigma_inv", arma::eye<arma::mat>(kK, kK));
 }
 
+/// `noncentred` switches every random walk the model has -- coefficients,
+/// covariance block and log-volatility -- to the normal prior on its signed
+/// standard deviation, each at the prior mean of the variance its inverse
+/// gamma has.
 void write_var_tvp_stochvol(const ModelFile &file, const std::string &varsel, bool covar,
-                            const Layout &layout)
+                            const Layout &layout, bool noncentred = false)
 {
     const arma::uword nparams = static_cast<arma::uword>(layout.nparams);
     const arma::uword n_psi = static_cast<arma::uword>(layout.n_psi);
 
-    write_tvp_coefficients(file, varsel, nparams);
+    write_tvp_coefficients(file, varsel, nparams, noncentred);
 
     // The offset keeps log(u^2 + offset) finite when a residual lands on zero,
     // and bounds it well inside the range the ten-component mixture covers.
     write_row(file, "/priors/u_sigma/offset", arma::vec(kK, arma::fill::value(1e-4)));
     write_row(file, "/priors/u_sigma/sigma", arma::vec(kK, arma::fill::value(0.1)));
-    write_row(file, "/priors/u_sigma/shape", arma::vec(kK, arma::fill::value(3.0)));
-    write_row(file, "/priors/u_sigma/rate", arma::vec(kK, arma::fill::value(0.2)));
+    if (noncentred)
+    {
+        write_row(file, "/priors/u_sigma/omega_v", arma::vec(kK, arma::fill::value(0.1)));
+    }
+    else
+    {
+        write_row(file, "/priors/u_sigma/shape", arma::vec(kK, arma::fill::value(3.0)));
+        write_row(file, "/priors/u_sigma/rate", arma::vec(kK, arma::fill::value(0.2)));
+    }
     write_row(file, "/priors/u_sigma/mu", arma::vec(kK, arma::fill::zeros));
     write_mat(file, "/priors/u_sigma/v_inv", arma::eye<arma::mat>(kK, kK));
 
@@ -755,8 +782,15 @@ void write_var_tvp_stochvol(const ModelFile &file, const std::string &varsel, bo
                   arma::mat(arma::diagmat(arma::vec(n_psi, arma::fill::value(100.0)))));
         write_row(file, "/initial/psi_init", arma::vec(n_psi, arma::fill::zeros));
 
-        write_row(file, "/priors/psi/shape", arma::vec(n_psi, arma::fill::value(3.0)));
-        write_row(file, "/priors/psi/rate", arma::vec(n_psi, arma::fill::value(0.01)));
+        if (noncentred)
+        {
+            write_row(file, "/priors/psi/omega_v", arma::vec(n_psi, arma::fill::value(0.005)));
+        }
+        else
+        {
+            write_row(file, "/priors/psi/shape", arma::vec(n_psi, arma::fill::value(3.0)));
+            write_row(file, "/priors/psi/rate", arma::vec(n_psi, arma::fill::value(0.01)));
+        }
         write_row(file, "/priors/psi/mu", arma::vec(n_psi, arma::fill::zeros));
         write_mat(file, "/priors/psi/v_inv", arma::eye<arma::mat>(n_psi, n_psi));
 
@@ -1801,7 +1835,7 @@ int main(int argc, char *argv[])
     {
         std::cerr << "Usage: " << argv[0]
                   << " <dest.h5> <model> <none|ssvs|bvs> <covar 0|1> <structural 0|1> <h>"
-                     " [group] [append] [--coint-rho] [--coint-p-tau] [--hold-states]"
+                     " [group] [append] [--coint-rho] [--coint-p-tau] [--hold-states] [--noncentred]"
                      " [--score]\n";
         return 2;
     }
@@ -1823,6 +1857,7 @@ int main(int argc, char *argv[])
     bool coint_p_tau = false;
     bool hold_states = false;
     bool score = false;
+    bool noncentred = false;
     bool bare_group_seen = false;
 
     for (int i = 7; i < argc; i++)
@@ -1850,6 +1885,13 @@ int main(int argc, char *argv[])
             // `bayests forecasts` into a scoring run, so it is what puts a
             // fixture through the predictive density code at all.
             score = true;
+        }
+        else if (token == "--noncentred")
+        {
+            // omega_v in place of shape and rate in every prior on how far a
+            // random walk moves: the non-centred parameterisation, and with it
+            // the Savage-Dickey ordinates under /posterior.
+            noncentred = true;
         }
         else if (token == "append")
         {
@@ -1961,6 +2003,11 @@ int main(int argc, char *argv[])
                      "VarTvpWishart, VarTvpGamma, VarTvpStochvol, VarNormalStochvol, "
                      "VecTvpWishart, VecTvpGamma, VecTvpStochvol, VecNormalStochvol, "
                      "DfmNormalStochvol, DfmTvpGamma, DfmTvpStochvol\n";
+        return 2;
+    }
+    if (noncentred && model != "VarTvpStochvol")
+    {
+        std::cerr << "Only VarTvpStochvol reads the non-centred prior omega_v so far\n";
         return 2;
     }
     if (coint_rho && model != "VecTvpWishart" && model != "VecTvpGamma" &&
@@ -2167,7 +2214,7 @@ int main(int argc, char *argv[])
         }
         else if (model == "VarTvpStochvol")
         {
-            write_var_tvp_stochvol(file, varsel, covar, layout);
+            write_var_tvp_stochvol(file, varsel, covar, layout, noncentred);
         }
         else
         {
@@ -2178,7 +2225,8 @@ int main(int argc, char *argv[])
                   << ", covar=" << covar << ", structural=" << structural << ", h=" << h
                   << ", k=" << kK << ", tt=" << kTT << ", nparams=" << layout.nparams
                   << (hold_states ? ", forecast_states=hold" : "")
-                  << (score ? ", score=1" : "") << ")\n";
+                  << (score ? ", score=1" : "") << (noncentred ? ", noncentred=1" : "")
+                  << ")\n";
     }
     catch (const std::exception &e)
     {

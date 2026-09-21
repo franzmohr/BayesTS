@@ -126,6 +126,11 @@ add_executable(bayests_unit_predictive_score unit_predictive_score.cpp)
 # normal whose density can be written down and compared with the sum of the
 # columns. An identity, and one no column shows on its own.
 add_executable(bayests_unit_factor_score unit_factor_score.cpp)
+# The non-centred random walk: its Savage-Dickey ordinates against the normal
+# they are the marginals of, an identity, and then VarTvpStochvol run on three
+# simulated samples, whose Bayes factors have to land on the side of zero the
+# data were generated on, per state and by margins read off eight seeds.
+add_executable(bayests_unit_noncentred unit_noncentred.cpp)
 
 foreach(_core_unit bayests_unit_identification bayests_unit_vec_klgs_2010 bayests_unit_coint_jacobian
                    bayests_unit_coint_dees_us bayests_unit_tvp_initial_state bayests_unit_forecast_states
@@ -136,7 +141,8 @@ foreach(_core_unit bayests_unit_identification bayests_unit_vec_klgs_2010 bayest
                    bayests_unit_favar_normal_wishart bayests_unit_bvs
                    bayests_unit_input_values bayests_unit_var_normal_stochvol
                    bayests_unit_var_tvp_discount bayests_unit_vec_tvp_discount
-                   bayests_unit_predictive_score bayests_unit_factor_score)
+                   bayests_unit_predictive_score bayests_unit_factor_score
+                   bayests_unit_noncentred)
     target_link_libraries(${_core_unit} PRIVATE bayests_core)
     target_link_libraries(${_core_unit} PRIVATE bayests_warnings)
 
@@ -305,7 +311,7 @@ foreach(_unit vec_to_var forecast_lags forecast_regressors_io forecast_group_io 
               vec_klgs_2010 vec_tvp_coint coint_prior_symmetry coint_jacobian coint_dees_us dfm_normal_gamma dfm_normal_stochvol
               dfm_tvp_gamma dfm_tvp_stochvol favar_normal_wishart var_ald thin model_group bvs ssvs
               input_values var_normal_stochvol var_tvp_discount vec_tvp_discount read_path bool_attributes tvp_initial_state
-              forecast_states)
+              forecast_states noncentred)
     add_test(NAME "unit.${_unit}" COMMAND "bayests_unit_${_unit}")
     set_tests_properties("unit.${_unit}" PROPERTIES
         ENVIRONMENT_MODIFICATION "${_bayests_test_env_mod}")
@@ -534,6 +540,14 @@ bayests_add_model_fixture(VarTvpStochvol-covar      VarTvpStochvol none 1 0 4)
 bayests_add_model_fixture(VarTvpStochvol-structural VarTvpStochvol none 0 1 4)
 bayests_add_model_fixture(VarTvpStochvol-nofcst     VarTvpStochvol none 0 0 0)
 bayests_add_model_fixture(VarTvpStochvol-bvs-covar  VarTvpStochvol bvs  1 0 4)
+
+# The non-centred parameterisation: omega_v in place of shape and rate in every
+# prior on how far a random walk moves, which puts the Savage-Dickey ordinates
+# under /posterior beside each block's sigma. The plain row and the one that
+# reads the most -- selection on both blocks and a covariance block, which makes
+# all three random walks non-centred at once.
+bayests_add_model_fixture(VarTvpStochvol-noncentred           VarTvpStochvol none 0 0 4 --noncentred)
+bayests_add_model_fixture(VarTvpStochvol-noncentred-bvs-covar VarTvpStochvol bvs  1 0 4 --noncentred)
 
 # The dynamic factor model. Its own dimensions -- six series, two factors, a
 # transition of order two -- written by the DFM block at the bottom of

@@ -105,6 +105,19 @@ constexpr const char *kOutputs[] = {
     // models, and for the factor innovations of the latter by the one after it.
     "/posterior/u_sigma_inv/sigma",
     "/posterior/v_sigma_inv/sigma",
+    // What a random walk estimated under the non-centred parameterisation adds
+    // beside its sigma: the signed standard deviation and the log ordinates at
+    // zero the Savage-Dickey test is built from. Written by VarTvpStochvol when
+    // its file sets omega_v, per block, and absent everywhere else.
+    "/posterior/a/omega",
+    "/posterior/a/omega_log_zero",
+    "/posterior/a/omega_log_zero_joint",
+    "/posterior/psi/omega",
+    "/posterior/psi/omega_log_zero",
+    "/posterior/psi/omega_log_zero_joint",
+    "/posterior/u_sigma_inv/omega",
+    "/posterior/u_sigma_inv/omega_log_zero",
+    "/posterior/u_sigma_inv/omega_log_zero_joint",
     "/posterior/loglik",
     "/posterior/forecast/forecasts",
 };

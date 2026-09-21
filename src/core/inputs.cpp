@@ -302,6 +302,36 @@ void validate_normal_block(const NormalPrior &prior, const arma::vec &initial,
 /// in -- ("coefficient", "a") and ("psi", "psi") are the two in use. Two labels
 /// rather than one because the messages read better that way and because these
 /// are the exact strings the models have always produced.
+/// The prior on how far a random walk moves, under whichever parameterisation
+/// the file chose: an inverse gamma on the variance, or -- with `omega_v` set --
+/// a normal on the signed standard deviation. Both at once is refused rather
+/// than resolved, since either reading would ignore half of what the file says.
+void validate_state_variance_prior(const RandomWalkPrior &prior, arma::uword n,
+                                   const std::string &thing)
+{
+    if (prior.noncentred())
+    {
+        if (prior.sigma.shape.n_elem > 0 || prior.sigma.rate.n_elem > 0)
+        {
+            throw std::invalid_argument(
+                "the " + thing + " innovations have both an inverse gamma prior on their "
+                "variance (shape, rate) and a normal prior on their standard deviation (omega_v); "
+                "give one: omega_v for the non-centred parameterisation, shape and rate for the "
+                "centred one");
+        }
+        require_length(prior.omega_v, n,
+                       ("prior variance of the standard deviation of the " + thing + " innovations")
+                           .c_str());
+        require_above(prior.omega_v, 0.0, true,
+                      "prior variance of the standard deviation of the " + thing + " innovations");
+        return;
+    }
+
+    require_length(prior.sigma.shape, n, ("prior shape of the " + thing + " innovations").c_str());
+    require_length(prior.sigma.rate, n, ("prior rate of the " + thing + " innovations").c_str());
+    require_gamma_values(prior.sigma, "the " + thing + " innovations");
+}
+
 void validate_tvp_block(const RandomWalkPrior &prior, const arma::mat &path,
                         const arma::mat &sigma_inv, const arma::vec &init, arma::uword n,
                         arma::uword tt, const char *noun, const char *name)
@@ -314,9 +344,15 @@ void validate_tvp_block(const RandomWalkPrior &prior, const arma::mat &path,
     require_diagonal(sigma_inv, "initial precision of the " + thing + " innovations");
     require_length(init, n, ("initial value of " + vec + " before the sample").c_str());
 
-    require_length(prior.sigma.shape, n, ("prior shape of the " + thing + " innovations").c_str());
-    require_length(prior.sigma.rate, n, ("prior rate of the " + thing + " innovations").c_str());
-    require_gamma_values(prior.sigma, "the " + thing + " innovations");
+    // The non-centred chain starts its standard deviations at the square root
+    // of the variance this inverts, so a zero would start it at infinity.
+    if (prior.noncentred())
+    {
+        require_above(arma::vec(sigma_inv.diag()), 0.0, true,
+                      "initial precision of the " + thing + " innovations");
+    }
+
+    validate_state_variance_prior(prior, n, thing);
     require_length(prior.initial_state.mu, n, ("prior mean of " + vec + " before the sample").c_str());
     require_square(prior.initial_state.v_inv, n,
                    ("prior precision of " + vec + " before the sample").c_str());
@@ -951,14 +987,12 @@ void VarTvpStochvolInput::validate() const
     }
 
     require_length(u_sigma_prior.offset, k, "offset of the log-volatility measurement equation");
-    require_length(u_sigma_prior.state.sigma.shape, k, "prior shape of the log-volatility innovations");
-    require_length(u_sigma_prior.state.sigma.rate, k, "prior rate of the log-volatility innovations");
+    validate_state_variance_prior(u_sigma_prior.state, k, "log-volatility");
     require_length(u_sigma_prior.state.initial_state.mu, k, "prior mean of the log-volatility before the sample");
     require_square(u_sigma_prior.state.initial_state.v_inv, k, "prior precision of the log-volatility before the sample");
 
     require_above(u_sigma_prior.offset, 0.0, true,
                   "offset of the log-volatility measurement equation");
-    require_gamma_values(u_sigma_prior.state.sigma, "the log-volatility innovations");
     require_symmetric(u_sigma_prior.state.initial_state.v_inv,
                       "prior precision of the log-volatility before the sample");
 

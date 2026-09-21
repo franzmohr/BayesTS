@@ -15,6 +15,7 @@ add_library(bayests_core
             spec.cpp
             inputs.cpp
             models/model_support.h
+            models/noncentred_support.h
             models/dfm_support.h
             models/discount_support.h
             models/dfm_normal_gamma.cpp
