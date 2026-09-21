@@ -552,6 +552,163 @@ n_obs_factors)`, because its leading block is the identity rather than a unit
 triangle. The two coincide at a whole family of dimensions, so a length check
 will not catch the substitution. See `algorithms.md`.
 
+## Primiceri's priors from a training sample
+
+`VarTvpStochvol` with a covariance block is Primiceri's (2005) time-varying
+structural VAR, with the three differences `algorithms.md` sets out under
+*VarTvpStochvol and Primiceri (2005)*: diagonal innovation covariances, the
+log-volatility on the scale of the variance, and no calibration done for you.
+This builds his benchmark priors — OLS on a training sample, `k_Q = 0.01`,
+`k_S = 0.1`, `k_W = 0.01` — for his dimensions, three variables and two lags,
+and translates each into what the file reads. The training sample is used for
+the priors only; the model is estimated on the periods after it.
+
+```python
+import h5py
+import numpy as np
+
+k, p, m, s, n = 3, 2, 0, 0, 1      # Primiceri's model: 3 variables, 2 lags, an intercept
+tau, tt = 40, 80                   # 40 training periods, then 80 to estimate on
+iterations, burnin = 300, 300
+
+n_x = k * p + m * (s + 1) + n      # 7 regressors per equation
+nparams = k * n_x                  # 21 coefficients: Q is 21 x 21 in the paper
+n_psi = k * (k - 1) // 2           # 3 free elements of A_t
+
+k_Q, k_S, k_W = 0.01, 0.1, 0.01    # his benchmark values, section 4.1
+df_Q = tau                         # his degrees of freedom for Q: the training sample size
+
+rng = np.random.default_rng(2005)
+Y_full = np.zeros((p + tau + tt, k))
+for t in range(p, p + tau + tt):
+    Y_full[t] = 0.5 * Y_full[t - 1] + 0.2 * Y_full[t - 2] + rng.standard_normal(k)
+
+
+def regressors(first, last):
+    """x_t = [y_{t-1}', ..., y_{t-p}', 1] for rows first..last-1 of Y_full."""
+    lags = [Y_full[first - j:last - j] for j in range(1, p + 1)]
+    return np.hstack(lags + [np.ones((last - first, 1))])
+
+
+def symmetric_inverse(v):
+    """The inverse of a covariance, symmetric to the last digit as the reader wants."""
+    inv = np.linalg.inv(v)
+    return (inv + inv.T) / 2
+
+
+# --- OLS on the training sample --------------------------------------------
+X0, Y0 = regressors(p, p + tau), Y_full[p:p + tau]
+XtX_inv = np.linalg.inv(X0.T @ X0)
+Pi = (XtX_inv @ X0.T @ Y0).T                   # k x n_x, y_t = Pi x_t + u_t
+U0 = Y0 - X0 @ Pi.T                            # (tau, k) residuals
+b_ols = Pi.reshape(-1, order="F")              # vec(Pi): the ordering of `a`
+V_b = np.kron(XtX_inv, U0.T @ U0 / (tau - n_x))
+
+# A_t: equation i regressed on -u_1 ... -u_{i-1}, the regression the sampler runs,
+# one block per equation in the row-by-row order `psi` is stored in.
+a_ols, V_a = np.zeros(n_psi), np.zeros((n_psi, n_psi))
+rate_psi = np.zeros(n_psi)
+log_var = np.zeros(k)                          # log sigma_i^2 of the structural shocks
+log_var[0] = np.log(U0[:, 0].var(ddof=1))
+start = 0
+for i in range(1, k):
+    W = -U0[:, :i]
+    G = np.linalg.inv(W.T @ W)
+    coef = G @ W.T @ U0[:, i]
+    e = U0[:, i] - W @ coef
+    s2 = e @ e / (tau - i)
+    block = slice(start, start + i)
+    a_ols[block], V_a[block, block] = coef, G * s2
+    # S_i ~ IW(k_S^2 (i+1) V(A_i), i+1): each diagonal element is marginally
+    # IG(1, k_S^2 (i+1) V_jj / 2).
+    rate_psi[block] = k_S**2 * (i + 1) * np.diag(V_a[block, block]) / 2
+    log_var[i] = np.log(s2)
+    start += i
+
+# --- The estimation sample -------------------------------------------------
+Y = Y_full[p + tau:]
+X = regressors(p + tau, p + tau + tt)
+Z = np.zeros((tt * k, nparams))
+for t in range(tt):
+    Z[t * k:(t + 1) * k] = np.kron(X[t].reshape(1, -1), np.eye(k))
+
+with h5py.File("primiceri.h5", "w") as f:
+    mdl = f.create_group("/model")
+    mdl.attrs["algorithm"] = "VarTvpStochvol"
+    for name, value in dict(k=k, p=p, m=m, s=s, n=n, h=0, iterations=iterations,
+                            burnin=burnin).items():
+        mdl.attrs[name] = value
+    mdl.attrs["varsel"] = "none"
+    mdl.attrs["error"] = "sv+covar"            # A_t is the covariance block
+
+    f["/data/train/y"] = Y.reshape(1, -1)
+    f["/data/train/z"] = Z.T
+
+    # B_0 ~ N(B_OLS, 4 V(B_OLS)), and Q ~ IW(k_Q^2 df_Q V(B_OLS), df_Q), whose
+    # diagonal elements are marginally IG((df_Q - nparams + 1)/2, k_Q^2 df_Q V_jj / 2).
+    f["/priors/a/mu"] = b_ols.reshape(1, -1)
+    f["/priors/a/v_inv"] = symmetric_inverse(4 * V_b)
+    f["/priors/a/shape"] = np.full((1, nparams), (df_Q - nparams + 1) / 2)
+    f["/priors/a/rate"] = (k_Q**2 * df_Q * np.diag(V_b) / 2).reshape(1, -1)
+
+    # A_0 ~ N(A_OLS, 4 V(A_OLS)), and the S blocks as above.
+    f["/priors/psi/mu"] = a_ols.reshape(1, -1)
+    f["/priors/psi/v_inv"] = symmetric_inverse(4 * V_a)
+    f["/priors/psi/shape"] = np.ones((1, n_psi))
+    f["/priors/psi/rate"] = rate_psi.reshape(1, -1)
+
+    # log sigma_0 ~ N(log sigma_OLS, I) is h_0 ~ N(log sigma_OLS^2, 4 I) on the
+    # variance scale, and W ~ IW(k_W^2 4 I, 4) on log sigma is IG(1, 2 k_W^2)
+    # per element there -- four times that, IG(1, 8 k_W^2), on log sigma^2.
+    f["/priors/u_sigma/mu"] = log_var.reshape(1, -1)
+    f["/priors/u_sigma/v_inv"] = np.eye(k) / 4
+    f["/priors/u_sigma/shape"] = np.ones((1, k))
+    f["/priors/u_sigma/rate"] = np.full((1, k), 8 * k_W**2)
+    f["/priors/u_sigma/offset"] = np.full((1, k), 0.001)   # his c-bar
+    f["/priors/u_sigma/sigma"] = np.full((1, k), 8 * k_W**2)  # where W starts
+
+    # Start every path at its prior mean, flat over the sample.
+    f["/initial/a"] = np.tile(b_ols, (tt, 1))
+    f["/initial/a_sigma_inv"] = np.diag(1 / (k_Q**2 * np.diag(V_b)))
+    f["/initial/a_init"] = b_ols.reshape(1, -1)
+    f["/initial/psi"] = np.tile(a_ols, (tt, 1))
+    f["/initial/psi_sigma_inv"] = np.diag(1 / (k_S**2 * np.diag(V_a)))
+    f["/initial/psi_init"] = a_ols.reshape(1, -1)
+    f["/initial/h"] = np.tile(log_var, (tt, 1)).T          # (k, tt)
+    f["/initial/h_init"] = log_var.reshape(1, -1)
+```
+
+Three things in that translation are choices rather than arithmetic, so change
+them knowingly:
+
+- **Each diagonal prior is the marginal of his inverse Wishart**, which is what
+  the `shape` and `rate` lines compute: the `j`-th diagonal element of an
+  `IW(Ψ, ν)` of dimension `d` is `IG((ν - d + 1)/2, Ψ_jj/2)`. The correlations
+  his prior allows are gone, since BayesTS has no off-diagonal to put them in.
+  This needs `ν > d - 1`; for `Q` it is why `df_Q` has to exceed `nparams - 1`,
+  and a model with more coefficients than training periods has to pick its
+  degrees of freedom some other way.
+- **`V(A_OLS)` comes from the equation-by-equation regressions** the sampler
+  itself runs. The paper does not say how it computed it.
+- **The offset is his `c̄ = 0.001`**, and it is added to the squared
+  *structural* residual, as in his (A.4).
+
+Then:
+
+```bash
+OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 bayests posterior primiceri.h5
+```
+
+The volatility path Primiceri plots is `σ_{i,t}`, the standard deviation of the
+structural shock. `/posterior/u_omega_inv/coeffs` holds its inverse square,
+period by period:
+
+```python
+with h5py.File("primiceri.h5", "r") as f:
+    omega_inv = f["/posterior/u_omega_inv/coeffs"][:]    # (k*tt, iterations)
+sd = (1 / np.sqrt(omega_inv)).reshape(tt, k, -1)         # period, variable, draw
+```
+
 ## Generating a fixture instead
 
 The BayesTS tree ships a generator that writes a complete, admissible model file

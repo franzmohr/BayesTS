@@ -107,6 +107,23 @@ heading, and move down into a version section when one is cut.
 
 ### Changed
 
+- **The agent documentation says how `VarTvpStochvol` relates to Primiceri
+  (2005), and builds his priors.** `algorithms.md` gains *VarTvpStochvol and
+  Primiceri (2005)*: the sampler draws the mixture indicators in the order Del
+  Negro and Primiceri (2015) corrected the appendix to, and differs from the
+  paper in three ways a reader carrying his priors over has to know -- diagonal
+  `Q`, `S` and `W` with an inverse-gamma prior per element, the log-volatility
+  on the scale of the variance so that his `W` is a quarter of the one here,
+  and no training-sample calibration. A table translates each of his priors
+  into the datasets that hold it, reading every inverse Wishart as the
+  inverse-gamma marginals of its diagonal. `recipes.md` gains *Primiceri's
+  priors from a training sample*, which builds his benchmark -- OLS on 40
+  periods, `k_Q = 0.01`, `k_S = 0.1`, `k_W = 0.01` -- for his three variables
+  and two lags, and `agents.recipes` runs it: the file passes `bayests check`
+  clean, every dataset has the shape the text states, and the structural
+  standard deviations come back near the unit shocks it simulated. No code
+  changed.
+
 - **`ssvs` refuses three priors it could not honour.** The sweep draws each
   inclusion indicator by weighing `N(0, tau0²)` against `N(0, tau1²)` at its
   coefficient alone, which is George, Sun and Ni (2008, eq. 12 with R = I). The

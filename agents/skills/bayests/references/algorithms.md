@@ -110,6 +110,62 @@ the chain wandered.
 `/data/train/z`. `/priors/a` and `/priors/u_sigma`. `/initial/a` and the error
 starting values. `/data/forecast/x` when `h > 0`.
 
+### VarTvpStochvol and Primiceri (2005)
+
+`VarTvpStochvol` with `error = "sv+covar"` is Primiceri's time-varying
+structural VAR: coefficients, simultaneous relations and log-volatilities each
+follow a random walk, and the covariance block `Psi` is his unit lower
+triangular `A_t`, with `Psi u_t = Σ_t ε_t`. The Gibbs sampler runs his steps
+in the order Del Negro and Primiceri (2015) corrected them to: the mixture
+indicators are drawn from the residuals of the current `B` and `A`, immediately
+before the volatility path, not after it as the 2005 appendix prints. Three
+things differ from the paper, and all three matter when carrying his priors or
+his results over:
+
+- **`Q`, `S` and `W` are diagonal.** Every coefficient, every element of `Psi`
+  and every log-volatility has its own random walk variance with its own
+  inverse-gamma prior (`shape`, `rate` under `/priors/a`, `/priors/psi` and
+  `/priors/u_sigma`). The paper's inverse Wisharts allow the innovations to be
+  correlated — coefficients within and across equations, and the volatilities
+  of different variables — and nothing here can express that. His own §4.4.3
+  finds the cross-equation correlations unimportant for his application, which
+  is the usual argument for the simplification, not a guarantee for yours.
+- **The volatility state is the log *variance*.** The sampler measures
+  `log(u² + c) = h + e`, where he measures `log(u² + c) = 2 log σ + e`. The
+  model is the same; the scale of everything about `h` is not. His `W` is a
+  quarter of the one here, and his `log σ_0 ~ N(log σ̂, I)` is
+  `h_0 ~ N(log σ̂², 4 I)`. Read `u_omega_inv` as `1/σ²_t`.
+- **Nothing is calibrated for you.** He sets every prior from OLS on a 40
+  period training sample, and his §4.4.1 shows the one that matters is `k_Q`:
+  it is what decides how much the coefficients may drift, and a looser one
+  gives paths that chase every outlier. `recipes.md` has *Primiceri's priors
+  from a training sample*, which builds his benchmark in full.
+
+Translating a prior of his into this file: the `j`-th diagonal element of an
+`IW(Ψ, ν)` of dimension `d` is marginally `IG((ν - d + 1)/2, Ψ_jj/2)`, which
+is what `shape` and `rate` are. So:
+
+| His prior | Here |
+| --- | --- |
+| `B_0 ~ N(B̂, 4 V(B̂))` | `/priors/a/mu = B̂`, `/priors/a/v_inv = (4 V(B̂))⁻¹` |
+| `Q ~ IW(k_Q² ν V(B̂), ν)`, `ν = 40` | `/priors/a/shape = (ν - nparams + 1)/2`, `rate = k_Q² ν V_jj / 2` |
+| `A_0 ~ N(Â, 4 V(Â))` | `/priors/psi/mu = Â`, `/priors/psi/v_inv = (4 V(Â))⁻¹` |
+| `S_i ~ IW(k_S² (i+1) V(Â_i), i+1)` | `/priors/psi/shape = 1`, `rate = k_S² (i+1) V_jj / 2` |
+| `log σ_0 ~ N(log σ̂, I)` | `/priors/u_sigma/mu = log σ̂²`, `/priors/u_sigma/v_inv = I/4` |
+| `W ~ IW(k_W² 4 I, 4)`, three variables | `/priors/u_sigma/shape = 1`, `rate = 8 k_W²` |
+| `c̄ = 0.001` | `/priors/u_sigma/offset = 0.001` |
+
+His benchmark is `k_Q = 0.01`, `k_S = 0.1`, `k_W = 0.01`. The `Q` row needs
+`ν > nparams - 1`, which his 21 coefficients and 40 periods satisfy and a
+larger model may not.
+
+Two further differences change nothing about the posterior. The mixture that
+approximates `log χ²(1)` is the ten-component one of Omori, Chib, Shephard and
+Nakajima (2007) rather than his seven of Kim, Shephard and Chib (1998), which
+approximates it more closely. And the state paths are drawn with the simulation
+smoother of Durbin and Koopman (2002) rather than Carter and Kohn (1994): a
+different algorithm for the same conditional distribution.
+
 ### VEC
 
 Everything a VAR needs, plus `rank`, `k_beta`, `n_restricted`,
