@@ -133,6 +133,38 @@ void the_two_argument_forms_agree()
     }
 }
 
+/// The identity transition is left out of the products, and nothing moves.
+///
+/// A constant `B` that is the identity takes a path of its own through the
+/// smoother, one with no products by `B` in it; a stack of identities is not
+/// recognised and goes through the general one. The two have to agree exactly,
+/// which the 'B' alone check above says for one small model. Here it is said at
+/// the size a VEC sub-model of the project has, and with more equations than
+/// states, because what the fast path relies on is how Armadillo groups the
+/// products it leaves out, and that grouping depends on the dimensions.
+void the_identity_transition_changes_nothing()
+{
+    std::printf("the identity transition's own path gives the same draw\n");
+
+    struct Size { arma::uword k, m, t; const char *label; };
+    const Size sizes[] = {{4, 60, 30, "k = 4, M = 60, T = 30"},
+                          {8, 3, 25, "k = 8, M = 3, more equations than states"}};
+
+    for (const Size &size : sizes)
+    {
+        const Model d = make_model(size.k, size.m, size.t);
+
+        arma::arma_rng::set_seed(11);
+        const arma::mat fast = kalman_durbin_koopman_2002(d.y, d.z, d.sigma_u, d.sigma_v, d.B,
+                                                          d.a_init, d.P_init);
+        arma::arma_rng::set_seed(11);
+        const arma::mat general = kalman_durbin_koopman_2002(d.y, d.z, d.sigma_u, d.sigma_v,
+                                                             stacked(d.B, size.t), d.a_init,
+                                                             d.P_init);
+        check(size.label, arma::approx_equal(fast, general, "absdiff", 0.0));
+    }
+}
+
 /// A state that is allowed to move in one period only has to move in that one.
 ///
 /// With `sigma_v` zero the transition is deterministic and, with `B` the
@@ -249,6 +281,7 @@ int main()
     the_two_argument_forms_agree();
     time_variation_lands_in_the_right_period();
     measurement_blocks_land_in_the_right_period();
+    the_identity_transition_changes_nothing();
     the_draw_is_well_formed();
 
     std::printf("\n%s\n", failures == 0 ? "all checks passed" : "THERE WERE FAILURES");

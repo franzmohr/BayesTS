@@ -136,6 +136,23 @@ heading, and move down into a version section when one is cut.
 
 ### Changed
 
+- **The simulation smoother leaves the identity transition out of its
+  products.** Every time varying coefficient block is a random walk, so its
+  transition `B` is the identity, and `kalman_durbin_koopman_2002` still copied
+  it every period and multiplied by it as a full M x M matrix twice per period
+  in the filter, plus a matrix-vector product in each of the other two passes. A constant `B`
+  that is exactly the identity is now recognised once and those products are
+  skipped; any other `B`, and a per-period stack, take the general path as
+  before. With k = 5 and T = 176 on one thread, one smoother call takes 25% less
+  time at M = 60 coefficients (5.1 to 3.8 ms), 35% less at M = 78 (10.2 to
+  6.5 ms) and 38% less at M = 120 (34.5 to 21.1 ms), and this call is most of
+  an iteration of every `*Tvp*` sampler. *Draws are unchanged*: a product with
+  an exact identity is exact, and the one product regrouped by dropping `B`,
+  `B P Z' F^-1`, is one Armadillo already evaluates as `B ((P Z') F^-1)`. The
+  fingerprint comparison of all 120 fixtures before and after shows none moved,
+  and `unit.kalman` now checks the identity's path against the general one
+  exactly, at M = 60 and with more equations than states.
+
 - **The four constant VECs refuse a prior the cointegration sampler cannot
   honour.** The collapsed sampler of Koop, León-González and Strachan (2010)
   relies on the loadings' prior being centred at zero and independent of every
