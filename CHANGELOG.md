@@ -29,6 +29,21 @@ heading, and move down into a version section when one is cut.
 
 ### Added
 
+- **`VarTvpGamma` takes the non-centred prior too.** `omega_v` in place of
+  `shape` and `rate` under `/priors/a` or `/priors/psi` draws that random walk
+  non-centred and writes `omega`, `omega_log_zero` and `omega_log_zero_joint`
+  beside its `sigma`, exactly as `VarTvpStochvol` does; the error precision
+  does not move in this model, so there is no third block. The covariance
+  block's error covariance is one matrix for every period here, so
+  `draw_noncentred_path()` now takes one block as well as one per period, and
+  `write_noncentred()` moves to `model_io_common` for the two readers to share.
+  `unit.noncentred` runs `VarTvpGamma` with a covariance block on a shifting
+  intercept, and two fixtures, `VarTvpGamma-noncentred` and
+  `VarTvpGamma-noncentred-bvs-covar`, put the path through `golden.*` and
+  `check.*`. *Draws are unchanged* for every file without `omega_v`, the
+  `VarTvpStochvol` ones with it included: the full fingerprint recording, all
+  114 fixtures that existed before, is identical.
+
 - **A non-centred parameterisation of `VarTvpStochvol`'s random walks, and with
   it a test for whether each one moves at all.** Setting `omega_v` in place of
   `shape` and `rate` under `/priors/a`, `/priors/psi` or `/priors/u_sigma`

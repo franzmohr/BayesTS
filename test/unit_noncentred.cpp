@@ -27,10 +27,18 @@
 /// That is the test doing what it says, and why the per-state ordinates are
 /// written beside the joint one.
 ///
+/// VarTvpGamma is run on the shifting intercept as well, with a covariance
+/// block on, which puts its single-block path through the helper: the errors
+/// are independent, so no covariance coefficient should be found to move. Over
+/// eight seeds the shifting intercept's log Bayes factor ranged from 5.1 to 14.9
+/// and the largest of the others reached 0.84, so "not found to move" asks for
+/// below 2 here -- still short of the 3 that "found to move" needs.
+///
 /// Last, what validate() refuses: a file that gives both priors on how far a
 /// random walk moves, and an omega_v it could not use.
 
 #include "bayests/reporter.h"
+#include "bayests/var_tvp_gamma.h"
 #include "bayests/var_tvp_stochvol.h"
 #include "core/models/noncentred_support.h"
 
@@ -326,6 +334,74 @@ void the_bayes_factors_point_the_right_way()
     }
 }
 
+/// The same sample and coefficient prior as simulate(), for VarTvpGamma: a
+/// constant error precision with a gamma prior, and a covariance block.
+bayests::VarTvpGammaInput as_gamma(const bayests::VarTvpStochvolInput &sv)
+{
+    const arma::uword k = static_cast<arma::uword>(sv.spec.k);
+    const arma::uword tt = sv.train.y.n_rows;
+
+    bayests::VarTvpGammaInput input;
+    input.spec = sv.spec;
+    input.spec.covar = true;
+    input.train = sv.train;
+    input.a_prior = sv.a_prior;
+    input.initial.a = sv.initial.a;
+    input.initial.a_sigma_inv = sv.initial.a_sigma_inv;
+    input.initial.a_init = sv.initial.a_init;
+
+    const arma::uword n_psi = k * (k - 1) / 2;
+    input.psi_prior.omega_v = arma::vec(n_psi, arma::fill::value(0.01));
+    input.psi_prior.initial_state.mu = arma::zeros<arma::vec>(n_psi);
+    input.psi_prior.initial_state.v_inv = arma::eye<arma::mat>(n_psi, n_psi);
+    input.initial.psi = arma::zeros<arma::mat>(n_psi, tt);
+    input.initial.psi_sigma_inv = arma::eye<arma::mat>(n_psi, n_psi) * 100.0;
+    input.initial.psi_init = arma::zeros<arma::vec>(n_psi);
+
+    input.u_sigma_prior.shape = arma::vec(k, arma::fill::value(3.0));
+    input.u_sigma_prior.rate = arma::vec(k, arma::fill::value(2.0));
+    input.initial.u_omega_inv = arma::eye<arma::mat>(k, k);
+
+    return input;
+}
+
+void the_gamma_model_finds_the_shifting_intercept()
+{
+    std::printf("VarTvpGamma: the first equation's intercept shifts\n");
+
+    const bayests::VarTvpGammaInput input =
+        as_gamma(simulate(arma::ones<arma::mat>(200, 2), 4.0));
+
+    bayests::NullReporter reporter;
+    bayests::VarTvpGammaDraws d;
+    bool ran = false;
+    try
+    {
+        d = bayests::VarTvpGammaSampler{}.draw_coefficients(input, reporter);
+        ran = true;
+    }
+    catch (const std::exception &e)
+    {
+        std::printf("    threw: %s\n", e.what());
+    }
+    check("the chain runs to the end", ran);
+    if (!ran)
+    {
+        return;
+    }
+
+    const double c1 = log_bf(d.a_noncentred, 4, 0.01);
+    const double c2 = log_bf(d.a_noncentred, 5, 0.01);
+    const double p1 = log_bf(d.psi_noncentred, 0, 0.01);
+    std::printf("    log BF: intercepts %.2f, %.2f; covariance %.2f\n", c1, c2, p1);
+    check("the shifting intercept is found to move", c1 > 3.0);
+    check("the other is not", c2 < 2.0);
+    check("the covariance coefficient is not", p1 < 2.0);
+    check("psi sigma is written as omega squared",
+          arma::approx_equal(d.psi_sigma, arma::square(d.psi_noncentred.omega), "absdiff",
+                             1e-12));
+}
+
 /// Whether validate() refuses `input`, and with a message that mentions `word`.
 bool refused(const bayests::VarTvpStochvolInput &input, const std::string &word)
 {
@@ -372,6 +448,7 @@ int main()
     the_joint_ordinate_is_the_sum_for_independent_states();
     the_draw_has_the_conditional_mean();
     the_bayes_factors_point_the_right_way();
+    the_gamma_model_finds_the_shifting_intercept();
     the_prior_is_one_or_the_other();
 
     std::printf("%s\n", failures == 0 ? "all checks passed" : "SOME CHECKS FAILED");

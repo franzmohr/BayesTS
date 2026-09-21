@@ -107,8 +107,8 @@ constexpr const char *kOutputs[] = {
     "/posterior/v_sigma_inv/sigma",
     // What a random walk estimated under the non-centred parameterisation adds
     // beside its sigma: the signed standard deviation and the log ordinates at
-    // zero the Savage-Dickey test is built from. Written by VarTvpStochvol when
-    // its file sets omega_v, per block, and absent everywhere else.
+    // zero the Savage-Dickey test is built from. Written by VarTvpStochvol and
+    // VarTvpGamma when the file sets omega_v, per block, and absent elsewhere.
     "/posterior/a/omega",
     "/posterior/a/omega_log_zero",
     "/posterior/a/omega_log_zero_joint",

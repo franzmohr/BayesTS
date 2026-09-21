@@ -141,7 +141,7 @@ yet, and warns where there are some but `/model` asks for no horizon.
 | `/priors/u_sigma` | `df` (scalar), `scale` `(k, k)` | The Wishart models |
 | `/priors/u_sigma` | `shape` `(1, k)`, `rate` `(1, k)` | The gamma models |
 | `/priors/u_sigma` | `offset`, `sigma`, `shape`, `rate`, `mu` `(1, k)` and `v_inv` `(k, k)` | The stochastic volatility models |
-| `/priors/a`, `/priors/psi`, `/priors/u_sigma` | `omega_v` in place of `shape`/`rate` | `VarTvpStochvol` only: the non-centred parameterisation of that block's random walk. See below |
+| `/priors/a`, `/priors/psi`, `/priors/u_sigma` | `omega_v` in place of `shape`/`rate` | `VarTvpStochvol`, and `VarTvpGamma` for `a` and `psi`: the non-centred parameterisation of that block's random walk. See below |
 | `/priors/u_scale` | `shape` `(1, k)`, `rate` `(1, k)` | The two `*Ald` models: the scale of the asymmetric Laplace |
 | `/priors/beta` | `v_inv` (scalar), `p_tau_inv` `(k_beta, k_beta)` | The constant VECs: the cointegration space prior |
 | `/priors/beta` | `mu`, `v_inv`, optional `rho`, optional `rho_min`/`rho_max`, optional `p_tau` `(k_beta, k_beta)` | The time-varying VECs — a state equation rather than a shrinkage. See below |
@@ -155,7 +155,10 @@ yet, and warns where there are some but `/model` asks for no horizon.
 
 `VarTvpStochvol` reads each of its three random walks -- the coefficients
 (`/priors/a`), the covariance block (`/priors/psi`) and the log-volatility
-(`/priors/u_sigma`) -- in one of two parameterisations, block by block:
+(`/priors/u_sigma`) -- in one of two parameterisations, block by block.
+`VarTvpGamma` does the same for its two, the coefficients and the covariance
+block; its error precision does not move, so `/priors/u_sigma` keeps its gamma
+prior there:
 
 - **Centred**, the default: `shape` and `rate`, an inverse gamma on the variance
   of the innovations.
@@ -178,7 +181,7 @@ Bayes factor is a Savage-Dickey density ratio that one run of the time-varying
 model estimates (Chan 2018). The draws for it are written beside the block's
 `sigma`; `results.md` has them and the formula.
 
-Only `VarTvpStochvol` reads `omega_v` so far. On any other model it is a dataset
+Only `VarTvpStochvol` and `VarTvpGamma` read `omega_v` so far. On any other model it is a dataset
 nothing reads, which `bayests check` warns about, and the model runs centred.
 
 `rho` is the autoregression of a time-varying VEC's cointegration state
