@@ -55,7 +55,7 @@ add_executable(bayests_unit_truncated_normal unit_truncated_normal.cpp)
 add_executable(bayests_unit_ssvs unit_ssvs.cpp)
 
 foreach(_unit bayests_unit_vec_to_var bayests_unit_forecast_lags bayests_unit_stochvol bayests_unit_kalman bayests_unit_chan_jeliazkov
-              bayests_unit_inverse_gaussian bayests_unit_truncated_normal bayests_unit_ssvs)
+              bayests_unit_inverse_gaussian bayests_unit_truncated_normal)
     target_link_libraries(${_unit} PRIVATE bayests_algorithms)
     target_link_libraries(${_unit} PRIVATE bayests_warnings)
 
@@ -133,7 +133,7 @@ foreach(_core_unit bayests_unit_identification bayests_unit_vec_klgs_2010 bayest
                    bayests_unit_dfm_normal_gamma bayests_unit_dfm_normal_stochvol
                    bayests_unit_dfm_tvp_gamma bayests_unit_dfm_tvp_stochvol
                    bayests_unit_var_ald bayests_unit_thin
-                   bayests_unit_favar_normal_wishart bayests_unit_bvs
+                   bayests_unit_favar_normal_wishart bayests_unit_bvs bayests_unit_ssvs
                    bayests_unit_input_values bayests_unit_var_normal_stochvol
                    bayests_unit_var_tvp_discount bayests_unit_vec_tvp_discount
                    bayests_unit_predictive_score bayests_unit_factor_score)

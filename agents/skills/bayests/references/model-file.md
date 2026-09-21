@@ -174,6 +174,11 @@ Values are checked as well as shapes, by a run and by `bayests check`:
 - A log-volatility `offset`, SSVS `tau0` and `tau1`, and the initial variance of
   a log-volatility's innovations must be finite and greater than zero.
 - `inprior` must lie in `[0, 1]`.
+- Under `ssvs`, at every selected position: `/priors/a/mu` must be zero,
+  `/priors/a/v_inv` must be zero off the diagonal in that row and column, and
+  `tau0` must be smaller than `tau1`. The same for `/priors/psi`. The diagonal
+  of `v_inv` there is read for the first draw only; the sweep replaces it with
+  the spike or slab precision from then on.
 - Nothing checks a prior precision for being tight enough for `bvs` to select
   anything, and nothing compares `include` against the indicators `/initial`
   starts them at. Both are ways of getting a run that finishes and a posterior

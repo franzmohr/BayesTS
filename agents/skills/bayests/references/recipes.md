@@ -156,7 +156,9 @@ The four *time-varying* models with a covariance block read a separate
 
 For `ssvs`, add `tau0` and `tau1` beside `inprior` — one per coefficient of the
 block — and remember that SSVS reaches only the four constant-coefficient
-models without stochastic volatility.
+models without stochastic volatility. At the selected positions the prior mean
+must be zero, `v_inv` diagonal and `tau0 < tau1`, or the file is refused; the
+zero mean and identity precision above already satisfy the first two.
 
 ## Running a long chain with thin
 

@@ -52,6 +52,9 @@ are refusals with reasons, not unimplemented features.
 | `ssvs` with either `*Ald` model | Not implemented; use `none` or `bvs` |
 | Any selection on `VecKlgs2010` | Selection acts on the columns of the SUR matrix this sampler declines to build |
 | Any selection on a factor model | Not implemented |
+| `ssvs` with a non-zero prior mean at a selected position | The spike and slab are both centred at zero, and the indicators are scored as if they were. See the `varsel` section of `SKILL.md` |
+| `ssvs` with a prior precision that couples a selected position to any other | Each indicator is drawn from its own coefficient alone, which is the posterior only when the selected coefficients are a priori independent of everything else |
+| `ssvs` with `tau0 >= tau1` at a selected position | The spike must be the narrower component, or every indicator reads backwards |
 | Selection positions inside a VEC's first `k*rank` entries | Excluding a loading is a change in the rank of `Pi`, which nothing downstream models. Restrict `include` to the positions after them |
 | `structural` with a Wishart precision | `A_0` is not identified against an unrestricted `Sigma` |
 | `structural` with a covariance block | Same: `Psi` is a second contemporaneous matrix doing the same job as `A_0`, and only their composition is pinned down |

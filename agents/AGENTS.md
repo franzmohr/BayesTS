@@ -64,7 +64,9 @@ Treat a warning as a bug in the file until you can say why it is there.
    draws an excluded coefficient from its prior, so a near-flat
    `/priors/a/v_inv` makes it very hard for anything to get back in once it is
    out, and pins the inclusion probabilities near zero. Nothing refuses one --
-   `bayests check` warns, and so does the run itself.
+   `bayests check` warns, and so does the run itself. `ssvs` is the reverse: it
+   replaces the prior at the selected positions, and refuses a non-zero mean,
+   an off-diagonal precision or `tau0 >= tau1` there.
 
 8. **Never infer a dimension from an array that happens to fit.** The DFM and
    FAVAR loading counts coincide at a whole family of dimensions, and
