@@ -141,7 +141,7 @@ yet, and warns where there are some but `/model` asks for no horizon.
 | `/priors/u_sigma` | `df` (scalar), `scale` `(k, k)` | The Wishart models |
 | `/priors/u_sigma` | `shape` `(1, k)`, `rate` `(1, k)` | The gamma models |
 | `/priors/u_sigma` | `offset`, `sigma`, `shape`, `rate`, `mu` `(1, k)` and `v_inv` `(k, k)` | The stochastic volatility models |
-| `/priors/a`, `/priors/psi`, `/priors/u_sigma` | `omega_v` in place of `shape`/`rate` | `VarTvpStochvol` and `VecTvpStochvol`, and `VarTvpGamma` for `a` and `psi`: the non-centred parameterisation of that block's random walk. See below |
+| `/priors/a`, `/priors/psi`, `/priors/u_sigma` | `omega_v` in place of `shape`/`rate` | `VarTvpStochvol` and `VecTvpStochvol`, and `VarTvpGamma` and `VecTvpGamma` for `a` and `psi`: the non-centred parameterisation of that block's random walk. See below |
 | `/priors/u_scale` | `shape` `(1, k)`, `rate` `(1, k)` | The two `*Ald` models: the scale of the asymmetric Laplace |
 | `/priors/beta` | `v_inv` (scalar), `p_tau_inv` `(k_beta, k_beta)` | The constant VECs: the cointegration space prior of Koop, León-González and Strachan (2010). `v_inv` at least zero; `p_tau_inv` positive definite when `v_inv > 0` |
 | `/priors/beta` | `g_inv` `(k, k)`, optional | `VecNormalStochvol` only: `G⁻¹`, the fixed matrix the loadings' prior is scaled by. Absent, it is the precision `/initial/h` implies, averaged over the sample. See *VEC* in `algorithms.md` |
@@ -159,9 +159,10 @@ yet, and warns where there are some but `/model` asks for no horizon.
 (`/priors/u_sigma`) -- in one of two parameterisations, block by block.
 `VecTvpStochvol` does the same for the same three -- its coefficients include
 the loadings -- while its cointegration space keeps the unit state variance
-that pins beta's scale, which has no prior to replace. `VarTvpGamma` does the
-same for its two, the coefficients and the covariance block; its error
-precision does not move, so `/priors/u_sigma` keeps its gamma prior there:
+that pins beta's scale, which has no prior to replace. `VarTvpGamma` and
+`VecTvpGamma` do the same for their two, the coefficients and the covariance
+block; their error precision does not move, so `/priors/u_sigma` keeps its
+gamma prior there:
 
 - **Centred**, the default: `shape` and `rate`, an inverse gamma on the variance
   of the innovations.
@@ -184,7 +185,7 @@ Bayes factor is a Savage-Dickey density ratio that one run of the time-varying
 model estimates (Chan 2018). The draws for it are written beside the block's
 `sigma`; `results.md` has them and the formula.
 
-Only `VarTvpStochvol`, `VarTvpGamma` and `VecTvpStochvol` read `omega_v` so far. On any other model it is a dataset
+Only the four time-varying VARs and VECs with a gamma or stochastic volatility error term read `omega_v` so far. On any other model it is a dataset
 nothing reads, which `bayests check` warns about, and the model runs centred.
 
 `rho` is the autoregression of a time-varying VEC's cointegration state

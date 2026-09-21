@@ -37,7 +37,9 @@
 /// VecTvpStochvol is run on a cointegrated pair whose first error variance
 /// jumps, with every block non-centred: the jump has to be found in that
 /// volatility and not in the other, while the cointegration space keeps its
-/// fixed state variance.
+/// fixed state variance. VecTvpGamma is run on the same pair with unit error
+/// variances and a constant in the first equation that shifts half way -- by
+/// twice as much as the VAR's, for the reason given at the check.
 ///
 /// Last, what validate() refuses: a file that gives both priors on how far a
 /// random walk moves, and an omega_v it could not use.
@@ -45,6 +47,7 @@
 #include "bayests/reporter.h"
 #include "bayests/var_tvp_gamma.h"
 #include "bayests/var_tvp_stochvol.h"
+#include "bayests/vec_tvp_gamma.h"
 #include "bayests/vec_tvp_stochvol.h"
 #include "core/models/noncentred_support.h"
 
@@ -505,6 +508,115 @@ void the_vec_finds_the_volatility_that_jumps()
           arma::approx_equal(d.a_sigma, arma::square(d.a_noncentred.omega), "absdiff", 1e-12));
 }
 
+/// The cointegrated pair of simulate_vec() with unit error variances and the
+/// first equation's constant shifting by `shift` half way, for VecTvpGamma with
+/// a covariance block.
+bayests::VecTvpGammaInput simulate_vec_gamma(double shift)
+{
+    const arma::uword k = 2;
+    const arma::uword tt = 200;
+    const arma::vec alpha = {-0.3, 0.1};
+    const arma::vec beta = {1.0, -1.0};
+
+    arma::mat levels(tt + 1, k, arma::fill::zeros);
+    for (arma::uword t = 1; t <= tt; t++)
+    {
+        const arma::vec c = {t > tt / 2 ? shift : 0.0, 0.0};
+        const arma::vec prev = arma::trans(levels.row(t - 1));
+        levels.row(t) = arma::trans(prev + alpha * arma::dot(beta, prev) + c +
+                                    arma::randn<arma::vec>(k));
+    }
+
+    const arma::uword n_a = 2 * k;
+    arma::mat z(k * tt, n_a, arma::fill::zeros);
+    for (arma::uword t = 0; t < tt; t++)
+    {
+        z.submat(k * t, k, k * (t + 1) - 1, n_a - 1) = arma::eye<arma::mat>(k, k);
+    }
+
+    bayests::VecTvpGammaInput input;
+    input.spec.k = static_cast<int>(k);
+    input.spec.p = 1;
+    input.spec.n = 1;
+    input.spec.rank = 1;
+    input.spec.k_beta = static_cast<int>(k);
+    input.spec.covar = true;
+    input.spec.iterations = 3000;
+    input.spec.burnin = 1000;
+
+    input.train.y = arma::diff(levels);
+    input.train.w = levels.rows(0, tt - 1);
+    input.train.z = z;
+
+    input.a_prior.omega_v = arma::vec(n_a, arma::fill::value(0.01));
+    input.a_prior.initial_state.mu = arma::zeros<arma::vec>(n_a);
+    input.a_prior.initial_state.v_inv = arma::eye<arma::mat>(n_a, n_a) * 0.1;
+
+    const double rho = input.beta_prior.rho;
+    input.beta_prior.initial_state.mu = arma::zeros<arma::vec>(k);
+    input.beta_prior.initial_state.v_inv = (1.0 - rho * rho) * arma::eye<arma::mat>(k, k);
+
+    input.psi_prior.omega_v = arma::vec(1, arma::fill::value(0.01));
+    input.psi_prior.initial_state.mu = arma::zeros<arma::vec>(1);
+    input.psi_prior.initial_state.v_inv = arma::eye<arma::mat>(1, 1);
+
+    input.u_sigma_prior.shape = arma::vec(k, arma::fill::value(3.0));
+    input.u_sigma_prior.rate = arma::vec(k, arma::fill::value(2.0));
+
+    input.initial.a = arma::zeros<arma::mat>(n_a, tt);
+    input.initial.a_sigma_inv = arma::eye<arma::mat>(n_a, n_a) * 100.0;
+    input.initial.a_init = arma::zeros<arma::vec>(n_a);
+    input.initial.beta = arma::repmat(beta, 1, tt);
+    input.initial.beta_init = beta;
+    input.initial.psi = arma::zeros<arma::mat>(1, tt);
+    input.initial.psi_sigma_inv = arma::eye<arma::mat>(1, 1) * 100.0;
+    input.initial.psi_init = arma::zeros<arma::vec>(1);
+    input.initial.u_omega_inv = arma::eye<arma::mat>(k, k);
+
+    return input;
+}
+
+void the_vec_gamma_model_finds_the_shifting_constant()
+{
+    std::printf("VecTvpGamma: the first equation's constant shifts\n");
+
+    bayests::NullReporter reporter;
+    bayests::VecTvpGammaDraws d;
+    bool ran = false;
+    try
+    {
+        d = bayests::VecTvpGammaSampler{}.draw_coefficients(simulate_vec_gamma(4.0), reporter);
+        ran = true;
+    }
+    catch (const std::exception &e)
+    {
+        std::printf("    threw: %s\n", e.what());
+    }
+    check("the chain runs to the end", ran);
+    if (!ran)
+    {
+        return;
+    }
+
+    // Loadings first, then the constants: the first equation's is at k = 2.
+    //
+    // The shift is twice the VAR's. A constant that moves shifts the
+    // equilibrium of the error correction term with it, and a cointegration
+    // space that follows a random walk of unit variance can take part of that
+    // up: at a shift of 2 the constant's log Bayes factor was 0.96, at 4 it is
+    // 6.7 and at 6 it is 9.7, the other constant staying below 0.4 throughout.
+    const double c1 = log_bf(d.a_noncentred, 2, 0.01);
+    const double c2 = log_bf(d.a_noncentred, 3, 0.01);
+    const double p1 = log_bf(d.psi_noncentred, 0, 0.01);
+    std::printf("    log BF: constants %.2f, %.2f; covariance %.2f\n", c1, c2, p1);
+    check("the shifting constant is found to move", c1 > 3.0);
+    check("the other is not", c2 < 2.0);
+    check("the covariance coefficient is not", p1 < 2.0);
+    check("psi sigma is written as omega squared",
+          arma::approx_equal(d.psi_sigma, arma::square(d.psi_noncentred.omega), "absdiff",
+                             1e-12));
+}
+
 /// Whether validate() refuses `input`, and with a message that mentions `word`.
 bool refused(const bayests::VarTvpStochvolInput &input, const std::string &word)
 {
@@ -553,6 +665,7 @@ int main()
     the_bayes_factors_point_the_right_way();
     the_gamma_model_finds_the_shifting_intercept();
     the_vec_finds_the_volatility_that_jumps();
+    the_vec_gamma_model_finds_the_shifting_constant();
     the_prior_is_one_or_the_other();
 
     std::printf("%s\n", failures == 0 ? "all checks passed" : "SOME CHECKS FAILED");

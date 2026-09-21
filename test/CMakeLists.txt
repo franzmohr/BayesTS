@@ -559,6 +559,10 @@ bayests_add_model_fixture(VarTvpGamma-noncentred-bvs-covar    VarTvpGamma    bvs
 # covariance block and the log-volatility.
 bayests_add_model_fixture(VecTvpStochvol-noncentred           VecTvpStochvol none 0 0 4 --noncentred)
 bayests_add_model_fixture(VecTvpStochvol-noncentred-bvs-covar VecTvpStochvol bvs  1 0 4 --noncentred)
+# And VecTvpGamma: the coefficients and the covariance block, the error
+# precision being constant.
+bayests_add_model_fixture(VecTvpGamma-noncentred              VecTvpGamma    none 0 0 4 --noncentred)
+bayests_add_model_fixture(VecTvpGamma-noncentred-bvs-covar    VecTvpGamma    bvs  1 0 4 --noncentred)
 
 # The dynamic factor model. Its own dimensions -- six series, two factors, a
 # transition of order two -- written by the DFM block at the bottom of

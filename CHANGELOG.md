@@ -29,6 +29,18 @@ heading, and move down into a version section when one is cut.
 
 ### Added
 
+- **`VecTvpGamma` takes the non-centred prior too**, for its coefficients
+  (loadings included) and its covariance block, as `VarTvpGamma` does; the
+  cointegration space keeps its fixed unit state variance and the error
+  precision its gamma prior. The covariance block reads one error covariance
+  for every period, which `draw_noncentred_path()` already takes.
+  `unit.noncentred` runs `VecTvpGamma` with a covariance block on a
+  cointegrated pair whose first constant shifts, and two fixtures,
+  `VecTvpGamma-noncentred` and `VecTvpGamma-noncentred-bvs-covar`, put the path
+  through `golden.*` and `check.*`. *Draws are unchanged* for every file
+  without `omega_v` and for the six existing non-centred fixtures: all
+  118 fixtures that existed before fingerprint identically.
+
 - **`VecTvpStochvol` takes the non-centred prior as well.** `omega_v` in place
   of `shape` and `rate` under `/priors/a`, `/priors/psi` or `/priors/u_sigma`
   draws that random walk non-centred and writes `omega`, `omega_log_zero` and
