@@ -302,6 +302,38 @@ class Checker:
         if results["a_path"].shape != (tt, nparams, it):
             raise AssertionError(f"results.md: a_path is {results['a_path'].shape}")
 
+    def scenario_primiceri(self, d):
+        heading = "Primiceri's priors from a training sample"
+        ns = self.run_python(d, self.code("references/recipes.md", heading, 0))
+        self.check_clean(d, "primiceri.h5")
+        self.posterior(d, "primiceri.h5")
+        k, nparams, n_psi, tt, it = (ns[v] for v in ("k", "nparams", "n_psi", "tt", "iterations"))
+        # The priors the text says it writes, at the shapes the reader takes.
+        expect_shapes(d / "primiceri.h5", {
+            "/priors/a/mu": (1, nparams),
+            "/priors/a/v_inv": (nparams, nparams),
+            "/priors/a/shape": (1, nparams),
+            "/priors/psi/v_inv": (n_psi, n_psi),
+            "/priors/u_sigma/rate": (1, k),
+            "/initial/h": (k, tt),
+            "/posterior/a/coeffs": (nparams * tt, it),
+            "/posterior/psi/coeffs": (k * k * tt, it),
+            "/posterior/u_omega_inv/coeffs": (k * tt, it),
+            "/posterior/loglik": (tt, it),
+        })
+        # Q's shape is the marginal of his inverse Wishart, (40 - 21 + 1) / 2.
+        if not np.allclose(read(d / "primiceri.h5", "/priors/a/shape"), 10.0):
+            raise AssertionError("recipes.md: the Q prior's shape is not (df_Q - nparams + 1)/2 = 10")
+
+        self.run_python(d, self.code("references/recipes.md", heading, 1), ns)
+        if ns["sd"].shape != (tt, k, it):
+            raise AssertionError(f"recipes.md: sd is {ns['sd'].shape}")
+        # The shocks were simulated with unit variance and no correlation, so the
+        # structural standard deviations come back near one.
+        level = ns["sd"].mean(axis=(0, 2))
+        if not np.all((level > 0.7) & (level < 1.4)):
+            raise AssertionError(f"recipes.md: sd averages {level}, simulated as 1")
+
     def scenario_discount(self, d):
         """The one model whose output is a posterior rather than draws."""
         ns = self.run_python(d, self.code("references/recipes.md", "A discounted VAR", 0))
