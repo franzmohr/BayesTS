@@ -29,8 +29,8 @@ heading, and move down into a version section when one is cut.
 
 ### Added
 
-- **`bayests check` warns when `bvs` is selecting against a prior too flat to
-  select against.** BVS draws an excluded coefficient from its prior and then
+- **A warning when `bvs` is selecting against a prior too flat to select
+  against, from `bayests check` and from the run itself.** BVS draws an excluded coefficient from its prior and then
   scores that draw against the data, so the flatter the prior the harder it is
   for anything to get back in once it is out, and the inclusion probabilities
   end up describing the prior rather than the data. Korobilis (2013, section
@@ -40,20 +40,27 @@ heading, and move down into a version section when one is cut.
   mean inclusion across the twelve coefficients went from a spread of 0.10 to
   1.00 down to eleven of the twelve at 0.10 or below.
 
-  The reading is `bayests::flat_selection_prior()`, declared in
-  `include/bayests/priors.h` so that a host vendoring the core can surface it
+  The reading is `bayests::flat_selection_prior()` and the sentence is
+  `bayests::flat_selection_message()`, both declared in
+  `include/bayests/priors.h` so that a host vendoring the core can surface them
   its own way. It reports the diagonal of the prior precision at the selected
   positions -- the conditional prior variance of the draw BVS actually scores,
-  which is also what keeps it defined for a singular `v_inv`. The command line
-  prints it as a warning naming the block, how many positions are affected and
-  the worst variance among them; it does not refuse the file, and the exit code
-  stays 0. Constant-coefficient blocks only: a random walk has no one prior
-  variance to compare against a threshold, so the time-varying models are left
-  to their documentation, which now says so.
+  which is also what keeps it defined for a singular `v_inv`.
 
-  **Draws are unchanged.** No sampler was touched -- the new function is read
-  by `bayests check` alone, which draws nothing -- and the suite passes
-  unchanged, 374 tests from a clean clone.
+  Two places say it, from that one wording. `bayests check` prints it before
+  anything runs, and the seven constant-coefficient samplers that offer `bvs`
+  emit it through `Reporter::message()` before their first draw, once per
+  selection block -- so an embedded host, an R package or anyone who never runs
+  `check` hears it too. Neither refuses the file and the exit code stays 0.
+  Constant-coefficient blocks only: a random walk has no one prior variance to
+  compare against a threshold, so the time-varying models are left to their
+  documentation, which now says so.
+
+  **Draws are unchanged**, verified rather than assumed: the samplers gained a
+  call that consumes no random numbers, and a fingerprint recording over all
+  112 fixtures before and after the change is identical -- 112 unchanged, 0
+  moved, from `test/diff_fingerprints.sh`. The suite passes unchanged, 374
+  tests from a clean clone.
 
 ### Changed
 

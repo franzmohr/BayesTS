@@ -261,8 +261,8 @@ not: the chain runs to completion and estimates a different model.
   is a dependence on the coefficient prior: an excluded coefficient is drawn
   from the prior while it is out, and the flatter that prior the harder it is
   for anything to get back in, so `/priors/a/v_inv` has to be tight enough to
-  select against, and `bayests check` warns when it is not. See the `varsel`
-  section of `SKILL.md`. SSVS leaves the regressors alone and moves the prior
+  select against; `bayests check` and the run itself both warn when it is not.
+  See the `varsel` section of `SKILL.md`. SSVS leaves the regressors alone and moves the prior
   precision between a `tau0` spike and a `tau1` slab; exclusion is approximate,
   and the spike carries the tightness itself. BVS is the one available on every
   model that selects at all.

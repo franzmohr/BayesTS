@@ -177,10 +177,12 @@ Nothing refuses a flatter prior — it is a perfectly good prior, and the chain
 it produces is the one the file asked for. `/priors/a/v_inv` is checked for
 being square and symmetric and not for being tight, so a file with
 `varsel = "bvs"` and a near-zero `v_inv` runs to the end and reports inclusion
-probabilities pinned near zero. **`bayests check` warns about it**, naming the
-block, how many of the selected positions are affected and the worst
-conditional prior variance among them; it is a warning and not a refusal, so
-the exit code stays 0. **Posterior inclusion that comes back at or near zero
+probabilities pinned near zero. **It is warned about twice**: `bayests check`
+prints it before anything runs, and the run itself says the same line before
+its first draw, so a chain started without a check still tells you. Both name
+the block, how many of the selected positions are affected and the worst
+conditional prior variance among them, and neither refuses the file — the exit
+code stays 0. **Posterior inclusion that comes back at or near zero
 for every selected coefficient is this, not a finding**; compare against a run
 with a tighter `v_inv` before reading anything into it.
 

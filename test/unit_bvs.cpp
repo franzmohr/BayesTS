@@ -14,6 +14,11 @@
 /// the tolerance is statistical -- but the chain is seeded, and the tolerance is
 /// several standard errors wide.
 ///
+/// The fourth half is the same diagnostic reaching a caller: a run emits it
+/// through Reporter::message() before the first draw, so an embedded host that
+/// never runs `bayests check` still hears about it. The check there is that a
+/// flat prior produces the line and a tight one produces silence.
+///
 /// The third half -- flat_selection_prior() -- is the diagnostic that tells a
 /// posterior inclusion probability near zero because the data said so from one
 /// near zero because the prior was too flat for the data to be heard. It reads
@@ -38,6 +43,7 @@
 #include <cmath>
 #include <cstdio>
 #include <string>
+#include <vector>
 
 namespace
 {
@@ -344,6 +350,59 @@ void a_flat_prior_is_reported()
           bayests::flat_selection_prior(prior, correlated).flat == 1);
 }
 
+/// Keeps whatever a sampler says, so the test can look at it.
+class CapturingReporter final : public bayests::Reporter
+{
+public:
+    void message(const std::string &text) override { lines.push_back(text); }
+
+    /// Whether any line mentions `part`.
+    bool mentions(const std::string &part) const
+    {
+        for (const std::string &line : lines)
+        {
+            if (line.find(part) != std::string::npos)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    std::vector<std::string> lines;
+};
+
+/// The line a run emits when its prior is too flat for the selection it was
+/// asked for -- and the silence when it is not.
+void a_run_reports_a_flat_prior()
+{
+    std::printf("a run says so through the reporter\n");
+
+    const arma::mat y = errors(120, 0.9);
+
+    const auto run = [&](const double psi_prior_precision, CapturingReporter &reporter) {
+        bayests::VarNormalGammaInput input;
+        fill_common(input, y, 0.5);
+        input.spec.iterations = 10;
+        input.spec.burnin = 0;
+        input.psi_prior.v_inv = arma::mat(1, 1, arma::fill::value(psi_prior_precision));
+        input.u_sigma_prior.shape = arma::vec(2, arma::fill::value(3.0));
+        input.u_sigma_prior.rate = arma::vec(2, arma::fill::value(2.0));
+        input.initial.u_sigma_inv = arma::eye<arma::mat>(2, 2);
+        bayests::VarNormalGammaSampler{}.draw_coefficients(input, reporter);
+    };
+
+    CapturingReporter tight;
+    run(1.0, tight);
+    check("a prior variance of 1 says nothing", tight.lines.empty());
+
+    CapturingReporter flat;
+    run(0.0001, flat);
+    check("a prior variance of 10000 is reported", flat.lines.size() == 1);
+    check("and the line names the block it is about", flat.mentions("of psi"));
+    check("and the dataset to change", flat.mentions("/priors/psi/v_inv"));
+}
+
 } // namespace
 
 int main()
@@ -356,6 +415,7 @@ int main()
     covariance_block_selection_sees_the_data();
     quantile_selection_sees_the_data();
     a_flat_prior_is_reported();
+    a_run_reports_a_flat_prior();
 
     std::printf("%s\n", failures == 0 ? "all checks passed" : "SOME CHECKS FAILED");
     return failures == 0 ? 0 : 1;
