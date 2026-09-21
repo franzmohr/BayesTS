@@ -143,7 +143,8 @@ yet, and warns where there are some but `/model` asks for no horizon.
 | `/priors/u_sigma` | `offset`, `sigma`, `shape`, `rate`, `mu` `(1, k)` and `v_inv` `(k, k)` | The stochastic volatility models |
 | `/priors/a`, `/priors/psi`, `/priors/u_sigma` | `omega_v` in place of `shape`/`rate` | `VarTvpStochvol` and `VecTvpStochvol`, and `VarTvpGamma` for `a` and `psi`: the non-centred parameterisation of that block's random walk. See below |
 | `/priors/u_scale` | `shape` `(1, k)`, `rate` `(1, k)` | The two `*Ald` models: the scale of the asymmetric Laplace |
-| `/priors/beta` | `v_inv` (scalar), `p_tau_inv` `(k_beta, k_beta)` | The constant VECs: the cointegration space prior |
+| `/priors/beta` | `v_inv` (scalar), `p_tau_inv` `(k_beta, k_beta)` | The constant VECs: the cointegration space prior of Koop, León-González and Strachan (2010). `v_inv` at least zero; `p_tau_inv` positive definite when `v_inv > 0` |
+| `/priors/beta` | `g_inv` `(k, k)`, optional | `VecNormalStochvol` only: `G⁻¹`, the fixed matrix the loadings' prior is scaled by. Absent, it is the precision `/initial/h` implies, averaged over the sample. See *VEC* in `algorithms.md` |
 | `/priors/beta` | `mu`, `v_inv`, optional `rho`, optional `rho_min`/`rho_max`, optional `p_tau` `(k_beta, k_beta)` | The time-varying VECs — a state equation rather than a shrinkage. See below |
 | `/priors/beta` | nothing | `VecTvpDiscount` reads no prior over the space: it conditions on the one in `/initial/beta` rather than drawing it |
 | `/priors/lambda` | `mu`, `v_inv` (and `shape`/`rate` where the loadings drift) | The factor models: the free loadings |
@@ -191,6 +192,11 @@ equation. It must lie in `(0, 1]`; 1 is the random walk. Giving **both**
 `rho_min` and `rho_max` turns it into a drawn parameter with that uniform prior,
 and `rho` is then the value the chain starts at and must lie inside the support.
 One end without the other is refused rather than guessed at.
+
+On the four constant VECs, `/priors/a/mu` must be zero on the first `k*rank`
+positions — the loadings — and `/priors/a/v_inv` zero between those positions
+and every other one. The loadings' own block of `v_inv` is rebuilt from
+`/priors/beta` on every draw, so what the file holds there is not read.
 
 The matrices under `/priors/beta` must be symmetric: `p_tau_inv` on the
 constant VECs, and `v_inv` and `p_tau` on the time-varying ones. A matrix is

@@ -84,6 +84,7 @@ add_executable(bayests_unit_favar_normal_wishart unit_favar_normal_wishart.cpp)
 add_executable(bayests_unit_var_ald unit_var_ald.cpp)
 add_executable(bayests_unit_thin unit_thin.cpp)
 add_executable(bayests_unit_coint_prior_symmetry unit_coint_prior_symmetry.cpp)
+add_executable(bayests_unit_coint_klgs_prior unit_coint_klgs_prior.cpp)
 add_executable(bayests_unit_bvs unit_bvs.cpp)
 add_executable(bayests_unit_input_values unit_input_values.cpp)
 add_executable(bayests_unit_var_normal_stochvol unit_var_normal_stochvol.cpp)
@@ -135,6 +136,7 @@ add_executable(bayests_unit_noncentred unit_noncentred.cpp)
 foreach(_core_unit bayests_unit_identification bayests_unit_vec_klgs_2010 bayests_unit_coint_jacobian
                    bayests_unit_coint_dees_us bayests_unit_tvp_initial_state bayests_unit_forecast_states
                    bayests_unit_vec_tvp_coint bayests_unit_coint_prior_symmetry
+                   bayests_unit_coint_klgs_prior
                    bayests_unit_dfm_normal_gamma bayests_unit_dfm_normal_stochvol
                    bayests_unit_dfm_tvp_gamma bayests_unit_dfm_tvp_stochvol
                    bayests_unit_var_ald bayests_unit_thin
@@ -308,7 +310,7 @@ endif()
 # many threads computed it.
 foreach(_unit vec_to_var forecast_lags forecast_regressors_io forecast_group_io test_observations_io predictive_score factor_score stochvol kalman chan_jeliazkov
               inverse_gaussian truncated_normal identification
-              vec_klgs_2010 vec_tvp_coint coint_prior_symmetry coint_jacobian coint_dees_us dfm_normal_gamma dfm_normal_stochvol
+              vec_klgs_2010 vec_tvp_coint coint_prior_symmetry coint_klgs_prior coint_jacobian coint_dees_us dfm_normal_gamma dfm_normal_stochvol
               dfm_tvp_gamma dfm_tvp_stochvol favar_normal_wishart var_ald thin model_group bvs ssvs
               input_values var_normal_stochvol var_tvp_discount vec_tvp_discount read_path bool_attributes tvp_initial_state
               forecast_states noncentred)

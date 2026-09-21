@@ -55,6 +55,9 @@ are refusals with reasons, not unimplemented features.
 | `ssvs` with a non-zero prior mean at a selected position | The spike and slab are both centred at zero, and the indicators are scored as if they were. See the `varsel` section of `SKILL.md` |
 | `ssvs` with a prior precision that couples a selected position to any other | Each indicator is drawn from its own coefficient alone, which is the posterior only when the selected coefficients are a priori independent of everything else |
 | `ssvs` with `tau0 >= tau1` at a selected position | The spike must be the narrower component, or every indicator reads backwards |
+| A constant VEC with a non-zero `/priors/a/mu`, or non-zero `/priors/a/v_inv` coupling, on the first `k*rank` positions | The loadings' prior is Koop, León-González and Strachan's, centred at zero and independent of the other coefficients, and the sampler assumes it is |
+| A negative `/priors/beta/v_inv`, or a `p_tau_inv` that is not positive definite while `v_inv > 0` | Not a prior: a negative precision, or a `P_tau` with no inverse |
+| `/priors/beta/g_inv` on any constant VEC but `VecNormalStochvol` | The other three take `G` from the error covariance and would never read it |
 | Selection positions inside a VEC's first `k*rank` entries | Excluding a loading is a change in the rank of `Pi`, which nothing downstream models. Restrict `include` to the positions after them |
 | `structural` with a Wishart precision | `A_0` is not identified against an unrestricted `Sigma` |
 | `structural` with a covariance block | Same: `Psi` is a second contemporaneous matrix doing the same job as `A_0`, and only their composition is pinned down |
@@ -189,6 +192,36 @@ the posterior precision factors and the Gram product to form is `n_x` square
 rather than `k*n_x` square. The choice between the two is a choice about cost.
 What it gives up is variable selection, which acts on the columns of the matrix
 it declines to build.
+
+**The four constant VECs are Koop, León-González and Strachan (2010).** The
+cointegration space gets their prior and their collapsed Gibbs sampler: `beta`
+is semi-orthogonal with the matrix angular central Gaussian density
+`|beta' P_tau⁻¹ beta|^(-k_beta/2)`, and the loadings are
+`alpha | beta ~ N(0, v⁻¹ (beta' P_tau⁻¹ beta)⁻¹ ⊗ G)`. `/priors/beta/v_inv` is
+`v`, and `/priors/beta/p_tau_inv` is `P_tau⁻¹`. Three consequences for the file:
+
+- **The loadings' prior is the sampler's, not the file's.** Their block of
+  `/priors/a/v_inv` — the first `k*rank` rows and columns — is rebuilt every
+  draw, so the values written there are never read. What the file still
+  controls it has to leave alone: `/priors/a/mu` must be zero on those
+  positions, and `/priors/a/v_inv` must be zero between them and every other
+  coefficient. Either one non-zero is refused, because the sampler's steps would
+  then condition on different priors.
+- **`v_inv` is at least zero**, and zero is the flat prior on `alpha` together
+  with the uniform prior on the space. When it is positive, `p_tau_inv` has to
+  be positive definite: the paper's `P_tau = H H' + τ H_⊥ H_⊥'` with
+  `0 < τ ≤ 1` is, and `τ = 0` — the space fixed at `sp(H)` — has no inverse to
+  write down.
+- **`G` is the error covariance**, and its posterior carries the prior's term
+  (their eq. 8). `VecNormalStochvol` is the exception, because its covariance
+  moves every period: there `G` is fixed for the whole run, which the paper
+  allows. It is `/priors/beta/g_inv` (`G⁻¹`, `k × k`, positive definite) when
+  the file gives one. Otherwise it is the precision the starting volatilities
+  `/initial/h` imply, averaged over the sample, so choose those with that in
+  mind. The other three models refuse a `g_inv`.
+
+The paper's over-identified sampler (its §4, `beta = F φ`) is not implemented,
+and neither are `τ` and `v` as unknowns: both are fixed by the file.
 
 ### The discounted pair
 
