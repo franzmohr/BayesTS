@@ -34,12 +34,18 @@
 /// and the largest of the others reached 0.84, so "not found to move" asks for
 /// below 2 here -- still short of the 3 that "found to move" needs.
 ///
+/// VecTvpStochvol is run on a cointegrated pair whose first error variance
+/// jumps, with every block non-centred: the jump has to be found in that
+/// volatility and not in the other, while the cointegration space keeps its
+/// fixed state variance.
+///
 /// Last, what validate() refuses: a file that gives both priors on how far a
 /// random walk moves, and an omega_v it could not use.
 
 #include "bayests/reporter.h"
 #include "bayests/var_tvp_gamma.h"
 #include "bayests/var_tvp_stochvol.h"
+#include "bayests/vec_tvp_stochvol.h"
 #include "core/models/noncentred_support.h"
 
 #include <cmath>
@@ -402,6 +408,103 @@ void the_gamma_model_finds_the_shifting_intercept()
                              1e-12));
 }
 
+/// A cointegrated pair, dy_t = alpha beta' y_{t-1} + c + u_t with beta = (1, -1)',
+/// whose first error standard deviation jumps from 0.5 to 3 half way through.
+bayests::VecTvpStochvolInput simulate_vec()
+{
+    const arma::uword k = 2;
+    const arma::uword tt = 200;
+    const arma::vec alpha = {-0.3, 0.1};
+    const arma::vec beta = {1.0, -1.0};
+
+    arma::mat levels(tt + 1, k, arma::fill::zeros);
+    for (arma::uword t = 1; t <= tt; t++)
+    {
+        const arma::vec sd = {t > tt / 2 ? 3.0 : 0.5, 1.0};
+        const arma::vec prev = arma::trans(levels.row(t - 1));
+        levels.row(t) = arma::trans(prev + alpha * arma::dot(beta, prev) +
+                                    sd % arma::randn<arma::vec>(k));
+    }
+
+    // Loadings first, then the unrestricted constant: n_a = k rank + k.
+    const arma::uword n_a = 2 * k;
+    arma::mat z(k * tt, n_a, arma::fill::zeros);
+    for (arma::uword t = 0; t < tt; t++)
+    {
+        z.submat(k * t, k, k * (t + 1) - 1, n_a - 1) = arma::eye<arma::mat>(k, k);
+    }
+
+    bayests::VecTvpStochvolInput input;
+    input.spec.k = static_cast<int>(k);
+    input.spec.p = 1;
+    input.spec.n = 1;
+    input.spec.rank = 1;
+    input.spec.k_beta = static_cast<int>(k);
+    input.spec.iterations = 3000;
+    input.spec.burnin = 1000;
+
+    input.train.y = arma::diff(levels);
+    input.train.w = levels.rows(0, tt - 1);
+    input.train.z = z;
+
+    input.a_prior.omega_v = arma::vec(n_a, arma::fill::value(0.001));
+    input.a_prior.initial_state.mu = arma::zeros<arma::vec>(n_a);
+    input.a_prior.initial_state.v_inv = arma::eye<arma::mat>(n_a, n_a) * 0.1;
+
+    const double rho = input.beta_prior.rho;
+    input.beta_prior.initial_state.mu = arma::zeros<arma::vec>(k);
+    input.beta_prior.initial_state.v_inv = (1.0 - rho * rho) * arma::eye<arma::mat>(k, k);
+
+    input.u_sigma_prior.offset = arma::vec(k, arma::fill::value(1e-4));
+    input.u_sigma_prior.state.omega_v = arma::vec(k, arma::fill::value(0.1));
+    input.u_sigma_prior.state.initial_state.mu = arma::zeros<arma::vec>(k);
+    input.u_sigma_prior.state.initial_state.v_inv = arma::eye<arma::mat>(k, k) * 0.1;
+
+    input.initial.a = arma::zeros<arma::mat>(n_a, tt);
+    input.initial.a_sigma_inv = arma::eye<arma::mat>(n_a, n_a) * 1000.0;
+    input.initial.a_init = arma::zeros<arma::vec>(n_a);
+    input.initial.beta = arma::repmat(beta, 1, tt);
+    input.initial.beta_init = beta;
+    input.initial.h = arma::zeros<arma::mat>(tt, k);
+    input.initial.h_init = arma::zeros<arma::vec>(k);
+    input.initial.h_sigma = arma::vec(k, arma::fill::value(0.1));
+
+    return input;
+}
+
+void the_vec_finds_the_volatility_that_jumps()
+{
+    std::printf("VecTvpStochvol: the first equation's variance jumps\n");
+
+    bayests::NullReporter reporter;
+    bayests::VecTvpStochvolDraws d;
+    bool ran = false;
+    try
+    {
+        d = bayests::VecTvpStochvolSampler{}.draw_coefficients(simulate_vec(), reporter);
+        ran = true;
+    }
+    catch (const std::exception &e)
+    {
+        std::printf("    threw: %s\n", e.what());
+    }
+    check("the chain runs to the end", ran);
+    if (!ran)
+    {
+        return;
+    }
+
+    const double h1 = log_bf(d.h_noncentred, 0, 0.1);
+    const double h2 = log_bf(d.h_noncentred, 1, 0.1);
+    std::printf("    log BF: volatility %.2f, %.2f\n", h1, h2);
+    check("the first volatility is found to move", h1 > 3.0);
+    check("the second is not", h2 < 2.0);
+    check("every coefficient has its ordinates", d.a_noncentred.log_zero.n_rows == 4 &&
+                                                    d.a_noncentred.log_zero.is_finite());
+    check("a sigma is written as omega squared",
+          arma::approx_equal(d.a_sigma, arma::square(d.a_noncentred.omega), "absdiff", 1e-12));
+}
+
 /// Whether validate() refuses `input`, and with a message that mentions `word`.
 bool refused(const bayests::VarTvpStochvolInput &input, const std::string &word)
 {
@@ -449,6 +552,7 @@ int main()
     the_draw_has_the_conditional_mean();
     the_bayes_factors_point_the_right_way();
     the_gamma_model_finds_the_shifting_intercept();
+    the_vec_finds_the_volatility_that_jumps();
     the_prior_is_one_or_the_other();
 
     std::printf("%s\n", failures == 0 ? "all checks passed" : "SOME CHECKS FAILED");

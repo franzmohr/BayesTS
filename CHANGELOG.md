@@ -29,6 +29,23 @@ heading, and move down into a version section when one is cut.
 
 ### Added
 
+- **`VecTvpStochvol` takes the non-centred prior as well.** `omega_v` in place
+  of `shape` and `rate` under `/priors/a`, `/priors/psi` or `/priors/u_sigma`
+  draws that random walk non-centred and writes `omega`, `omega_log_zero` and
+  `omega_log_zero_joint` beside its `sigma`, as `VarTvpStochvol` does. The
+  coefficients include the loadings, whose regressors are the draw's
+  `beta' w`. The cointegration space is untouched: its state variance is fixed
+  at the identity to pin beta's scale, so there is no prior on it to replace.
+  `validate_stochvol_block()`, which `VecNormalStochvol` shares, now checks the
+  log-volatility's prior through `validate_state_variance_prior()`; that
+  model's reader never fills `omega_v`, so what it accepts is unchanged.
+  `unit.noncentred` runs `VecTvpStochvol` on a cointegrated pair whose first
+  error variance jumps, and two fixtures, `VecTvpStochvol-noncentred` and
+  `VecTvpStochvol-noncentred-bvs-covar`, put the path through `golden.*` and
+  `check.*`. *Draws are unchanged* for every file without `omega_v`, and for
+  the four non-centred VAR fixtures: all 116 fixtures that existed before
+  fingerprint identically.
+
 - **`VarTvpGamma` takes the non-centred prior too.** `omega_v` in place of
   `shape` and `rate` under `/priors/a` or `/priors/psi` draws that random walk
   non-centred and writes `omega`, `omega_log_zero` and `omega_log_zero_joint`

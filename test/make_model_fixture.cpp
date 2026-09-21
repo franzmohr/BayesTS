@@ -38,8 +38,8 @@
 //     --noncentred
 //                 writes omega_v in place of shape and rate in every prior on
 //                 how far a random walk moves: the non-centred parameterisation.
-//                 Refused for any model but VarTvpStochvol and VarTvpGamma, the
-//                 two that read it.
+//                 Refused for any model but VarTvpStochvol, VarTvpGamma and
+//                 VecTvpStochvol, the three that read it.
 //     --hold-states
 //                 writes /model/forecast_states = "hold", so the forecast keeps
 //                 the last in-sample states rather than simulating them forward.
@@ -1127,9 +1127,9 @@ void write_vec_tvp_coint_p_tau(const ModelFile &file)
 /// of its innovations and the state it starts from. Selection is the VEC's,
 /// though, so it is written here rather than by write_tvp_coefficients().
 void write_vec_tvp_coefficients(const ModelFile &file, const std::string &varsel,
-                                arma::uword nparams)
+                                arma::uword nparams, bool noncentred = false)
 {
-    write_tvp_coefficients(file, "none", nparams);
+    write_tvp_coefficients(file, "none", nparams, noncentred);
 
     if (varsel != "none")
     {
@@ -1160,7 +1160,8 @@ void write_vec_constant_psi(const ModelFile &file, const std::string &varsel, ar
 /// The time-varying covariance block, as the time-varying VARs write it --
 /// including the selection scheme in its own group, which is why it can differ
 /// from the model's.
-void write_vec_tvp_psi(const ModelFile &file, const std::string &varsel, arma::uword n_psi)
+void write_vec_tvp_psi(const ModelFile &file, const std::string &varsel, arma::uword n_psi,
+                       bool noncentred = false)
 {
     ensure_group(file, "/priors/psi");
     write_mat(file, "/initial/psi", arma::mat(n_psi, kTT, arma::fill::zeros));
@@ -1168,8 +1169,15 @@ void write_vec_tvp_psi(const ModelFile &file, const std::string &varsel, arma::u
               arma::mat(arma::diagmat(arma::vec(n_psi, arma::fill::value(100.0)))));
     write_row(file, "/initial/psi_init", arma::vec(n_psi, arma::fill::zeros));
 
-    write_row(file, "/priors/psi/shape", arma::vec(n_psi, arma::fill::value(3.0)));
-    write_row(file, "/priors/psi/rate", arma::vec(n_psi, arma::fill::value(0.01)));
+    if (noncentred)
+    {
+        write_row(file, "/priors/psi/omega_v", arma::vec(n_psi, arma::fill::value(0.005)));
+    }
+    else
+    {
+        write_row(file, "/priors/psi/shape", arma::vec(n_psi, arma::fill::value(3.0)));
+        write_row(file, "/priors/psi/rate", arma::vec(n_psi, arma::fill::value(0.01)));
+    }
     write_row(file, "/priors/psi/mu", arma::vec(n_psi, arma::fill::zeros));
     write_mat(file, "/priors/psi/v_inv", arma::eye<arma::mat>(n_psi, n_psi));
 
@@ -1184,14 +1192,21 @@ void write_vec_tvp_psi(const ModelFile &file, const std::string &varsel, arma::u
 }
 
 /// The stochastic volatility block, shared by the two VECs that carry one.
-void write_vec_stochvol(const ModelFile &file)
+void write_vec_stochvol(const ModelFile &file, bool noncentred = false)
 {
     // The offset keeps log(u^2 + offset) finite when a residual lands on zero,
     // and bounds it well inside the range the ten-component mixture covers.
     write_row(file, "/priors/u_sigma/offset", arma::vec(kK, arma::fill::value(1e-4)));
     write_row(file, "/priors/u_sigma/sigma", arma::vec(kK, arma::fill::value(0.1)));
-    write_row(file, "/priors/u_sigma/shape", arma::vec(kK, arma::fill::value(3.0)));
-    write_row(file, "/priors/u_sigma/rate", arma::vec(kK, arma::fill::value(0.2)));
+    if (noncentred)
+    {
+        write_row(file, "/priors/u_sigma/omega_v", arma::vec(kK, arma::fill::value(0.1)));
+    }
+    else
+    {
+        write_row(file, "/priors/u_sigma/shape", arma::vec(kK, arma::fill::value(3.0)));
+        write_row(file, "/priors/u_sigma/rate", arma::vec(kK, arma::fill::value(0.2)));
+    }
     write_row(file, "/priors/u_sigma/mu", arma::vec(kK, arma::fill::zeros));
     write_mat(file, "/priors/u_sigma/v_inv", arma::eye<arma::mat>(kK, kK));
 
@@ -1287,16 +1302,19 @@ void write_vec_tvp_gamma(const ModelFile &file, const std::string &varsel, bool 
     }
 }
 
+/// `noncentred` switches the coefficients, the covariance block and the
+/// log-volatility to the normal prior on their signed standard deviation. The
+/// cointegration space keeps its fixed unit state variance.
 void write_vec_tvp_stochvol(const ModelFile &file, const std::string &varsel, bool covar,
-                            arma::uword nparams)
+                            arma::uword nparams, bool noncentred = false)
 {
-    write_vec_tvp_coefficients(file, varsel, nparams);
+    write_vec_tvp_coefficients(file, varsel, nparams, noncentred);
     write_vec_tvp_coint(file);
-    write_vec_stochvol(file);
+    write_vec_stochvol(file, noncentred);
 
     if (covar)
     {
-        write_vec_tvp_psi(file, varsel, kK * (kK - 1) / 2);
+        write_vec_tvp_psi(file, varsel, kK * (kK - 1) / 2, noncentred);
     }
 }
 
@@ -1797,7 +1815,7 @@ void write_vec_tvp_discount(const ModelFile &file)
 
 /// Dispatches to the seven above. Returns false if the name is not a VEC.
 bool write_vec_model(const ModelFile &file, const std::string &model, const std::string &varsel,
-                     bool covar, arma::uword nparams)
+                     bool covar, arma::uword nparams, bool noncentred)
 {
     if (model == "VecKlgs2010")
     {
@@ -1825,7 +1843,7 @@ bool write_vec_model(const ModelFile &file, const std::string &model, const std:
     }
     else if (model == "VecTvpStochvol")
     {
-        write_vec_tvp_stochvol(file, varsel, covar, nparams);
+        write_vec_tvp_stochvol(file, varsel, covar, nparams, noncentred);
     }
     else if (model == "VecTvpDiscount")
     {
@@ -2023,10 +2041,11 @@ int main(int argc, char *argv[])
                      "DfmNormalStochvol, DfmTvpGamma, DfmTvpStochvol\n";
         return 2;
     }
-    if (noncentred && model != "VarTvpStochvol" && model != "VarTvpGamma")
+    if (noncentred && model != "VarTvpStochvol" && model != "VarTvpGamma" &&
+        model != "VecTvpStochvol")
     {
-        std::cerr << "Only VarTvpStochvol and VarTvpGamma read the non-centred prior omega_v "
-                     "so far\n";
+        std::cerr << "Only VarTvpStochvol, VarTvpGamma and VecTvpStochvol read the non-centred "
+                     "prior omega_v so far\n";
         return 2;
     }
     if (coint_rho && model != "VecTvpWishart" && model != "VecTvpGamma" &&
@@ -2151,7 +2170,7 @@ int main(int argc, char *argv[])
 
             write_vec_common(file, model, varsel, covar, structural, h, levels, dy, w, z_train,
                              x_train);
-            write_vec_model(file, model, varsel, covar, nparams);
+            write_vec_model(file, model, varsel, covar, nparams, noncentred);
 
             if (coint_rho)
             {
