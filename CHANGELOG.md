@@ -380,6 +380,47 @@ heading, and move down into a version section when one is cut.
   parameters it does not take; it is back where it belongs. Documentation
   only: no code path changes and no draw moves.
 
+- **A NaN or an infinity in the input is refused, by name, before anything
+  reads it.** `bayests check` accepted every such file. A run then failed deep
+  in the numerics -- `inv_sympd(): matrix is singular or not positive definite`,
+  `randg(): incorrect distribution parameters` -- naming neither the dataset nor
+  the value, and in two places it did not fail at all: a NaN in
+  `/data/forecast/x` came back as NaN forecasts, and one in `/data/test/y` as a
+  NaN `/posterior/forecast/loglik`, both from runs that exited 0.
+
+  Every input's `validate()` now checks the observations -- the training
+  sample, the forecast regressors and the realised values -- and the three shape
+  checks every prior and starting value passes through check the values too, so
+  `bayests check` refuses the file a run would. Forecasting and scoring run from
+  draws a previous stage wrote, without `validate()`, so they check
+  `/data/forecast/x` and `/data/test/y` again themselves. The message names the
+  dataset: *the realised observations /data/test/y must be finite, but 1 of its
+  12 values is NaN or infinite; missing values are not supported*. The test
+  reads the exponent bits rather than calling `std::isfinite()`, which a host
+  compiling with `-ffast-math` may fold to true.
+
+  Two readers in the I/O layer had the same hole. A count stored as a double --
+  `/priors/u_sigma/df` as R writes it -- passed the whole-number test when it
+  was NaN, every comparison with NaN being false, and was then cast to `int`,
+  which is undefined behaviour; a finite value past the range of an `int` did
+  the same. Both are refused now. And selection positions were handed to HDF5
+  to convert to integers, which turned a NaN into 0 -- reported as "a position
+  below 1" -- and truncated 2.5 to 2 without a word; they are read as doubles
+  now, and a position that is not a whole number is refused.
+
+  **Two things are refused that used to run**, both deliberately: a fractional
+  selection position, which was silently truncated, and a non-finite value in
+  a cell of `/data/forecast/x` that the forecast overwrites, which was harmless.
+  The rule is that a file has no missing values, not that it has none where a
+  model happens to look. A host feeding the vendored core values with NA in
+  them gets the same refusals.
+
+  `check.nonfinite` puts one NaN into every input dataset each algorithm's
+  fixtures carry -- 476 pairs, integer datasets rewritten as doubles -- and
+  fails on any that `bayests check` does not refuse by name. *Draws are
+  unchanged*: `record_fingerprints.sh` before and after, full suite, reports
+  120 fixtures unchanged and 0 moved.
+
 ## 0.3.0 — 2026-09-20
 
 ### Added

@@ -271,7 +271,16 @@ Written by the run, not by you. See `results.md`.
 
 **Variable-selection positions are one-based.** `include` counts from 1, the way
 R and the file format count, and is converted on read. A position below 1 is
-refused outright rather than wrapping into an index nothing would catch.
+refused outright rather than wrapping into an index nothing would catch, and so
+is one that is not a whole number, rather than being truncated.
+
+**Every value must be finite.** BayesTS has no treatment of missing values. A NaN
+or an infinity in any dataset under `/data`, `/priors` or `/initial` is refused
+— by `bayests check`, by the stage that estimates, and by `forecasts`, which
+runs from draws already written and so checks `/data/forecast/x` and
+`/data/test/y` again itself. The message names the dataset. That covers the
+cells of `/data/forecast/x` a forecast overwrites, which only need to be finite,
+and a count such as `/priors/u_sigma/df` written as a double, as R writes one.
 
 **Results are written back in place, and a dataset that is already there is
 unlinked first.** HDF5 does not reclaim that space, so a file grows a little

@@ -535,7 +535,10 @@ alongside. Inside the samplers a draw is one column. A reader coming from
 Python or C should expect the dataspace orientation, not R's.
 
 Variable-selection positions are stored **one-based**, the way R and the file
-format count, and converted on read. The `error` attribute is what turns the
+format count, and converted on read. **Every value must be finite**: there is no
+treatment of missing values, and a NaN or an infinity anywhere under `/data`,
+`/priors` or `/initial` is refused, by `bayests check` and by a run alike, with
+the dataset named. The `error` attribute is what turns the
 covariance block on, and the spelling that does it is model-specific:
 `gamma+covar` for the gamma models and `sv+covar` for stochastic volatility. Those
 two are the only values that switch anything on. A model with no psi block —

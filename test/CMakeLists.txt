@@ -361,6 +361,8 @@ function(bayests_add_model_fixture name model varsel covar structural horizon)
     set_tests_properties("fixture.${name}" PROPERTIES
         FIXTURES_SETUP "fx.${name}"
         ENVIRONMENT_MODIFICATION "${_bayests_test_env_mod}")
+    # Collected for check.nonfinite, which reads every generated file.
+    set_property(GLOBAL APPEND PROPERTY BAYESTS_MODEL_FIXTURES "fx.${name}")
 
     set(_golden_group "")
     if(_group)
@@ -417,6 +419,8 @@ function(bayests_add_multimodel_fixture name model group_a group_b)
     set_tests_properties("fixture.${name}" PROPERTIES
         FIXTURES_SETUP "fx.${name}"
         ENVIRONMENT_MODIFICATION "${_bayests_test_env_mod}")
+    # Collected for check.nonfinite, which reads every generated file.
+    set_property(GLOBAL APPEND PROPERTY BAYESTS_MODEL_FIXTURES "fx.${name}")
 
     foreach(_group IN ITEMS "${group_a}" "${group_b}")
         string(REPLACE "/" "_" _suffix "${_group}")
@@ -818,6 +822,21 @@ if(NOT BAYESTS_TEST_AGENT_DOCS STREQUAL "OFF")
                     "${PROJECT_SOURCE_DIR}/agents/skills/bayests"
                     "${CMAKE_CURRENT_BINARY_DIR}/agent_recipes")
         set_tests_properties(agents.recipes PROPERTIES
+            ENVIRONMENT "${_bayests_pin_threads}"
+            ENVIRONMENT_MODIFICATION "${_bayests_test_env_mod}")
+
+        # A NaN in any input a model reads is refused by `bayests check`, by
+        # name: every (algorithm, dataset) pair the generated fixtures cover gets
+        # one, in a copy. Here rather than beside the fixture rows because it
+        # needs the same Python with h5py -- and it requires every fixture, so a
+        # dataset a model learns to read is covered the day a fixture writes it.
+        get_property(_bayests_all_fixtures GLOBAL PROPERTY BAYESTS_MODEL_FIXTURES)
+        add_test(NAME check.nonfinite
+            COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/check_nonfinite.py"
+                    "$<TARGET_FILE:bayests>" "${BAYESTS_FIXTURE_DIR}"
+                    "${CMAKE_CURRENT_BINARY_DIR}/check_nonfinite")
+        set_tests_properties(check.nonfinite PROPERTIES
+            FIXTURES_REQUIRED "${_bayests_all_fixtures}"
             ENVIRONMENT "${_bayests_pin_threads}"
             ENVIRONMENT_MODIFICATION "${_bayests_test_env_mod}")
         message(STATUS "Agent documentation examples registered as agents.recipes, "

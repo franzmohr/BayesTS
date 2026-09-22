@@ -181,8 +181,22 @@ arma::uword last_sample_period(const arma::uword periods)
 
 arma::uvec read_positions(const ModelFile &file, const std::string &dataset)
 {
+    // Read as doubles and checked one by one, rather than handed to HDF5 to
+    // convert to int: that conversion turns a NaN into 0 -- reported as "a
+    // position below 1" -- and truncates 2.5 to 2 without a word. R writes
+    // these as doubles unless told otherwise, so a double is the usual case.
     const arma::vec one_based = arma::vectorise(
-        hdf5_dataset_to_armadillo_matrix_integer(file, dataset));
+        hdf5_dataset_to_armadillo_matrix_double(file, dataset));
+
+    for (const double position : one_based)
+    {
+        if (!std::isfinite(position) || position != std::floor(position))
+        {
+            throw std::invalid_argument("'" + dataset + "' holds " + std::to_string(position) +
+                                        ", which is not a finite whole number; coefficient "
+                                        "positions are counted from one");
+        }
+    }
 
     // Checked before the subtraction: converting a zero to an unsigned index
     // wraps to a value no bounds check further down would recognise.
