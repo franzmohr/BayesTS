@@ -46,7 +46,9 @@ Treat a warning as a bug in the file until you can say why it is there.
    `bayests posterior` does all three in the right order.
 
 4. **Re-running does not re-estimate.** Every stage skips when its output is
-   already in the file. Delete `/posterior` to redo a run.
+   already in the file. Delete `/posterior` to redo a run. A run stopped while
+   writing its draws leaves `/posterior` marked `coefficients = "writing"`;
+   such a file is estimated again, and later stages refuse it until it is.
 
 5. **Variable-selection positions are one-based**, and they are the only
    positions selection moves. Every coefficient outside `include` keeps the

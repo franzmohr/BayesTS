@@ -10,6 +10,7 @@
 
 #include "models/models.h"
 #include "models/model_check.h"
+#include "models/coefficients_stage.h"
 
 #include "bayests/dfm_tvp_gamma.h"
 #include "io/hdf5/dfm_tvp_gamma_io.h"
@@ -41,10 +42,10 @@ void DfmTvpGamma::draw_coefficients(const ModelLocation &location_arg)
     HighFive::File h5 = open_hdf5_file_readwrite(location.file);
     const ModelFile file(h5, location.group);
 
-    // Check if posterior data already exists
-    if (dataset_has_data(file, "/posterior/u_sigma_inv/coeffs"))
+    // Skipped if already estimated; estimated again if a run was stopped while
+    // writing -- see coefficients_needed().
+    if (!coefficients_needed(file, "/posterior/u_sigma_inv/coeffs"))
     {
-        std::cout << "Posterior data already exists in file. Skipping simulation." << std::endl;
         return;
     }
 
@@ -54,7 +55,9 @@ void DfmTvpGamma::draw_coefficients(const ModelLocation &location_arg)
     const bayests::DfmTvpGammaDraws draws =
         bayests::DfmTvpGammaSampler{}.draw_coefficients(input, reporter);
 
+    bayests::hdf5_io::mark_coefficients_writing(file);
     io::write_coefficients(file, draws);
+    bayests::hdf5_io::mark_coefficients_complete(file);
 }
 
 void DfmTvpGamma::forecast(const ModelLocation &location_arg)

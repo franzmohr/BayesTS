@@ -265,7 +265,8 @@ above is the only entry either of them opens.
 
 ## `/posterior`
 
-Written by the run, not by you. See `results.md`.
+Written by the run, not by you. See `results.md`, including the `coefficients`
+attribute that says whether the run finished writing it.
 
 ## Two conventions worth repeating
 

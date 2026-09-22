@@ -269,6 +269,20 @@ either way.
 `FavarNormalWishart` have nothing that drifts, so the attribute changes nothing
 for them.
 
+## The `coefficients` attribute on `/posterior`
+
+`coefficients` sets it to `"writing"` before it writes its first dataset and to
+`"complete"` after its last, flushing the file each time, so a run stopped
+partway leaves `"writing"` behind. Such a file is estimated again by the next
+`coefficients`, which says so; `forecasts` and `loglik` refuse it, since the
+draws they would read are not all there; and `bayests check` reports it. A
+file with no such attribute was written before it existed, and is treated as
+it always was: complete if its draws are there.
+
+Nothing else reads the attribute, and it moves no number. Reading a posterior
+from Python or R, `"writing"` is the one value that means the draws beside it
+are not to be trusted.
+
 ## The `mcmc` attributes
 
 Datasets under `/posterior/<block>/` carry `start`, `end` and `thin` attributes,

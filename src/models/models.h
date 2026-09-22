@@ -61,6 +61,11 @@ struct ModelCheck
     /// Whether draws are already written, in which case coefficients skips.
     bool has_posterior = false;
 
+    /// Whether a run of coefficients started writing them and did not finish,
+    /// in which case coefficients estimates them again. has_posterior is false
+    /// then: nothing a later stage may read is there.
+    bool posterior_interrupted = false;
+
     /// /model/seed, when the file names one. A seed that is not a non-negative
     /// whole number is refused here as it is by a run.
     std::optional<std::uint64_t> seed;

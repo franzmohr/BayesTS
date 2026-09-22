@@ -92,7 +92,11 @@ ModelCheck inspect(const ModelFile &file, const Input &input,
     const std::vector<std::string> read = file.datasets_read();
 
     check.error_attribute = hdf5_io::optional_attribute_string(file, "/model", "error", "");
-    check.has_posterior = dataset_has_data(file, posterior_probe);
+    // As coefficients_needed() decides it, so the check says what the run
+    // will do: a posterior a stopped run left half written is estimated again.
+    const hdf5_io::CoefficientsState state = hdf5_io::coefficients_state(file, posterior_probe);
+    check.has_posterior = state == hdf5_io::CoefficientsState::complete;
+    check.posterior_interrupted = state == hdf5_io::CoefficientsState::interrupted;
 
     // Not the reader's -- the command line seeds the generator, see
     // src/model_seed.cpp -- but a seed a run would refuse, the check refuses.

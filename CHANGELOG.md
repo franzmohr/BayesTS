@@ -456,6 +456,31 @@ heading, and move down into a version section when one is cut.
   dropping it as an unknown command, the site builds with no warnings where it
   had fourteen. Comments and configuration only; no draw moves.
 
+- **A run stopped while writing its draws is no longer taken for a finished
+  one.** `coefficients` skips a model whose posterior is already there, and
+  "there" meant one dataset -- in eleven of the twenty-two models not the last
+  one the stage writes, and in the two discounted models the first. A job
+  killed, or a machine restarted, between two of those writes left a file
+  whose rerun printed *Posterior data already exists in file. Skipping
+  simulation.*, exited 0, and never wrote what was missing; `forecasts` then
+  failed on it, every time, until `/posterior` was deleted by hand.
+
+  The stage now marks `/posterior` with the attribute `coefficients` --
+  `"writing"` before its first write and `"complete"` after its last, flushing
+  the file each time so the marks reach the disk in that order. A file still
+  marked `"writing"` is estimated again, with a line saying why; every reader
+  of draws refuses one, so `forecasts` and `loglik` do not run on half a
+  posterior; and `bayests check` says it will be estimated again rather than
+  skipped. A file with no mark was written before it existed and is treated as
+  it always was. The two discounted models' `loglik` is unaffected: it
+  recomputes the closed form from the data and reads nothing stored.
+
+  `cli.interrupted` checks all four behaviours for every algorithm. What a kill
+  leaves is set directly -- where it lands between writes is a race. The
+  change is to the command line and the I/O layer; no core file is touched.
+  *Draws are unchanged*: fingerprints against the previous recording, full
+  suite, 120 fixtures unchanged and 0 moved.
+
 ## 0.3.0 — 2026-09-20
 
 ### Added

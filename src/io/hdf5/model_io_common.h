@@ -229,6 +229,45 @@ void write_log_likelihood(const ModelFile &file, const arma::mat &loglik);
 /// a score without them would be a score of nothing.
 void write_forecast_loglik(const ModelFile &file, const arma::mat &loglik);
 
+/// What a previous `coefficients` stage left in a model's /posterior.
+///
+/// Every stage skips when its output is already there, and for `coefficients`
+/// "there" used to mean one dataset -- in half the models not the last one the
+/// stage writes, and in the two discounted ones the first. A run stopped
+/// between two writes left a file whose rerun skipped and whose later stages
+/// failed, for good. The stage now marks /posterior before its first write and
+/// again after its last, and `interrupted` is a file still carrying the first.
+enum class CoefficientsState
+{
+    absent,      ///< Nothing written, or not the dataset the model's skip reads.
+    interrupted, ///< A run started writing and did not finish.
+    complete,    ///< Written in full -- or by a version before the marker.
+};
+
+/// The attribute on /posterior the marker is kept in, and its two values.
+inline constexpr const char *kCoefficientsAttribute = "coefficients";
+inline constexpr const char *kCoefficientsWriting = "writing";
+inline constexpr const char *kCoefficientsComplete = "complete";
+
+/// Reads the marker, and `probe` -- the dataset the model's skip always read.
+///
+/// A file without the marker is one written before it existed. Those were
+/// written by runs that finished, or they would be reported as broken already,
+/// so the probe decides for them exactly as it did before: present is complete.
+CoefficientsState coefficients_state(const ModelFile &file, const std::string &probe);
+
+/// Marks /posterior as being written, and flushes, so the mark is on disk
+/// before any draw is. Call before the first write of the stage.
+void mark_coefficients_writing(const ModelFile &file);
+
+/// Marks /posterior as written in full, and flushes. Call after the last write.
+void mark_coefficients_complete(const ModelFile &file);
+
+/// Throws if a run of `coefficients` started writing this model's draws and did
+/// not finish. Called by every reader of draws, so `loglik` and `forecasts` do
+/// not run on half a posterior.
+void require_coefficients_finished(const ModelFile &file);
+
 } // namespace bayests::hdf5_io
 
 #endif // BAYESTS_IO_HDF5_MODEL_IO_COMMON_H
