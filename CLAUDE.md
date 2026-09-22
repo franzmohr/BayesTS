@@ -22,8 +22,9 @@ source" for the toolchain and dependency setup.
 Test names are `unit.<name>`, `fixture.<name>`, `golden.<name>` and
 `check.<name>`, plus `cli.refusals` (the command line's exit codes),
 `check.nonfinite` (a NaN in every input dataset each algorithm reads, which
-`bayests check` must refuse by name) and `agents.recipes` (see "The agent
-documentation" below). Each
+`bayests check` must refuse by name), `cli.interrupted` (a posterior left marked
+"writing" is estimated again and refused by later stages) and `agents.recipes`
+(see "The agent documentation" below). Each
 `fixture.*` writes a model file into `build/bin/<preset>/test/fixtures/` and the
 `golden.*` beside it runs all three entry points over it; they are paired with
 CTest `FIXTURES_SETUP`/`FIXTURES_REQUIRED`, so naming one golden test regenerates
@@ -335,7 +336,7 @@ they shift in the last digits with the compiler, the BLAS and the CPU. The
 `fingerprints.yml` workflow runs the same base-vs-head comparison on every PR.
 
 A fingerprint recording is not something to read in full: the suite at `-V` is
-well over 1.5 MB (401 tests, 120 fixtures, from a clean clone), and a recording of it around
+well over 1.5 MB (402 tests, 120 fixtures, from a clean clone), and a recording of it around
 200 KB. Redirect, then read the reduction — both scripts do this by design, and
 neither `ctest -V` nor a `test/baselines/` file belongs on a terminal it is not
 being paged through. The same goes for a green `ctest` run: `> /tmp/ctest.log

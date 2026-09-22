@@ -75,7 +75,11 @@ already in the file: `coefficients` returns immediately if
 `/posterior/u_sigma_inv/coeffs` holds data — `/posterior/a/mean` for the two
 `*TvpDiscount` models, which write no precision — and `forecasts` and `loglik`
 do the same for theirs. To re-estimate, delete `/posterior` or write a fresh
-file.
+file. The one exception is a run stopped while it was writing: `coefficients`
+marks `/posterior` with the attribute `coefficients = "writing"` before its
+first write and `"complete"` after its last, and a file still marked
+`"writing"` is estimated again rather than skipped, while `forecasts` and
+`loglik` refuse its half-written draws.
 
 **5. Variable-selection positions are one-based.** `/priors/a/include` counts
 from 1, the way R and the file format count; the samplers convert on read. A

@@ -839,6 +839,18 @@ if(NOT BAYESTS_TEST_AGENT_DOCS STREQUAL "OFF")
             FIXTURES_REQUIRED "${_bayests_all_fixtures}"
             ENVIRONMENT "${_bayests_pin_threads}"
             ENVIRONMENT_MODIFICATION "${_bayests_test_env_mod}")
+
+        # A run of `coefficients` stopped while writing is estimated again rather
+        # than skipped as done, and later stages refuse its half-written draws:
+        # the "writing"/"complete" mark on /posterior, for every algorithm.
+        add_test(NAME cli.interrupted
+            COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/check_interrupted.py"
+                    "$<TARGET_FILE:bayests>" "${BAYESTS_FIXTURE_DIR}"
+                    "${CMAKE_CURRENT_BINARY_DIR}/check_interrupted")
+        set_tests_properties(cli.interrupted PROPERTIES
+            FIXTURES_REQUIRED "${_bayests_all_fixtures}"
+            ENVIRONMENT "${_bayests_pin_threads}"
+            ENVIRONMENT_MODIFICATION "${_bayests_test_env_mod}")
         message(STATUS "Agent documentation examples registered as agents.recipes, "
                        "run with ${Python3_EXECUTABLE}")
     elseif(BAYESTS_TEST_AGENT_DOCS STREQUAL "ON")

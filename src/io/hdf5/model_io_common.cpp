@@ -370,12 +370,14 @@ VarSelPrior read_varsel_prior(const ModelFile &file, const std::string &group,
 
 arma::mat read_draws(const ModelFile &file, const std::string &dataset)
 {
+    require_coefficients_finished(file);
     return arma::trans(read_mat(file, dataset));
 }
 
 arma::mat read_draws_at_period(const ModelFile &file, const std::string &dataset,
                                arma::uword period, arma::uword width)
 {
+    require_coefficients_finished(file);
     const arma::mat stored = read_mat(file, dataset);
     return arma::trans(stored.cols(period * width, (period + 1) * width - 1));
 }
@@ -449,6 +451,7 @@ void write_posterior_path(const ModelFile &file, const std::string &dataset, con
 
 arma::mat read_posterior_path(const ModelFile &file, const std::string &dataset)
 {
+    require_coefficients_finished(file);
     return arma::trans(read_mat(file, dataset));
 }
 
@@ -577,6 +580,67 @@ std::optional<std::uint64_t> read_model_seed(const ModelFile &file)
     }
 
     throw refuse("is not a number");
+}
+
+namespace
+{
+
+/// The marker's value, or empty where /posterior or the attribute is absent.
+std::string coefficients_marker(const ModelFile &file)
+{
+    if (!file.exist("/posterior") ||
+        !attribute_exists(file, "/posterior", kCoefficientsAttribute))
+    {
+        return {};
+    }
+    return get_attribute_string(file, "/posterior", kCoefficientsAttribute);
+}
+
+void set_coefficients_marker(const ModelFile &file, const std::string &value)
+{
+    ensure_group(file, "/posterior");
+    HighFive::Group posterior = file.getGroup("/posterior");
+    if (posterior.hasAttribute(kCoefficientsAttribute))
+    {
+        posterior.deleteAttribute(kCoefficientsAttribute);
+    }
+    posterior.createAttribute<std::string>(kCoefficientsAttribute, value);
+
+    // Flushed at once: HDF5 is free to put metadata on disk in any order until
+    // it is told otherwise, and the mark is only worth anything if "writing"
+    // reaches the disk before the first draw does and "complete" after the last.
+    file.file().flush();
+}
+
+} // namespace
+
+CoefficientsState coefficients_state(const ModelFile &file, const std::string &probe)
+{
+    if (coefficients_marker(file) == kCoefficientsWriting)
+    {
+        return CoefficientsState::interrupted;
+    }
+    return dataset_has_data(file, probe) ? CoefficientsState::complete : CoefficientsState::absent;
+}
+
+void mark_coefficients_writing(const ModelFile &file)
+{
+    set_coefficients_marker(file, kCoefficientsWriting);
+}
+
+void mark_coefficients_complete(const ModelFile &file)
+{
+    set_coefficients_marker(file, kCoefficientsComplete);
+}
+
+void require_coefficients_finished(const ModelFile &file)
+{
+    if (coefficients_marker(file) == kCoefficientsWriting)
+    {
+        throw std::runtime_error(
+            "the posterior in this file is from a run of `coefficients` that did not finish "
+            "writing it; run `coefficients` again, which estimates it afresh");
+    }
 }
 
 } // namespace bayests::hdf5_io

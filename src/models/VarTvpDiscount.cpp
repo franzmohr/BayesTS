@@ -23,6 +23,7 @@
 //   that can then disagree.
 
 #include "models/model_check.h"
+#include "models/coefficients_stage.h"
 #include "models/models.h"
 
 #include "bayests/var_tvp_discount.h"
@@ -68,9 +69,10 @@ void VarTvpDiscount::draw_coefficients(const ModelLocation &location_arg)
     HighFive::File h5 = open_hdf5_file_readwrite(location.file);
     const ModelFile file(h5, location.group);
 
-    if (dataset_has_data(file, io::kPosteriorProbe))
+    // Skipped if already estimated; estimated again if a run was stopped while
+    // writing -- see coefficients_needed().
+    if (!coefficients_needed(file, io::kPosteriorProbe, "estimation"))
     {
-        std::cout << "Posterior data already exists in file. Skipping estimation." << std::endl;
         return;
     }
 
@@ -80,7 +82,9 @@ void VarTvpDiscount::draw_coefficients(const ModelLocation &location_arg)
     const bayests::VarTvpDiscountPosterior posterior =
         bayests::VarTvpDiscountEstimator{}.estimate(input, reporter);
 
+    bayests::hdf5_io::mark_coefficients_writing(file);
     io::write_posterior(file, posterior);
+    bayests::hdf5_io::mark_coefficients_complete(file);
 }
 
 void VarTvpDiscount::forecast(const ModelLocation &location_arg)

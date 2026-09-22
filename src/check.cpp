@@ -226,6 +226,11 @@ void print_report(const std::string &algorithm, const ModelCheck &check)
 		std::cout << "  posterior: already written, so coefficients will skip this model; "
 		             "delete /posterior to re-estimate\n";
 	}
+	else if (check.posterior_interrupted)
+	{
+		std::cout << "  posterior: left half written by a run that did not finish, so "
+		             "coefficients will estimate it again\n";
+	}
 
 	// The warnings: things that do not stop a run and do change what it means.
 	if (ends_with(check.error_attribute, "+covar") && !spec.uses_covar())

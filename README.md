@@ -470,6 +470,12 @@ bayests forecasts models/ --all-groups
 they are the way to add a result to a model that has been sampled once, without
 re-running the sampler.
 
+A run stopped while it was writing its draws — a job killed, a machine
+restarted — is not mistaken for a finished one. `coefficients` marks
+`/posterior` with `coefficients = "writing"` before its first write and
+`"complete"` after its last; a file still marked `"writing"` is estimated again
+on the next run, and `forecasts` and `loglik` refuse it until it has been.
+
 The program reports its thread counts on startup and exits 1 on a non-HDF5
 file, an unknown `algorithm`, or a run that started and could not
 finish — a model file the sampler rejects, or a `forecasts` or `loglik` asked
