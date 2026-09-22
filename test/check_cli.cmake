@@ -177,6 +177,55 @@ endif()
 
 file(REMOVE_RECURSE "${SCRATCH}")
 
+# A directory holding the model beside a link back to the directory itself: a
+# cycle. On Windows the library sees a junction as a plain directory, so the walk
+# follows it, and it used to go round until the path grew past what Windows would
+# open -- running the one model once per lap, fourteen times in the case this was
+# found on, then exiting 0 with a warning that the link's target did not exist.
+# The walk now compares each directory with its ancestors and skips one that
+# leads back. Elsewhere the link is a symbolic one the walk does not follow at
+# all, so the model runs once there without anything to warn about; "once" is
+# what is asserted on every platform, the warning on Windows alone.
+file(MAKE_DIRECTORY "${SCRATCH}/loop/sub")
+file(COPY "${FIXTURE}" DESTINATION "${SCRATCH}/loop/sub")
+
+if(CMAKE_HOST_WIN32)
+    file(TO_NATIVE_PATH "${SCRATCH}/loop/sub/back" _native_back)
+    file(TO_NATIVE_PATH "${SCRATCH}/loop" _native_loop)
+    execute_process(
+        COMMAND cmd /c mklink /J "${_native_back}" "${_native_loop}"
+        RESULT_VARIABLE _loop_link
+        OUTPUT_QUIET ERROR_QUIET)
+else()
+    file(CREATE_LINK "${SCRATCH}/loop" "${SCRATCH}/loop/sub/back" RESULT _loop_link SYMBOLIC)
+endif()
+
+if(_loop_link STREQUAL "0")
+    expect_exit(0 "a directory walk past a link cycle" check "${SCRATCH}/loop")
+    string(REGEX MATCHALL "Processing:" _loop_runs "${_out}")
+    list(LENGTH _loop_runs _loop_count)
+    if(NOT _loop_count EQUAL 1)
+        message(STATUS "FAIL: the model below a link cycle was checked ${_loop_count} times, not once\n${_out}\n${_err}")
+        math(EXPR _failures "${_failures} + 1")
+    endif()
+    if(CMAKE_HOST_WIN32 AND NOT _err MATCHES "leads back to")
+        message(STATUS "FAIL: the walk did not say it skipped the cycle\n${_err}")
+        math(EXPR _failures "${_failures} + 1")
+    endif()
+
+    # The link goes first, on its own: a recursive delete that followed it would
+    # be walking the same cycle.
+    if(CMAKE_HOST_WIN32)
+        execute_process(COMMAND cmd /c rmdir "${_native_back}" OUTPUT_QUIET ERROR_QUIET)
+    else()
+        file(REMOVE "${SCRATCH}/loop/sub/back")
+    endif()
+else()
+    message(STATUS "skipped: a link cycle cannot be created here (${_loop_link})")
+endif()
+
+file(REMOVE_RECURSE "${SCRATCH}")
+
 if(_failures GREATER 0)
     message(FATAL_ERROR "${_failures} command line check(s) failed")
 endif()

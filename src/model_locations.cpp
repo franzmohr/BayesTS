@@ -6,10 +6,12 @@
 #include "io/hdf5/hdf5_and_armadillo.h"
 
 #include <algorithm>
+#include <cstddef>
 #include <filesystem>
 #include <iostream>
 #include <string>
 #include <system_error>
+#include <utility>
 #include <vector>
 
 namespace
@@ -104,6 +106,47 @@ void warn_dangling(const std::filesystem::path &path)
 	          << ": it is a link whose target does not exist" << std::endl;
 }
 
+void warn_cycle(const std::filesystem::path &path, const std::filesystem::path &ancestor)
+{
+	std::cerr << "Warning: skipping " << path.string() << ": it leads back to "
+	          << ancestor.string() << ", which this walk is already inside" << std::endl;
+}
+
+/// True if `a` and `b` are the same file or directory, however each was reached.
+/// An error -- a link whose target is gone, say -- reads as "not the same", so
+/// the caller goes on to find out what is wrong with the path itself.
+bool same_entry(const std::filesystem::path &a, const std::filesystem::path &b)
+{
+	std::error_code error;
+	return std::filesystem::equivalent(a, b, error) && !error;
+}
+
+/// Drops every path in `files` that is the same file as one before it, reached
+/// by another route -- a junction into a different branch of the walk. Kept is
+/// the first in sorted order, so which one survives is the same on every run.
+///
+/// Compared only within one file name: a second route to a file cannot change
+/// its name, only the folders above it, so this finds every duplicate without
+/// asking the file system about every pair.
+void unique_files(std::vector<std::filesystem::path> &files)
+{
+	std::vector<std::filesystem::path> kept;
+	kept.reserve(files.size());
+	for (const std::filesystem::path &file : files)
+	{
+		const bool seen = std::any_of(kept.begin(), kept.end(),
+		                               [&](const std::filesystem::path &other) {
+			                               return other.filename() == file.filename() &&
+			                                      same_entry(other, file);
+		                               });
+		if (!seen)
+		{
+			kept.push_back(file);
+		}
+	}
+	files = std::move(kept);
+}
+
 /// Every HDF5 file below `root`, sorted, with the number of entries that could
 /// not be read.
 ///
@@ -123,19 +166,63 @@ void warn_dangling(const std::filesystem::path &path)
 /// directory that is gone reports as a directory, and only opening it says
 /// ENOENT, which is therefore read the same way below the root. Links to
 /// directories that the library does recognise are not followed, as the
-/// iterator did not follow them, so a link cycle cannot make the walk endless.
+/// iterator did not follow them.
+///
+/// Which leaves Windows following junctions, since the library sees each as a
+/// plain directory. That is kept -- a junction is how a folder of models gets
+/// pulled in from elsewhere -- but a junction to a directory the walk is already
+/// inside used to be followed round and round until the path grew past what
+/// Windows would open, running every model beneath it once per lap. So each
+/// directory is compared with its own ancestors, by file identity rather than
+/// by name, and one that leads back to an ancestor is skipped with a warning.
+/// Ancestors only: a cycle has to close on one, and checking the chain costs
+/// one comparison per level rather than one per directory walked. A junction
+/// into a different branch is no cycle, but it reaches the same files twice,
+/// so those are dropped at the end instead: see unique_files().
 ///
 /// Sorted, as list_model_groups() sorts the groups of one file, so the order the
 /// models run and fail in is the same on every platform.
 int collect_hdf5_files(const std::filesystem::path &root, std::vector<std::filesystem::path> &files)
 {
 	int failures = 0;
-	std::vector<std::filesystem::path> pending{root};
+
+	// Every directory opened, with the index of the one it was found in, so that
+	// a directory's ancestors are a walk up `parent` -- the chain a cycle closes on.
+	struct Walked
+	{
+		std::filesystem::path path;
+		std::size_t parent;
+	};
+	constexpr std::size_t no_parent = static_cast<std::size_t>(-1);
+	std::vector<Walked> walked;
+
+	struct Pending
+	{
+		std::filesystem::path path;
+		std::size_t parent;
+	};
+	std::vector<Pending> pending{{root, no_parent}};
 
 	while (!pending.empty())
 	{
-		const std::filesystem::path directory = pending.back();
+		const Pending next = pending.back();
 		pending.pop_back();
+		const std::filesystem::path &directory = next.path;
+
+		bool cycle = false;
+		for (std::size_t up = next.parent; up != no_parent; up = walked[up].parent)
+		{
+			if (same_entry(directory, walked[up].path))
+			{
+				warn_cycle(directory, walked[up].path);
+				cycle = true;
+				break;
+			}
+		}
+		if (cycle)
+		{
+			continue;
+		}
 
 		std::error_code error;
 		std::filesystem::directory_iterator it(directory, error);
@@ -152,6 +239,9 @@ int collect_hdf5_files(const std::filesystem::path &root, std::vector<std::files
 			}
 			continue;
 		}
+
+		const std::size_t here = walked.size();
+		walked.push_back({directory, next.parent});
 
 		for (const std::filesystem::directory_iterator end; it != end; it.increment(error))
 		{
@@ -179,7 +269,7 @@ int collect_hdf5_files(const std::filesystem::path &root, std::vector<std::files
 			{
 				if (!is_link)
 				{
-					pending.push_back(entry.path());
+					pending.push_back({entry.path(), here});
 				}
 			}
 			else if (std::filesystem::is_regular_file(status) && is_hdf5_file(entry.path()))
@@ -196,6 +286,7 @@ int collect_hdf5_files(const std::filesystem::path &root, std::vector<std::files
 	}
 
 	std::sort(files.begin(), files.end());
+	unique_files(files);
 	return failures;
 }
 
