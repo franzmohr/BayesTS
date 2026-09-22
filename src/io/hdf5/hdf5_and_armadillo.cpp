@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <limits>
 #include <stdexcept>
 #include <highfive/H5Utility.hpp>
 
@@ -18,6 +19,22 @@ bool is_hdf5_file(const std::filesystem::path &filepath)
 				   [](unsigned char c) { return std::tolower(c); });
 	return ext == ".hdf5" || ext == ".h5";
 }
+
+namespace
+{
+
+// True when `value` is finite and inside the range of an int, so that the cast
+// the two integer readers below end in is defined. std::isfinite() is safe here
+// where the core avoids it: this layer is compiled only by this project, which
+// does not set -ffast-math, and never by an embedding host.
+bool fits_int(const double value)
+{
+	return std::isfinite(value) &&
+	       value >= static_cast<double>(std::numeric_limits<int>::min()) &&
+	       value <= static_cast<double>(std::numeric_limits<int>::max());
+}
+
+} // namespace
 
 // Open the file in read-only mode and return HighFive File object
 //
@@ -251,6 +268,15 @@ int get_attribute_int(const ModelFile &file, const std::string &group_name, cons
 			// These are counts, so a fractional one is a file that does not say
 			// what it appears to say. Truncating would silently turn a lag order
 			// of 2.5 into 2; the caller would rather hear about it.
+			// NaN and the infinities first: every comparison with NaN is false,
+			// so the whole-number test below would wave one through to a cast
+			// to int -- undefined behaviour, and in practice INT_MIN. The same
+			// goes for a finite value past the range of an int.
+			if (!fits_int(value)) {
+				throw std::runtime_error("Attribute '" + attr_name + "' of group '" +
+				                         file.resolve(group_name) + "' is " + std::to_string(value) +
+				                         ", which is not a finite number within the range of an int");
+			}
 			const double rounded = std::round(value);
 			if (std::abs(value - rounded) > 1e-9) {
 				throw std::runtime_error("Attribute '" + attr_name + "' of group '" +
@@ -394,41 +420,6 @@ arma::mat hdf5_dataset_to_armadillo_matrix_double(const ModelFile &file, const s
 }
 
 
-// Read dataset and transform it into an Armadillo matrix
-arma::mat hdf5_dataset_to_armadillo_matrix_integer(const ModelFile &file, const std::string &dataset_name)
-{
-	try {
-		// Open dataset
-		HighFive::DataSet dataset = file.getDataSet(dataset_name);
-
-		// Get dimensions
-		std::vector<size_t> dims = dataset.getDimensions();
-
-		if (dims.size() != 2) {
-			throw std::runtime_error("Dataset must be 2D for conversion to Armadillo matrix");
-		}
-
-		// Read the data into a 2D vector (row-major order from HDF5)
-		std::vector<std::vector<int>> data;
-		dataset.read(data);
-
-		// Convert to Armadillo matrix (column-major)
-		// HDF5 stores in row-major, so we need to transpose
-		arma::mat result(dims[0], dims[1]);
-		for (size_t i = 0; i < dims[0]; i++) {
-			for (size_t j = 0; j < dims[1]; j++) {
-				result(i, j) = data[i][j];
-			}
-		}
-
-		// Transpose to match expected layout
-		return arma::trans(result);
-	}
-	catch (const HighFive::Exception &e) {
-		throw std::runtime_error("Failed to read dataset '" + file.resolve(dataset_name) + "': " + std::string(e.what()));
-	}
-}
-
 // Read integer value from dataset
 double get_dataset_double(const ModelFile &file, const std::string &dataset_name)
 {
@@ -460,6 +451,12 @@ int get_dataset_int(const ModelFile &file, const std::string &dataset_name)
 
 			// A degrees-of-freedom or dimension that is not whole is a file that
 			// does not say what it appears to; truncating would hide it.
+			// As in get_attribute_int(): a NaN would pass the whole-number test.
+			if (!fits_int(value)) {
+				throw std::runtime_error("Dataset '" + file.resolve(dataset_name) + "' is " +
+				                         std::to_string(value) +
+				                         ", which is not a finite number within the range of an int");
+			}
 			const double rounded = std::round(value);
 			if (std::abs(value - rounded) > 1e-9) {
 				throw std::runtime_error("Dataset '" + file.resolve(dataset_name) + "' is " +

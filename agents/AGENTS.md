@@ -81,6 +81,12 @@ Treat a warning as a bug in the file until you can say why it is there.
     If two seeds give different posterior summaries, the chain is too short:
     raise `/model/thin` to run it longer without a larger file.
 
+11. **Every value must be finite.** A NaN or an infinity anywhere under
+    `/data`, `/priors` or `/initial` is refused, by `bayests check` and by a run
+    alike, naming the dataset. There are no missing values: score only the
+    periods `/data/test/y` has, and fill the cells of `/data/forecast/x` a
+    forecast overwrites with anything finite.
+
 ## Where to read more
 
 | Question | File |

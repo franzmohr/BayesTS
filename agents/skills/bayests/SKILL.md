@@ -79,7 +79,7 @@ file.
 
 **5. Variable-selection positions are one-based.** `/priors/a/include` counts
 from 1, the way R and the file format count; the samplers convert on read. A
-position below 1 is rejected.
+position below 1 is rejected, and so is one that is not a whole number.
 
 ## The naming grammar
 
@@ -302,6 +302,10 @@ in `references/algorithms.md`:
 - `structural` with a Wishart precision or a covariance block
 - A covariance block or a non-zero horizon on either `*Ald` model
 - A quantile outside `(0, 1)`
+- A NaN or an infinity anywhere under `/data`, `/priors` or `/initial` — there
+  is no treatment of missing values. That includes `/data/test/y` (score only
+  the periods you have) and the cells of `/data/forecast/x` a forecast
+  overwrites, which only need to be finite
 
 The two `Ald` refusals look most like missing features and are not. A covariance
 block would rotate the equations into each other, and the q-th quantile of a

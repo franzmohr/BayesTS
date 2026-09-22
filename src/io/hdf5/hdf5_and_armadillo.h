@@ -181,9 +181,6 @@ bool get_attribute_bool(const ModelFile &file, const std::string &group_name, co
 // Read dataset and transform it into an Armadillo matrix
 arma::mat hdf5_dataset_to_armadillo_matrix_double(const ModelFile &file, const std::string &dataset_name);
 
-// Read dataset and transform it into an Armadillo matrix
-arma::mat hdf5_dataset_to_armadillo_matrix_integer(const ModelFile &file, const std::string &dataset_name);
-
 // Read integer value from dataset
 int get_dataset_int(const ModelFile &file, const std::string &dataset_name);
 
