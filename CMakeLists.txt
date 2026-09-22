@@ -846,7 +846,15 @@ set(CPACK_SOURCE_PACKAGE_FILE_NAME "${PROJECT_NAME}-${PROJECT_VERSION}-src")
 # backslash escape, not the doubled one an unquoted config would need.
 set(CPACK_SOURCE_IGNORE_FILES
     "/\\.git/"
-    "/\\.github/"
+    # .github/ goes, all but highfive-version: the HighFive tag this project is
+    # tested against, which the README's build instructions, docker/Dockerfile
+    # and the major-version check above all send a reader to. CMake's regexes
+    # have no lookahead, so the rest of the directory is named piece by piece.
+    "/\\.github/ISSUE_TEMPLATE/"
+    "/\\.github/actions/"
+    "/\\.github/workflows/"
+    "/\\.github/dependabot\\.yml$"
+    "/\\.github/pull_request_template\\.md$"
     "/\\.vscode/"
     "/\\.vs/"
     "/\\.idea/"

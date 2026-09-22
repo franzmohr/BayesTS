@@ -905,6 +905,17 @@ heading, and move down into a version section when one is cut.
   *Draws are unchanged*: fingerprints against the previous recording, full
   suite, 120 fixtures unchanged and 0 moved.
 
+- **The source package carries `.github/highfive-version`.** The CPack source
+  ignore list dropped all of `.github/`, and with it the one file there a
+  build needs: the HighFive tag the README's Linux instructions clone
+  (`git clone --branch "$(cat .github/highfive-version)"`), that
+  `docker/Dockerfile` copies into the CI image, and that the configure-time
+  check on HighFive's major version names. Someone building from
+  `BayesTS-<version>-src` could follow none of them. The rest of `.github/` --
+  workflows, the composite action, the issue and pull request templates and
+  `dependabot.yml` -- is still left out. Packaging only; nothing is compiled
+  differently and no draw can move.
+
 ## 0.2.0 — 2026-09-15
 
 ### Added
