@@ -27,461 +27,7 @@ Dates are ISO. Versions follow the `project(VERSION)` in `CMakeLists.txt`.
 New entries go here, under an `### Added`, `### Changed` or `### Fixed`
 heading, and move down into a version section when one is cut.
 
-### Added
-
-- **`VecTvpGamma` takes the non-centred prior too**, for its coefficients
-  (loadings included) and its covariance block, as `VarTvpGamma` does; the
-  cointegration space keeps its fixed unit state variance and the error
-  precision its gamma prior. The covariance block reads one error covariance
-  for every period, which `draw_noncentred_path()` already takes.
-  `unit.noncentred` runs `VecTvpGamma` with a covariance block on a
-  cointegrated pair whose first constant shifts, and two fixtures,
-  `VecTvpGamma-noncentred` and `VecTvpGamma-noncentred-bvs-covar`, put the path
-  through `golden.*` and `check.*`. *Draws are unchanged* for every file
-  without `omega_v` and for the six existing non-centred fixtures: all
-  118 fixtures that existed before fingerprint identically.
-
-- **`VecTvpStochvol` takes the non-centred prior as well.** `omega_v` in place
-  of `shape` and `rate` under `/priors/a`, `/priors/psi` or `/priors/u_sigma`
-  draws that random walk non-centred and writes `omega`, `omega_log_zero` and
-  `omega_log_zero_joint` beside its `sigma`, as `VarTvpStochvol` does. The
-  coefficients include the loadings, whose regressors are the draw's
-  `beta' w`. The cointegration space is untouched: its state variance is fixed
-  at the identity to pin beta's scale, so there is no prior on it to replace.
-  `validate_stochvol_block()`, which `VecNormalStochvol` shares, now checks the
-  log-volatility's prior through `validate_state_variance_prior()`; that
-  model's reader never fills `omega_v`, so what it accepts is unchanged.
-  `unit.noncentred` runs `VecTvpStochvol` on a cointegrated pair whose first
-  error variance jumps, and two fixtures, `VecTvpStochvol-noncentred` and
-  `VecTvpStochvol-noncentred-bvs-covar`, put the path through `golden.*` and
-  `check.*`. *Draws are unchanged* for every file without `omega_v`, and for
-  the four non-centred VAR fixtures: all 116 fixtures that existed before
-  fingerprint identically.
-
-- **`VarTvpGamma` takes the non-centred prior too.** `omega_v` in place of
-  `shape` and `rate` under `/priors/a` or `/priors/psi` draws that random walk
-  non-centred and writes `omega`, `omega_log_zero` and `omega_log_zero_joint`
-  beside its `sigma`, exactly as `VarTvpStochvol` does; the error precision
-  does not move in this model, so there is no third block. The covariance
-  block's error covariance is one matrix for every period here, so
-  `draw_noncentred_path()` now takes one block as well as one per period, and
-  `write_noncentred()` moves to `model_io_common` for the two readers to share.
-  `unit.noncentred` runs `VarTvpGamma` with a covariance block on a shifting
-  intercept, and two fixtures, `VarTvpGamma-noncentred` and
-  `VarTvpGamma-noncentred-bvs-covar`, put the path through `golden.*` and
-  `check.*`. *Draws are unchanged* for every file without `omega_v`, the
-  `VarTvpStochvol` ones with it included: the full fingerprint recording, all
-  114 fixtures that existed before, is identical.
-
-- **A non-centred parameterisation of `VarTvpStochvol`'s random walks, and with
-  it a test for whether each one moves at all.** Setting `omega_v` in place of
-  `shape` and `rate` under `/priors/a`, `/priors/psi` or `/priors/u_sigma`
-  writes that block's random walk as `x_t = x_0 + omega * x~_t` with `x~_t` a
-  standard random walk, and puts a normal prior `N(0, omega_v)` on the signed
-  standard deviation `omega` (Frühwirth-Schnatter and Wagner 2010; for the
-  log-volatility, Kastner and Frühwirth-Schnatter 2014). Each draw takes the
-  standardised path, then `(x_0, omega)` jointly as a regression on it, then a
-  random sign switch. Because "the state does not move" is then `omega = 0`, a
-  point inside the prior, the Bayes factor for time variation is a
-  Savage-Dickey density ratio that one run estimates (Chan 2018): the sampler
-  writes `omega` and the log density at zero of its conditional posterior,
-  per state and per block, as `<block>/omega`, `<block>/omega_log_zero` and
-  `<block>/omega_log_zero_joint`. `sigma` is still written, as `omega^2`, so
-  forecasts, scores and everything else downstream read the block as before.
-  A block given both priors is refused. The blocks are switched one by one, so
-  a file can, say, test its volatilities while keeping its coefficients
-  centred. `unit.noncentred` checks the ordinates against the normal they are
-  the marginals of, and runs the sampler on simulated data where nothing moves,
-  where one volatility jumps and where one intercept shifts: the Bayes factors
-  land on the side the data were generated on. Two fixtures,
-  `VarTvpStochvol-noncentred` and `VarTvpStochvol-noncentred-bvs-covar`, put
-  the path through `golden.*` and `check.*`, and the golden harness now
-  fingerprints the nine new datasets. *Draws are unchanged* for every file
-  without `omega_v`: the full fingerprint recording, all 112 fixtures, is
-  identical before and after, the only difference being the absent lines for
-  the nine new datasets.
-
-- **A warning when `bvs` is selecting against a prior too flat to select
-  against, from `bayests check` and from the run itself.** BVS draws an excluded coefficient from its prior and then
-  scores that draw against the data, so the flatter the prior the harder it is
-  for anything to get back in once it is out, and the inclusion probabilities
-  end up describing the prior rather than the data. Korobilis (2013, section
-  3.1) puts the point where this takes over at a prior variance of around 100
-  and quotes Kuo and Mallick's (1997) usable range of 0.25 to 25. On a
-  three-variable fixture with the diagonal of `v_inv` moved from 1 to 0.001,
-  mean inclusion across the twelve coefficients went from a spread of 0.10 to
-  1.00 down to eleven of the twelve at 0.10 or below.
-
-  The reading is `bayests::flat_selection_prior()` and the sentence is
-  `bayests::flat_selection_message()`, both declared in
-  `include/bayests/priors.h` so that a host vendoring the core can surface them
-  its own way. It reports the diagonal of the prior precision at the selected
-  positions -- the conditional prior variance of the draw BVS actually scores,
-  which is also what keeps it defined for a singular `v_inv`.
-
-  Two places say it, from that one wording. `bayests check` prints it before
-  anything runs, and the seven constant-coefficient samplers that offer `bvs`
-  emit it through `Reporter::message()` before their first draw, once per
-  selection block -- so an embedded host, an R package or anyone who never runs
-  `check` hears it too. Neither refuses the file and the exit code stays 0.
-  Constant-coefficient blocks only: a random walk has no one prior variance to
-  compare against a threshold, so the time-varying models are left to their
-  documentation, which now says so.
-
-  **Draws are unchanged**, verified rather than assumed: the samplers gained a
-  call that consumes no random numbers, and a fingerprint recording over all
-  112 fixtures before and after the change is identical -- 112 unchanged, 0
-  moved, from `test/diff_fingerprints.sh`. The suite passes unchanged, 374
-  tests from a clean clone.
-
-### Changed
-
-- **The simulation smoother leaves the identity transition out of its
-  products.** Every time varying coefficient block is a random walk, so its
-  transition `B` is the identity, and `kalman_durbin_koopman_2002` still copied
-  it every period and multiplied by it as a full M x M matrix twice per period
-  in the filter, plus a matrix-vector product in each of the other two passes. A constant `B`
-  that is exactly the identity is now recognised once and those products are
-  skipped; any other `B`, and a per-period stack, take the general path as
-  before. With k = 5 and T = 176 on one thread, one smoother call takes 25% less
-  time at M = 60 coefficients (5.1 to 3.8 ms), 35% less at M = 78 (10.2 to
-  6.5 ms) and 38% less at M = 120 (34.5 to 21.1 ms), and this call is most of
-  an iteration of every `*Tvp*` sampler. *Draws are unchanged*: a product with
-  an exact identity is exact, and the one product regrouped by dropping `B`,
-  `B P Z' F^-1`, is one Armadillo already evaluates as `B ((P Z') F^-1)`. The
-  fingerprint comparison of all 120 fixtures before and after shows none moved,
-  and `unit.kalman` now checks the identity's path against the general one
-  exactly, at M = 60 and with more equations than states.
-
-- **The four constant VECs refuse a prior the cointegration sampler cannot
-  honour.** The collapsed sampler of Koop, León-González and Strachan (2010)
-  relies on the loadings' prior being centred at zero and independent of every
-  other coefficient (Proposition 1, eq. 8). It rebuilds that prior's precision
-  block every draw, and the file's mean and cross-precision were read as given,
-  so a non-zero value in either made the three Gibbs blocks condition on three
-  different priors. Refused now, in `VecNormalWishart`, `VecKlgs2010`,
-  `VecNormalGamma` and `VecNormalStochvol`:
-  * a non-zero `/priors/a/mu` on the first `k*rank` positions;
-  * a non-zero `/priors/a/v_inv` between those positions and any other;
-  * a negative `/priors/beta/v_inv`;
-  * a `p_tau_inv` that is not positive definite while `v_inv > 0`;
-  * `/priors/beta/g_inv` anywhere but `VecNormalStochvol`.
-
-  *Draws are unchanged* for every file still accepted: `VecNormalWishart` and
-  `VecKlgs2010` are bit-identical in the fingerprint recording above.
-
-- **The agent documentation says how `VarTvpStochvol` relates to Primiceri
-  (2005), and builds his priors.** `algorithms.md` gains *VarTvpStochvol and
-  Primiceri (2005)*: the sampler draws the mixture indicators in the order Del
-  Negro and Primiceri (2015) corrected the appendix to, and differs from the
-  paper in three ways a reader carrying his priors over has to know -- diagonal
-  `Q`, `S` and `W` with an inverse-gamma prior per element, the log-volatility
-  on the scale of the variance so that his `W` is a quarter of the one here,
-  and no training-sample calibration. A table translates each of his priors
-  into the datasets that hold it, reading every inverse Wishart as the
-  inverse-gamma marginals of its diagonal. `recipes.md` gains *Primiceri's
-  priors from a training sample*, which builds his benchmark -- OLS on 40
-  periods, `k_Q = 0.01`, `k_S = 0.1`, `k_W = 0.01` -- for his three variables
-  and two lags, and `agents.recipes` runs it: the file passes `bayests check`
-  clean, every dataset has the shape the text states, and the structural
-  standard deviations come back near the unit shocks it simulated. No code
-  changed.
-
-- **`ssvs` refuses three priors it could not honour.** The sweep draws each
-  inclusion indicator by weighing `N(0, tau0²)` against `N(0, tau1²)` at its
-  coefficient alone, which is George, Sun and Ni (2008, eq. 12 with R = I). The
-  coefficient draw read the prior as the file gave it, though, so a file that
-  departed from the paper had the two halves of one Gibbs step drawing from
-  conditionals of different models, and the chain targeted neither. Refused
-  now, at each selected position of `a` and of `psi`, in the four models that
-  offer SSVS:
-
-  * a non-zero prior mean -- the spike and slab are centred at zero, and a
-    Minnesota mean of 1 on an own first lag was drawn around 1 and scored
-    around 0;
-  * a prior precision with anything off the diagonal in that row or column --
-    the indicators are independent given the coefficients only when the
-    selected coefficients are a priori independent of everything else;
-  * `tau0` not smaller than `tau1` -- validation checked both were positive and
-    nothing more, so a swapped pair ran and every indicator read backwards.
-
-  The documentation now also says that the diagonal of `v_inv` at a selected
-  position is read for the first draw only, and gives the paper's guidance on
-  choosing `tau0` and `tau1`.
-
-  **Draws are unchanged** for every file still accepted: only `validate()`
-  moved, and a fingerprint recording over all 112 fixtures before and after
-  says 112 unchanged, 0 moved. A file now refused was sampling a model other
-  than the one it described, and has no numbers worth keeping.
-
-- **The agent documentation now says what `bvs` needs from the coefficient
-  prior, and what `include` does not cover.** Two ways of getting a run that
-  finishes, writes a full posterior and answers a different question than the
-  one asked, neither of which anything refuses:
-
-  BVS draws an excluded coefficient from its prior and then scores that draw
-  against the data to decide whether to let it back in, so a flat
-  `/priors/a/v_inv` makes it very hard for anything to get back in once it is
-  out, and pins the inclusion probabilities near zero.
-  Korobilis (2013, §3.1) puts the point where this takes over at a prior
-  variance around 100 and quotes Kuo and Mallick's (1997) usable range of 0.25
-  to 25. `validate_normal_block()` checks that precision for being square and
-  symmetric and says nothing about its size, so the symptom is a posterior
-  inclusion probability pinned near zero everywhere, which reads as a finding.
-
-  `include` names the positions selection *visits*. Every other position keeps
-  the indicator `/initial/a_lambda` starts it at for the whole run, which is
-  how an intercept is held unrestricted and equally how a coefficient is
-  masked out of every draw without a word.
-
-  **Draws are unchanged**: `agents/`, and nothing under `src/` or `include/`,
-  was touched.
-
-### Fixed
-
-- **A forecast from a precision that does not move goes through
-  `core::covariance_root()` as well.** The six VARs' forecasts --
-  `VarNormalWishart`, `VarNormalGamma` and `VarNormalStochvol`, and the three
-  `VarTvp*` under `forecast_states = "hold"` or without a covariance block --
-  each carried an inline copy of the unguarded route the entry below replaces:
-  `eig_sym(solve(u_sigma_inv, I))`, then `Q Λ^½ Q'` at every horizon. A drawn
-  precision badly conditioned enough gave it an eigenvalue a rounding error
-  below zero, and so a NaN in every variable of that draw. They now take
-  `covariance_root(u_sigma_inv)` once per draw, which symmetrises and floors
-  that eigenvalue at zero, and the three that had two branches for adding the
-  error have one. The held path reads only `u_sigma_inv`, as before, so a
-  posterior without `u_omega_inv` or `psi` still forecasts.
-
-  **Draws change by a rounding error**, because `Q Λ^½ Q' e` is now evaluated
-  as one root times `e` rather than in whatever order Armadillo chose for the
-  four-term product. Over the full fingerprint recording (399 tests, 120
-  fixtures) 20 fixtures moved, only in `/posterior/forecast/forecasts` and by
-  at most 5.9e-16 relatively: the constant-coefficient VARs, the `*-hold`
-  fixtures of the time varying ones, and the VECs whose forecast is the level
-  VAR's through `VarNormalWishartSampler::forecast()` -- `VecKlgs2010`, the
-  constant VECs and the time varying ones under `hold`. No estimated draw, log
-  likelihood or simulated forecast moved. `unit.forecast_states` gains a held
-  forecast from the badly conditioned precision of the entry below for all
-  six VARs; every one of them fails on the old route.
-
-- **A simulated forecast could turn NaN once a log-volatility drifted far.**
-  Under `forecast_states = "simulate"` the error at each horizon was drawn
-  through `core::covariance_root()`, which inverted the rebuilt precision
-  `Psi' diag(exp(-h)) Psi` with `solve()` and took the square roots of the
-  inverse's eigenvalues. Once the simulated log-volatilities had drifted far
-  apart that inverse was ill-conditioned: it came back slightly asymmetric
-  (Armadillo's `eig_sym(): given matrix is not symmetric`) and with an
-  eigenvalue a rounding error below zero, whose square root put a NaN into
-  every variable from that horizon on. Seen as one draw in 2000 in 4 of 84
-  expanding windows of a four-variable `VarTvpStochvol` (`sv+covar`) after
-  2020; `hold` never triggered it.
-
-  The covariance block models now build the root from the factorisation they
-  have instead of from the precision it multiplies out to: the covariance is
-  `B B'` with `B = Psi⁻¹ diag(variances)^½`, a unit triangular solve no
-  volatility can make ill-conditioned, and its symmetric root is `U S U'` for
-  `B = U S V'`, whose singular values cannot be negative. That is the new
-  overload `core::covariance_root(psi, variances)` in
-  `src/core/models/forecast_states.h`, called with `exp(h)` by
-  `VarNormalStochvol`, `VarTvpStochvol`, `VecNormalStochvol` and
-  `VecTvpStochvol`, and with `1 / u_omega_inv` by `VarTvpGamma` and
-  `VecTvpGamma`. The one-argument `covariance_root(precision)`, which
-  `VecTvpWishart`, `VecTvpGamma` without a covariance block and now
-  `FavarNormalWishart` call, symmetrises before `eig_sym()` and sets a
-  negative eigenvalue to zero; `FavarNormalWishart`'s private copy of it,
-  which did the same with `abs()`, is gone.
-
-  **Draws change by a rounding error.** It is the same root of the same
-  matrix, so the draws are those of the old route wherever it produced a
-  number. Over the full fingerprint recording (399 tests, 120 fixtures) 30
-  fixtures moved, all of them of the six models above, and in each only
-  `/posterior/forecast/forecasts`, by at most 1.4e-15 relatively. Nothing else
-  moved: no estimated draw, no log likelihood, no `hold` forecast, and no
-  model outside the six. Most fixtures of the six without a covariance block
-  did not move either, the diagonal root coming out bit-identical. On the Austrian file that showed the fault the 1999 draws
-  the old route got right move by a median 7e-15 and at most 1.6e-6
-  relatively -- the accuracy the inverse was losing there -- and the twelve
-  NaN values of the remaining draw are finite. `unit.forecast_states` gains
-  two cases: the root of a covariance whose log-volatilities start 36 apart
-  (the route through the precision finds an eigenvalue of -3.5e-19 there),
-  and all four stochastic volatility forecasts from there with steps of
-  variance 4 over twelve horizons, which must be finite everywhere; on the old
-  route between 46 000 and 85 000 of their 96 000 values were not.
-
-- **`VecNormalGamma` drew its error precisions without the cointegration space
-  prior's term.** The prior of Koop, León-González and Strachan (2010) scales
-  the loadings by the error covariance, `alpha | beta, Sigma ~ N(0, v⁻¹
-  (beta' P⁻¹ beta)⁻¹ ⊗ Sigma)`, so its density is also a factor in Sigma's
-  posterior. `VecNormalWishart` has always included it, as the paper's eq. (8).
-  `VecNormalGamma` left it out on the grounds that independent gammas had no
-  conjugate form for it. Given Psi they do. The term is `rank`
-  pseudo-observations `L` with `L L' = v alpha (beta' P⁻¹ beta) alpha'`
-  (`core::coint_prior_pseudo_errors()`). They are appended to the errors, so
-  each `omega_i` gains `r/2` on its shape and `(Psi L L' Psi')_ii / 2` on its
-  rate, and the covariance block `psi`, BVS scoring included, gains the
-  matching quadratic.
-
-  **Draws change** for `VecNormalGamma` with any cointegration term — every
-  configuration with `rank > 0`, with or without a covariance block or
-  selection. The new numbers are the right ones. With one variable a Wishart
-  on the precision is a gamma, so `VecNormalWishart` and `VecNormalGamma` with
-  matching priors are the same model. `unit.coint_klgs_prior` now finds their
-  posterior means of the precision within 0.07% of each other, against 2.6%
-  apart with the term left out: the test fails when the term is removed. On
-  the fixtures, the posterior mean of the precision of `VecNormalGamma-plain`
-  rises by 3.7%. At its weak shrinkage (`v = 0.1`) the added shape dominates.
-
-- **`VecNormalStochvol`'s loadings prior was scaled by a G that moved with the
-  volatilities.** `G⁻¹` was the average per-period precision of the current
-  draw, recomputed after every volatility draw. That made the prior on
-  `alpha` a function of `h` which `h`'s own draw never saw, so the chain was
-  not a Gibbs sampler for any prior. The paper allows any fixed, known G
-  (p. 228, eq. 7), and G is now fixed for the whole run. It is the new
-  optional `/priors/beta/g_inv` (`ConstantCointSpacePrior::g_inv`) when given.
-  Otherwise it is the same average, taken once from the starting values.
-
-  **Draws change** for `VecNormalStochvol` with `rank > 0`, in every
-  configuration. The fixtures move by the difference between a G re-averaged
-  every draw and one fixed at the start.
-
-  Both verified with the full fingerprint recording: 15 of 118 fixtures moved,
-  the eight `VecNormalGamma` and seven `VecNormalStochvol` ones, and nothing
-  else. `VecNormalWishart` and `VecKlgs2010` are bit-identical.
-
-- **`VarTvpDiscount` scored only the first horizon; every one after it came back
-  as not a number.** `predictive_log_density()` read the rows of
-  `/data/forecast/x` as they arrived, and the lagged endogenous blocks of a
-  horizon past the first hold a placeholder there -- a forecast overwrites them
-  as it simulates, and this recursion does not simulate. The first period was
-  scored correctly, the second fed the filter that placeholder, and the state
-  never recovered. It now builds its regressors with
-  `core::realised_regressors()`, which is what the eight sampling VARs beside it
-  have always done and which fills those blocks from `/data/test/y`.
-
-  **Draws change** for this one entry point of this one model, from
-  unusable to correct: the first scored horizon is unchanged and no horizon
-  after it had a usable value to change. Nothing else moves -- `estimate()`,
-  `forecast()` and `log_likelihood()` do not read the affected code, and
-  `VecTvpDiscount` scores through `score_vec_forecast()`, which fills the blocks
-  already.
-
-- **The non-centred prior is documented outside `model-file.md` too.** The
-  README said nothing about `omega_v`: its `/priors/a`, `/priors/psi` and
-  `/priors/u_sigma` rows still gave `shape`/`rate` as the only prior on a random
-  walk, and its `/posterior/` row did not name the three datasets a non-centred
-  block writes. It now has a paragraph on which four models take the prior and
-  what it buys, the prior and output rows, and the Frühwirth-Schnatter and
-  Wagner (2010) reference. `algorithms.md` calls its table the full list of
-  refusals and was missing the two this prior adds: `omega_v` beside
-  `shape`/`rate` in one block, and an `omega_v` that is not finite and greater
-  than zero. And in `src/core/inputs.cpp` the doc comment of
-  `validate_tvp_block()` had ended up above `validate_state_variance_prior()`,
-  inserted between the two, so the new function's documentation began with
-  parameters it does not take; it is back where it belongs. Documentation
-  only: no code path changes and no draw moves.
-
-- **A NaN or an infinity in the input is refused, by name, before anything
-  reads it.** `bayests check` accepted every such file. A run then failed deep
-  in the numerics -- `inv_sympd(): matrix is singular or not positive definite`,
-  `randg(): incorrect distribution parameters` -- naming neither the dataset nor
-  the value, and in two places it did not fail at all: a NaN in
-  `/data/forecast/x` came back as NaN forecasts, and one in `/data/test/y` as a
-  NaN `/posterior/forecast/loglik`, both from runs that exited 0.
-
-  Every input's `validate()` now checks the observations -- the training
-  sample, the forecast regressors and the realised values -- and the three shape
-  checks every prior and starting value passes through check the values too, so
-  `bayests check` refuses the file a run would. Forecasting and scoring run from
-  draws a previous stage wrote, without `validate()`, so they check
-  `/data/forecast/x` and `/data/test/y` again themselves. The message names the
-  dataset: *the realised observations /data/test/y must be finite, but 1 of its
-  12 values is NaN or infinite; missing values are not supported*. The test
-  reads the exponent bits rather than calling `std::isfinite()`, which a host
-  compiling with `-ffast-math` may fold to true.
-
-  Two readers in the I/O layer had the same hole. A count stored as a double --
-  `/priors/u_sigma/df` as R writes it -- passed the whole-number test when it
-  was NaN, every comparison with NaN being false, and was then cast to `int`,
-  which is undefined behaviour; a finite value past the range of an `int` did
-  the same. Both are refused now. And selection positions were handed to HDF5
-  to convert to integers, which turned a NaN into 0 -- reported as "a position
-  below 1" -- and truncated 2.5 to 2 without a word; they are read as doubles
-  now, and a position that is not a whole number is refused.
-
-  **Two things are refused that used to run**, both deliberately: a fractional
-  selection position, which was silently truncated, and a non-finite value in
-  a cell of `/data/forecast/x` that the forecast overwrites, which was harmless.
-  The rule is that a file has no missing values, not that it has none where a
-  model happens to look. A host feeding the vendored core values with NA in
-  them gets the same refusals.
-
-  `check.nonfinite` puts one NaN into every input dataset each algorithm's
-  fixtures carry -- 476 pairs, integer datasets rewritten as doubles -- and
-  fails on any that `bayests check` does not refuse by name. *Draws are
-  unchanged*: `record_fingerprints.sh` before and after, full suite, reports
-  120 fixtures unchanged and 0 moved.
-
-- **A directory walk on Windows no longer goes round a junction cycle.** Given a
-  directory, `bayests` walks it for model files, and the walk was documented not
-  to follow directory links, "so a link cycle cannot make the walk endless". On
-  Windows that did not hold: libstdc++ reports a junction as a plain directory,
-  so the walk followed it, and a junction back to a directory it was already
-  inside took it round and round until the path grew past what Windows opens.
-  In the case this was found on, one model below such a junction was checked
-  fourteen times -- how many depends on the length of the path -- after which
-  the walk warned, wrongly, that the link's target did not exist, and exited 0.
-  Linux, where the link is recognised and not followed, was never affected.
-
-  Junctions are still followed, since one is how a folder of models gets pulled
-  in from elsewhere. But each directory is now compared with its ancestors by
-  file identity, not by name, and one that leads back to an ancestor is skipped
-  with a warning saying so; and a file reached by two routes -- a junction into
-  a different branch -- is run once. `cli.refusals` gains the cycle: the model
-  below it must be checked exactly once on every platform, with the warning on
-  Windows. The command line only; no core file changed and no draw moves.
-
-- **The README's link to the algorithm references pointed at the wrong
-  section**, on GitHub as well as on the documentation site. "Citing BayesTS"
-  sends a reader to *References* below, and GitHub resolves `#references` to
-  the first heading of that name -- the list of OpenMP and OpenBLAS links under
-  *Multi-threading*, which is above it. That list is *Further reading* now. The
-  documentation site made its heading anchors differently from GitHub, so it
-  resolved neither this link nor the one to *With an AI coding assistant*; it
-  now makes them GitHub's way (`MARKDOWN_ID_STYLE = GITHUB`, which the Doxygen
-  1.9.8 CI installs supports), and it carries `docker/README.md`, `AGENTS.md`,
-  `model-file.md` and `results.md` as pages, so the README's four links to them
-  resolve there too. With five functions' parameters documented -- one of them,
-  `chan_jeliazkov_2009_conditional()`, had only `known` -- and a `\omega` in
-  `noncentred_support.h` moved inside its formula, where Doxygen had been
-  dropping it as an unknown command, the site builds with no warnings where it
-  had fourteen. Comments and configuration only; no draw moves.
-
-- **A run stopped while writing its draws is no longer taken for a finished
-  one.** `coefficients` skips a model whose posterior is already there, and
-  "there" meant one dataset -- in eleven of the twenty-two models not the last
-  one the stage writes, and in the two discounted models the first. A job
-  killed, or a machine restarted, between two of those writes left a file
-  whose rerun printed *Posterior data already exists in file. Skipping
-  simulation.*, exited 0, and never wrote what was missing; `forecasts` then
-  failed on it, every time, until `/posterior` was deleted by hand.
-
-  The stage now marks `/posterior` with the attribute `coefficients` --
-  `"writing"` before its first write and `"complete"` after its last, flushing
-  the file each time so the marks reach the disk in that order. A file still
-  marked `"writing"` is estimated again, with a line saying why; every reader
-  of draws refuses one, so `forecasts` and `loglik` do not run on half a
-  posterior; and `bayests check` says it will be estimated again rather than
-  skipped. A file with no mark was written before it existed and is treated as
-  it always was. The two discounted models' `loglik` is unaffected: it
-  recomputes the closed form from the data and reads nothing stored.
-
-  `cli.interrupted` checks all four behaviours for every algorithm. What a kill
-  leaves is set directly -- where it lands between writes is a race. The
-  change is to the command line and the I/O layer; no core file is touched.
-  *Draws are unchanged*: fingerprints against the previous recording, full
-  suite, 120 fixtures unchanged and 0 moved.
-
-## 0.3.0 — 2026-09-20
+## 0.3.0 — 2026-09-22
 
 ### Added
 
@@ -727,9 +273,9 @@ heading, and move down into a version section when one is cut.
 - **Six fixtures that are scored, and a golden test that insists on it.** No
   generated fixture carried `/data/test/y`, so nothing in the suite ever reached
   the predictive density: nineteen algorithms can be scored and the code that
-  scores them was covered by unit tests alone. That is the gap the positive
-  semi-definite filter fix in 0.3.0 came through, found by a third toolchain
-  rather than by CI.
+  scores them was covered by unit tests alone. That is the gap the bug behind
+  the positive semi-definite filter fix below came through, found by a third
+  toolchain rather than by CI.
 
   `make_model_fixture` takes a `--score` flag, which writes the observations the
   horizon realised, and `bayests_golden` now fails a fixture that carries them
@@ -776,6 +322,111 @@ heading, and move down into a version section when one is cut.
   runner's and saying so in a line of status output. All three now install h5py,
   name the interpreter and ask for the test by name, so losing it fails the job
   rather than shrinking it.
+
+- **`VecTvpGamma` takes the non-centred prior too**, for its coefficients
+  (loadings included) and its covariance block, as `VarTvpGamma` does; the
+  cointegration space keeps its fixed unit state variance and the error
+  precision its gamma prior. The covariance block reads one error covariance
+  for every period, which `draw_noncentred_path()` already takes.
+  `unit.noncentred` runs `VecTvpGamma` with a covariance block on a
+  cointegrated pair whose first constant shifts, and two fixtures,
+  `VecTvpGamma-noncentred` and `VecTvpGamma-noncentred-bvs-covar`, put the path
+  through `golden.*` and `check.*`. *Draws are unchanged* for every file
+  without `omega_v` and for the six existing non-centred fixtures: all
+  118 fixtures that existed before fingerprint identically.
+
+- **`VecTvpStochvol` takes the non-centred prior as well.** `omega_v` in place
+  of `shape` and `rate` under `/priors/a`, `/priors/psi` or `/priors/u_sigma`
+  draws that random walk non-centred and writes `omega`, `omega_log_zero` and
+  `omega_log_zero_joint` beside its `sigma`, as `VarTvpStochvol` does. The
+  coefficients include the loadings, whose regressors are the draw's
+  `beta' w`. The cointegration space is untouched: its state variance is fixed
+  at the identity to pin beta's scale, so there is no prior on it to replace.
+  `validate_stochvol_block()`, which `VecNormalStochvol` shares, now checks the
+  log-volatility's prior through `validate_state_variance_prior()`; that
+  model's reader never fills `omega_v`, so what it accepts is unchanged.
+  `unit.noncentred` runs `VecTvpStochvol` on a cointegrated pair whose first
+  error variance jumps, and two fixtures, `VecTvpStochvol-noncentred` and
+  `VecTvpStochvol-noncentred-bvs-covar`, put the path through `golden.*` and
+  `check.*`. *Draws are unchanged* for every file without `omega_v`, and for
+  the four non-centred VAR fixtures: all 116 fixtures that existed before
+  fingerprint identically.
+
+- **`VarTvpGamma` takes the non-centred prior too.** `omega_v` in place of
+  `shape` and `rate` under `/priors/a` or `/priors/psi` draws that random walk
+  non-centred and writes `omega`, `omega_log_zero` and `omega_log_zero_joint`
+  beside its `sigma`, exactly as `VarTvpStochvol` does; the error precision
+  does not move in this model, so there is no third block. The covariance
+  block's error covariance is one matrix for every period here, so
+  `draw_noncentred_path()` now takes one block as well as one per period, and
+  `write_noncentred()` moves to `model_io_common` for the two readers to share.
+  `unit.noncentred` runs `VarTvpGamma` with a covariance block on a shifting
+  intercept, and two fixtures, `VarTvpGamma-noncentred` and
+  `VarTvpGamma-noncentred-bvs-covar`, put the path through `golden.*` and
+  `check.*`. *Draws are unchanged* for every file without `omega_v`, the
+  `VarTvpStochvol` ones with it included: the full fingerprint recording, all
+  114 fixtures that existed before, is identical.
+
+- **A non-centred parameterisation of `VarTvpStochvol`'s random walks, and with
+  it a test for whether each one moves at all.** Setting `omega_v` in place of
+  `shape` and `rate` under `/priors/a`, `/priors/psi` or `/priors/u_sigma`
+  writes that block's random walk as `x_t = x_0 + omega * x~_t` with `x~_t` a
+  standard random walk, and puts a normal prior `N(0, omega_v)` on the signed
+  standard deviation `omega` (Frühwirth-Schnatter and Wagner 2010; for the
+  log-volatility, Kastner and Frühwirth-Schnatter 2014). Each draw takes the
+  standardised path, then `(x_0, omega)` jointly as a regression on it, then a
+  random sign switch. Because "the state does not move" is then `omega = 0`, a
+  point inside the prior, the Bayes factor for time variation is a
+  Savage-Dickey density ratio that one run estimates (Chan 2018): the sampler
+  writes `omega` and the log density at zero of its conditional posterior,
+  per state and per block, as `<block>/omega`, `<block>/omega_log_zero` and
+  `<block>/omega_log_zero_joint`. `sigma` is still written, as `omega^2`, so
+  forecasts, scores and everything else downstream read the block as before.
+  A block given both priors is refused. The blocks are switched one by one, so
+  a file can, say, test its volatilities while keeping its coefficients
+  centred. `unit.noncentred` checks the ordinates against the normal they are
+  the marginals of, and runs the sampler on simulated data where nothing moves,
+  where one volatility jumps and where one intercept shifts: the Bayes factors
+  land on the side the data were generated on. Two fixtures,
+  `VarTvpStochvol-noncentred` and `VarTvpStochvol-noncentred-bvs-covar`, put
+  the path through `golden.*` and `check.*`, and the golden harness now
+  fingerprints the nine new datasets. *Draws are unchanged* for every file
+  without `omega_v`: the full fingerprint recording, all 112 fixtures, is
+  identical before and after, the only difference being the absent lines for
+  the nine new datasets.
+
+- **A warning when `bvs` is selecting against a prior too flat to select
+  against, from `bayests check` and from the run itself.** BVS draws an excluded coefficient from its prior and then
+  scores that draw against the data, so the flatter the prior the harder it is
+  for anything to get back in once it is out, and the inclusion probabilities
+  end up describing the prior rather than the data. Korobilis (2013, section
+  3.1) puts the point where this takes over at a prior variance of around 100
+  and quotes Kuo and Mallick's (1997) usable range of 0.25 to 25. On a
+  three-variable fixture with the diagonal of `v_inv` moved from 1 to 0.001,
+  mean inclusion across the twelve coefficients went from a spread of 0.10 to
+  1.00 down to eleven of the twelve at 0.10 or below.
+
+  The reading is `bayests::flat_selection_prior()` and the sentence is
+  `bayests::flat_selection_message()`, both declared in
+  `include/bayests/priors.h` so that a host vendoring the core can surface them
+  its own way. It reports the diagonal of the prior precision at the selected
+  positions -- the conditional prior variance of the draw BVS actually scores,
+  which is also what keeps it defined for a singular `v_inv`.
+
+  Two places say it, from that one wording. `bayests check` prints it before
+  anything runs, and the seven constant-coefficient samplers that offer `bvs`
+  emit it through `Reporter::message()` before their first draw, once per
+  selection block -- so an embedded host, an R package or anyone who never runs
+  `check` hears it too. Neither refuses the file and the exit code stays 0.
+  Constant-coefficient blocks only: a random walk has no one prior variance to
+  compare against a threshold, so the time-varying models are left to their
+  documentation, which now says so.
+
+  **Draws are unchanged**, verified rather than assumed: the samplers gained a
+  call that consumes no random numbers, and a fingerprint recording over all
+  112 fixtures before and after the change is identical -- 112 unchanged, 0
+  moved, from `test/diff_fingerprints.sh`. The suite passes unchanged, 374
+  tests from a clean clone.
 
 ### Changed
 
@@ -840,6 +491,107 @@ heading, and move down into a version section when one is cut.
   been done -- 0.2.0's DOI landed in its own commit the day the tag was made --
   and writing it down is what keeps it from depending on whoever remembers.
   Process only: no source file changed and no draw moves.
+
+- **The simulation smoother leaves the identity transition out of its
+  products.** Every time varying coefficient block is a random walk, so its
+  transition `B` is the identity, and `kalman_durbin_koopman_2002` still copied
+  it every period and multiplied by it as a full M x M matrix twice per period
+  in the filter, plus a matrix-vector product in each of the other two passes. A constant `B`
+  that is exactly the identity is now recognised once and those products are
+  skipped; any other `B`, and a per-period stack, take the general path as
+  before. With k = 5 and T = 176 on one thread, one smoother call takes 25% less
+  time at M = 60 coefficients (5.1 to 3.8 ms), 35% less at M = 78 (10.2 to
+  6.5 ms) and 38% less at M = 120 (34.5 to 21.1 ms), and this call is most of
+  an iteration of every `*Tvp*` sampler. *Draws are unchanged*: a product with
+  an exact identity is exact, and the one product regrouped by dropping `B`,
+  `B P Z' F^-1`, is one Armadillo already evaluates as `B ((P Z') F^-1)`. The
+  fingerprint comparison of all 120 fixtures before and after shows none moved,
+  and `unit.kalman` now checks the identity's path against the general one
+  exactly, at M = 60 and with more equations than states.
+
+- **The four constant VECs refuse a prior the cointegration sampler cannot
+  honour.** The collapsed sampler of Koop, León-González and Strachan (2010)
+  relies on the loadings' prior being centred at zero and independent of every
+  other coefficient (Proposition 1, eq. 8). It rebuilds that prior's precision
+  block every draw, and the file's mean and cross-precision were read as given,
+  so a non-zero value in either made the three Gibbs blocks condition on three
+  different priors. Refused now, in `VecNormalWishart`, `VecKlgs2010`,
+  `VecNormalGamma` and `VecNormalStochvol`:
+  * a non-zero `/priors/a/mu` on the first `k*rank` positions;
+  * a non-zero `/priors/a/v_inv` between those positions and any other;
+  * a negative `/priors/beta/v_inv`;
+  * a `p_tau_inv` that is not positive definite while `v_inv > 0`;
+  * `/priors/beta/g_inv` anywhere but `VecNormalStochvol`.
+
+  *Draws are unchanged* for every file still accepted: `VecNormalWishart` and
+  `VecKlgs2010` are bit-identical in the fingerprint recording above.
+
+- **The agent documentation says how `VarTvpStochvol` relates to Primiceri
+  (2005), and builds his priors.** `algorithms.md` gains *VarTvpStochvol and
+  Primiceri (2005)*: the sampler draws the mixture indicators in the order Del
+  Negro and Primiceri (2015) corrected the appendix to, and differs from the
+  paper in three ways a reader carrying his priors over has to know -- diagonal
+  `Q`, `S` and `W` with an inverse-gamma prior per element, the log-volatility
+  on the scale of the variance so that his `W` is a quarter of the one here,
+  and no training-sample calibration. A table translates each of his priors
+  into the datasets that hold it, reading every inverse Wishart as the
+  inverse-gamma marginals of its diagonal. `recipes.md` gains *Primiceri's
+  priors from a training sample*, which builds his benchmark -- OLS on 40
+  periods, `k_Q = 0.01`, `k_S = 0.1`, `k_W = 0.01` -- for his three variables
+  and two lags, and `agents.recipes` runs it: the file passes `bayests check`
+  clean, every dataset has the shape the text states, and the structural
+  standard deviations come back near the unit shocks it simulated. No code
+  changed.
+
+- **`ssvs` refuses three priors it could not honour.** The sweep draws each
+  inclusion indicator by weighing `N(0, tau0²)` against `N(0, tau1²)` at its
+  coefficient alone, which is George, Sun and Ni (2008, eq. 12 with R = I). The
+  coefficient draw read the prior as the file gave it, though, so a file that
+  departed from the paper had the two halves of one Gibbs step drawing from
+  conditionals of different models, and the chain targeted neither. Refused
+  now, at each selected position of `a` and of `psi`, in the four models that
+  offer SSVS:
+
+  * a non-zero prior mean -- the spike and slab are centred at zero, and a
+    Minnesota mean of 1 on an own first lag was drawn around 1 and scored
+    around 0;
+  * a prior precision with anything off the diagonal in that row or column --
+    the indicators are independent given the coefficients only when the
+    selected coefficients are a priori independent of everything else;
+  * `tau0` not smaller than `tau1` -- validation checked both were positive and
+    nothing more, so a swapped pair ran and every indicator read backwards.
+
+  The documentation now also says that the diagonal of `v_inv` at a selected
+  position is read for the first draw only, and gives the paper's guidance on
+  choosing `tau0` and `tau1`.
+
+  **Draws are unchanged** for every file still accepted: only `validate()`
+  moved, and a fingerprint recording over all 112 fixtures before and after
+  says 112 unchanged, 0 moved. A file now refused was sampling a model other
+  than the one it described, and has no numbers worth keeping.
+
+- **The agent documentation now says what `bvs` needs from the coefficient
+  prior, and what `include` does not cover.** Two ways of getting a run that
+  finishes, writes a full posterior and answers a different question than the
+  one asked, neither of which anything refuses:
+
+  BVS draws an excluded coefficient from its prior and then scores that draw
+  against the data to decide whether to let it back in, so a flat
+  `/priors/a/v_inv` makes it very hard for anything to get back in once it is
+  out, and pins the inclusion probabilities near zero.
+  Korobilis (2013, §3.1) puts the point where this takes over at a prior
+  variance around 100 and quotes Kuo and Mallick's (1997) usable range of 0.25
+  to 25. `validate_normal_block()` checks that precision for being square and
+  symmetric and says nothing about its size, so the symptom is a posterior
+  inclusion probability pinned near zero everywhere, which reads as a finding.
+
+  `include` names the positions selection *visits*. Every other position keeps
+  the indicator `/initial/a_lambda` starts it at for the whole run, which is
+  how an intercept is held unrestricted and equally how a coefficient is
+  masked out of every draw without a word.
+
+  **Draws are unchanged**: `agents/`, and nothing under `src/` or `include/`,
+  was touched.
 
 ### Fixed
 
@@ -910,6 +662,248 @@ heading, and move down into a version section when one is cut.
   `results.md` summarised the nineteen scorable algorithms as "every VAR, every
   VEC and every dynamic factor model", which is twenty-one and contradicts the
   paragraph ninety lines below it that correctly excludes the quantile pair.
+
+- **A forecast from a precision that does not move goes through
+  `core::covariance_root()` as well.** The six VARs' forecasts --
+  `VarNormalWishart`, `VarNormalGamma` and `VarNormalStochvol`, and the three
+  `VarTvp*` under `forecast_states = "hold"` or without a covariance block --
+  each carried an inline copy of the unguarded route the entry below replaces:
+  `eig_sym(solve(u_sigma_inv, I))`, then `Q Λ^½ Q'` at every horizon. A drawn
+  precision badly conditioned enough gave it an eigenvalue a rounding error
+  below zero, and so a NaN in every variable of that draw. They now take
+  `covariance_root(u_sigma_inv)` once per draw, which symmetrises and floors
+  that eigenvalue at zero, and the three that had two branches for adding the
+  error have one. The held path reads only `u_sigma_inv`, as before, so a
+  posterior without `u_omega_inv` or `psi` still forecasts.
+
+  **Draws change by a rounding error**, because `Q Λ^½ Q' e` is now evaluated
+  as one root times `e` rather than in whatever order Armadillo chose for the
+  four-term product. Over the full fingerprint recording (399 tests, 120
+  fixtures) 20 fixtures moved, only in `/posterior/forecast/forecasts` and by
+  at most 5.9e-16 relatively: the constant-coefficient VARs, the `*-hold`
+  fixtures of the time varying ones, and the VECs whose forecast is the level
+  VAR's through `VarNormalWishartSampler::forecast()` -- `VecKlgs2010`, the
+  constant VECs and the time varying ones under `hold`. No estimated draw, log
+  likelihood or simulated forecast moved. `unit.forecast_states` gains a held
+  forecast from the badly conditioned precision of the entry below for all
+  six VARs; every one of them fails on the old route.
+
+- **A simulated forecast could turn NaN once a log-volatility drifted far.**
+  Under `forecast_states = "simulate"` the error at each horizon was drawn
+  through `core::covariance_root()`, which inverted the rebuilt precision
+  `Psi' diag(exp(-h)) Psi` with `solve()` and took the square roots of the
+  inverse's eigenvalues. Once the simulated log-volatilities had drifted far
+  apart that inverse was ill-conditioned: it came back slightly asymmetric
+  (Armadillo's `eig_sym(): given matrix is not symmetric`) and with an
+  eigenvalue a rounding error below zero, whose square root put a NaN into
+  every variable from that horizon on. Seen as one draw in 2000 in 4 of 84
+  expanding windows of a four-variable `VarTvpStochvol` (`sv+covar`) after
+  2020; `hold` never triggered it.
+
+  The covariance block models now build the root from the factorisation they
+  have instead of from the precision it multiplies out to: the covariance is
+  `B B'` with `B = Psi⁻¹ diag(variances)^½`, a unit triangular solve no
+  volatility can make ill-conditioned, and its symmetric root is `U S U'` for
+  `B = U S V'`, whose singular values cannot be negative. That is the new
+  overload `core::covariance_root(psi, variances)` in
+  `src/core/models/forecast_states.h`, called with `exp(h)` by
+  `VarNormalStochvol`, `VarTvpStochvol`, `VecNormalStochvol` and
+  `VecTvpStochvol`, and with `1 / u_omega_inv` by `VarTvpGamma` and
+  `VecTvpGamma`. The one-argument `covariance_root(precision)`, which
+  `VecTvpWishart`, `VecTvpGamma` without a covariance block and now
+  `FavarNormalWishart` call, symmetrises before `eig_sym()` and sets a
+  negative eigenvalue to zero; `FavarNormalWishart`'s private copy of it,
+  which did the same with `abs()`, is gone.
+
+  **Draws change by a rounding error.** It is the same root of the same
+  matrix, so the draws are those of the old route wherever it produced a
+  number. Over the full fingerprint recording (399 tests, 120 fixtures) 30
+  fixtures moved, all of them of the six models above, and in each only
+  `/posterior/forecast/forecasts`, by at most 1.4e-15 relatively. Nothing else
+  moved: no estimated draw, no log likelihood, no `hold` forecast, and no
+  model outside the six. Most fixtures of the six without a covariance block
+  did not move either, the diagonal root coming out bit-identical. On the Austrian file that showed the fault the 1999 draws
+  the old route got right move by a median 7e-15 and at most 1.6e-6
+  relatively -- the accuracy the inverse was losing there -- and the twelve
+  NaN values of the remaining draw are finite. `unit.forecast_states` gains
+  two cases: the root of a covariance whose log-volatilities start 36 apart
+  (the route through the precision finds an eigenvalue of -3.5e-19 there),
+  and all four stochastic volatility forecasts from there with steps of
+  variance 4 over twelve horizons, which must be finite everywhere; on the old
+  route between 46 000 and 85 000 of their 96 000 values were not.
+
+- **`VecNormalGamma` drew its error precisions without the cointegration space
+  prior's term.** The prior of Koop, León-González and Strachan (2010) scales
+  the loadings by the error covariance, `alpha | beta, Sigma ~ N(0, v⁻¹
+  (beta' P⁻¹ beta)⁻¹ ⊗ Sigma)`, so its density is also a factor in Sigma's
+  posterior. `VecNormalWishart` has always included it, as the paper's eq. (8).
+  `VecNormalGamma` left it out on the grounds that independent gammas had no
+  conjugate form for it. Given Psi they do. The term is `rank`
+  pseudo-observations `L` with `L L' = v alpha (beta' P⁻¹ beta) alpha'`
+  (`core::coint_prior_pseudo_errors()`). They are appended to the errors, so
+  each `omega_i` gains `r/2` on its shape and `(Psi L L' Psi')_ii / 2` on its
+  rate, and the covariance block `psi`, BVS scoring included, gains the
+  matching quadratic.
+
+  **Draws change** for `VecNormalGamma` with any cointegration term — every
+  configuration with `rank > 0`, with or without a covariance block or
+  selection. The new numbers are the right ones. With one variable a Wishart
+  on the precision is a gamma, so `VecNormalWishart` and `VecNormalGamma` with
+  matching priors are the same model. `unit.coint_klgs_prior` now finds their
+  posterior means of the precision within 0.07% of each other, against 2.6%
+  apart with the term left out: the test fails when the term is removed. On
+  the fixtures, the posterior mean of the precision of `VecNormalGamma-plain`
+  rises by 3.7%. At its weak shrinkage (`v = 0.1`) the added shape dominates.
+
+- **`VecNormalStochvol`'s loadings prior was scaled by a G that moved with the
+  volatilities.** `G⁻¹` was the average per-period precision of the current
+  draw, recomputed after every volatility draw. That made the prior on
+  `alpha` a function of `h` which `h`'s own draw never saw, so the chain was
+  not a Gibbs sampler for any prior. The paper allows any fixed, known G
+  (p. 228, eq. 7), and G is now fixed for the whole run. It is the new
+  optional `/priors/beta/g_inv` (`ConstantCointSpacePrior::g_inv`) when given.
+  Otherwise it is the same average, taken once from the starting values.
+
+  **Draws change** for `VecNormalStochvol` with `rank > 0`, in every
+  configuration. The fixtures move by the difference between a G re-averaged
+  every draw and one fixed at the start.
+
+  Both verified with the full fingerprint recording: 15 of 118 fixtures moved,
+  the eight `VecNormalGamma` and seven `VecNormalStochvol` ones, and nothing
+  else. `VecNormalWishart` and `VecKlgs2010` are bit-identical.
+
+- **`VarTvpDiscount` scored only the first horizon; every one after it came back
+  as not a number.** `predictive_log_density()` read the rows of
+  `/data/forecast/x` as they arrived, and the lagged endogenous blocks of a
+  horizon past the first hold a placeholder there -- a forecast overwrites them
+  as it simulates, and this recursion does not simulate. The first period was
+  scored correctly, the second fed the filter that placeholder, and the state
+  never recovered. It now builds its regressors with
+  `core::realised_regressors()`, which is what the eight sampling VARs beside it
+  have always done and which fills those blocks from `/data/test/y`.
+
+  **Draws change** for this one entry point of this one model, from
+  unusable to correct: the first scored horizon is unchanged and no horizon
+  after it had a usable value to change. Nothing else moves -- `estimate()`,
+  `forecast()` and `log_likelihood()` do not read the affected code, and
+  `VecTvpDiscount` scores through `score_vec_forecast()`, which fills the blocks
+  already.
+
+- **The non-centred prior is documented outside `model-file.md` too.** The
+  README said nothing about `omega_v`: its `/priors/a`, `/priors/psi` and
+  `/priors/u_sigma` rows still gave `shape`/`rate` as the only prior on a random
+  walk, and its `/posterior/` row did not name the three datasets a non-centred
+  block writes. It now has a paragraph on which four models take the prior and
+  what it buys, the prior and output rows, and the Frühwirth-Schnatter and
+  Wagner (2010) reference. `algorithms.md` calls its table the full list of
+  refusals and was missing the two this prior adds: `omega_v` beside
+  `shape`/`rate` in one block, and an `omega_v` that is not finite and greater
+  than zero. And in `src/core/inputs.cpp` the doc comment of
+  `validate_tvp_block()` had ended up above `validate_state_variance_prior()`,
+  inserted between the two, so the new function's documentation began with
+  parameters it does not take; it is back where it belongs. Documentation
+  only: no code path changes and no draw moves.
+
+- **A NaN or an infinity in the input is refused, by name, before anything
+  reads it.** `bayests check` accepted every such file. A run then failed deep
+  in the numerics -- `inv_sympd(): matrix is singular or not positive definite`,
+  `randg(): incorrect distribution parameters` -- naming neither the dataset nor
+  the value, and in two places it did not fail at all: a NaN in
+  `/data/forecast/x` came back as NaN forecasts, and one in `/data/test/y` as a
+  NaN `/posterior/forecast/loglik`, both from runs that exited 0.
+
+  Every input's `validate()` now checks the observations -- the training
+  sample, the forecast regressors and the realised values -- and the three shape
+  checks every prior and starting value passes through check the values too, so
+  `bayests check` refuses the file a run would. Forecasting and scoring run from
+  draws a previous stage wrote, without `validate()`, so they check
+  `/data/forecast/x` and `/data/test/y` again themselves. The message names the
+  dataset: *the realised observations /data/test/y must be finite, but 1 of its
+  12 values is NaN or infinite; missing values are not supported*. The test
+  reads the exponent bits rather than calling `std::isfinite()`, which a host
+  compiling with `-ffast-math` may fold to true.
+
+  Two readers in the I/O layer had the same hole. A count stored as a double --
+  `/priors/u_sigma/df` as R writes it -- passed the whole-number test when it
+  was NaN, every comparison with NaN being false, and was then cast to `int`,
+  which is undefined behaviour; a finite value past the range of an `int` did
+  the same. Both are refused now. And selection positions were handed to HDF5
+  to convert to integers, which turned a NaN into 0 -- reported as "a position
+  below 1" -- and truncated 2.5 to 2 without a word; they are read as doubles
+  now, and a position that is not a whole number is refused.
+
+  **Two things are refused that used to run**, both deliberately: a fractional
+  selection position, which was silently truncated, and a non-finite value in
+  a cell of `/data/forecast/x` that the forecast overwrites, which was harmless.
+  The rule is that a file has no missing values, not that it has none where a
+  model happens to look. A host feeding the vendored core values with NA in
+  them gets the same refusals.
+
+  `check.nonfinite` puts one NaN into every input dataset each algorithm's
+  fixtures carry -- 476 pairs, integer datasets rewritten as doubles -- and
+  fails on any that `bayests check` does not refuse by name. *Draws are
+  unchanged*: `record_fingerprints.sh` before and after, full suite, reports
+  120 fixtures unchanged and 0 moved.
+
+- **A directory walk on Windows no longer goes round a junction cycle.** Given a
+  directory, `bayests` walks it for model files, and the walk was documented not
+  to follow directory links, "so a link cycle cannot make the walk endless". On
+  Windows that did not hold: libstdc++ reports a junction as a plain directory,
+  so the walk followed it, and a junction back to a directory it was already
+  inside took it round and round until the path grew past what Windows opens.
+  In the case this was found on, one model below such a junction was checked
+  fourteen times -- how many depends on the length of the path -- after which
+  the walk warned, wrongly, that the link's target did not exist, and exited 0.
+  Linux, where the link is recognised and not followed, was never affected.
+
+  Junctions are still followed, since one is how a folder of models gets pulled
+  in from elsewhere. But each directory is now compared with its ancestors by
+  file identity, not by name, and one that leads back to an ancestor is skipped
+  with a warning saying so; and a file reached by two routes -- a junction into
+  a different branch -- is run once. `cli.refusals` gains the cycle: the model
+  below it must be checked exactly once on every platform, with the warning on
+  Windows. The command line only; no core file changed and no draw moves.
+
+- **The README's link to the algorithm references pointed at the wrong
+  section**, on GitHub as well as on the documentation site. "Citing BayesTS"
+  sends a reader to *References* below, and GitHub resolves `#references` to
+  the first heading of that name -- the list of OpenMP and OpenBLAS links under
+  *Multi-threading*, which is above it. That list is *Further reading* now. The
+  documentation site made its heading anchors differently from GitHub, so it
+  resolved neither this link nor the one to *With an AI coding assistant*; it
+  now makes them GitHub's way (`MARKDOWN_ID_STYLE = GITHUB`, which the Doxygen
+  1.9.8 CI installs supports), and it carries `docker/README.md`, `AGENTS.md`,
+  `model-file.md` and `results.md` as pages, so the README's four links to them
+  resolve there too. With five functions' parameters documented -- one of them,
+  `chan_jeliazkov_2009_conditional()`, had only `known` -- and a `\omega` in
+  `noncentred_support.h` moved inside its formula, where Doxygen had been
+  dropping it as an unknown command, the site builds with no warnings where it
+  had fourteen. Comments and configuration only; no draw moves.
+
+- **A run stopped while writing its draws is no longer taken for a finished
+  one.** `coefficients` skips a model whose posterior is already there, and
+  "there" meant one dataset -- in eleven of the twenty-two models not the last
+  one the stage writes, and in the two discounted models the first. A job
+  killed, or a machine restarted, between two of those writes left a file
+  whose rerun printed *Posterior data already exists in file. Skipping
+  simulation.*, exited 0, and never wrote what was missing; `forecasts` then
+  failed on it, every time, until `/posterior` was deleted by hand.
+
+  The stage now marks `/posterior` with the attribute `coefficients` --
+  `"writing"` before its first write and `"complete"` after its last, flushing
+  the file each time so the marks reach the disk in that order. A file still
+  marked `"writing"` is estimated again, with a line saying why; every reader
+  of draws refuses one, so `forecasts` and `loglik` do not run on half a
+  posterior; and `bayests check` says it will be estimated again rather than
+  skipped. A file with no mark was written before it existed and is treated as
+  it always was. The two discounted models' `loglik` is unaffected: it
+  recomputes the closed form from the data and reads nothing stored.
+
+  `cli.interrupted` checks all four behaviours for every algorithm. What a kill
+  leaves is set directly -- where it lands between writes is a race. The
+  change is to the command line and the I/O layer; no core file is touched.
+  *Draws are unchanged*: fingerprints against the previous recording, full
+  suite, 120 fixtures unchanged and 0 moved.
 
 ## 0.2.0 — 2026-09-15
 
