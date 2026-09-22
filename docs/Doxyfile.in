@@ -30,7 +30,11 @@ INPUT                  = "@PROJECT_SOURCE_DIR@/include" \
                          "@PROJECT_SOURCE_DIR@/src" \
                          "@PROJECT_SOURCE_DIR@/README.md" \
                          "@PROJECT_SOURCE_DIR@/CONTRIBUTING.md" \
-                         "@PROJECT_SOURCE_DIR@/CHANGELOG.md"
+                         "@PROJECT_SOURCE_DIR@/CHANGELOG.md" \
+                         "@PROJECT_SOURCE_DIR@/docker/README.md" \
+                         "@PROJECT_SOURCE_DIR@/agents/AGENTS.md" \
+                         "@PROJECT_SOURCE_DIR@/agents/skills/bayests/references/model-file.md" \
+                         "@PROJECT_SOURCE_DIR@/agents/skills/bayests/references/results.md"
 RECURSIVE              = YES
 FILE_PATTERNS          = *.c *.cc *.cpp *.h *.hpp *.md
 EXCLUDE_PATTERNS       = */build/* */.git/*
@@ -62,6 +66,10 @@ QT_AUTOBRIEF           = YES
 MULTILINE_CPP_IS_BRIEF = NO
 INHERIT_DOCS           = YES
 MARKDOWN_SUPPORT       = YES
+# Heading anchors the way GitHub makes them, so a README link to #references
+# lands on the same heading on the site as it does on GitHub. The default,
+# autotoc_mdN, matches nothing a Markdown author writes.
+MARKDOWN_ID_STYLE      = GITHUB
 TOC_INCLUDE_HEADINGS   = 3
 USE_MDFILE_AS_MAINPAGE = "@PROJECT_SOURCE_DIR@/README.md"
 TAB_SIZE               = 4

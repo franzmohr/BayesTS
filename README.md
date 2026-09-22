@@ -1236,7 +1236,7 @@ OMP_NUM_THREADS=1 ./bayests posterior model.h5
 OMP_NUM_THREADS=4 ./bayests posterior model.h5
 ```
 
-### References
+### Further reading
 
 - [Armadillo Documentation - OpenMP](https://arma.sourceforge.net/faq.html#openmp)
 - [OpenMP API Specification](https://www.openmp.org/)

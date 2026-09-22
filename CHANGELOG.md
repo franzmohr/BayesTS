@@ -421,6 +421,41 @@ heading, and move down into a version section when one is cut.
   unchanged*: `record_fingerprints.sh` before and after, full suite, reports
   120 fixtures unchanged and 0 moved.
 
+- **A directory walk on Windows no longer goes round a junction cycle.** Given a
+  directory, `bayests` walks it for model files, and the walk was documented not
+  to follow directory links, "so a link cycle cannot make the walk endless". On
+  Windows that did not hold: libstdc++ reports a junction as a plain directory,
+  so the walk followed it, and a junction back to a directory it was already
+  inside took it round and round until the path grew past what Windows opens.
+  In the case this was found on, one model below such a junction was checked
+  fourteen times -- how many depends on the length of the path -- after which
+  the walk warned, wrongly, that the link's target did not exist, and exited 0.
+  Linux, where the link is recognised and not followed, was never affected.
+
+  Junctions are still followed, since one is how a folder of models gets pulled
+  in from elsewhere. But each directory is now compared with its ancestors by
+  file identity, not by name, and one that leads back to an ancestor is skipped
+  with a warning saying so; and a file reached by two routes -- a junction into
+  a different branch -- is run once. `cli.refusals` gains the cycle: the model
+  below it must be checked exactly once on every platform, with the warning on
+  Windows. The command line only; no core file changed and no draw moves.
+
+- **The README's link to the algorithm references pointed at the wrong
+  section**, on GitHub as well as on the documentation site. "Citing BayesTS"
+  sends a reader to *References* below, and GitHub resolves `#references` to
+  the first heading of that name -- the list of OpenMP and OpenBLAS links under
+  *Multi-threading*, which is above it. That list is *Further reading* now. The
+  documentation site made its heading anchors differently from GitHub, so it
+  resolved neither this link nor the one to *With an AI coding assistant*; it
+  now makes them GitHub's way (`MARKDOWN_ID_STYLE = GITHUB`, which the Doxygen
+  1.9.8 CI installs supports), and it carries `docker/README.md`, `AGENTS.md`,
+  `model-file.md` and `results.md` as pages, so the README's four links to them
+  resolve there too. With five functions' parameters documented -- one of them,
+  `chan_jeliazkov_2009_conditional()`, had only `known` -- and a `\omega` in
+  `noncentred_support.h` moved inside its formula, where Doxygen had been
+  dropping it as an unknown command, the site builds with no warnings where it
+  had fourteen. Comments and configuration only; no draw moves.
+
 ## 0.3.0 — 2026-09-20
 
 ### Added
