@@ -40,6 +40,13 @@
 //                 how far a random walk moves: the non-centred parameterisation.
 //                 Refused for any model but VarTvpStochvol, VarTvpGamma,
 //                 VecTvpStochvol and VecTvpGamma, the four that read it.
+//     --iid
+//                 writes /model/n_iid = 1, so the first endogenous variable's
+//                 equation carries no coefficients at all: white noise, related
+//                 to the rest of the model only through Sigma. Refused for any
+//                 model but VarNormalWishart, which is the one the fixtures
+//                 cover it on; the other three constant VARs read it too and
+//                 are covered by unit.iid_block.
 //     --hold-states
 //                 writes /model/forecast_states = "hold", so the forecast keeps
 //                 the last in-sample states rather than simulating them forward.
@@ -373,7 +380,7 @@ arma::mat build_var_compact_regressors(const arma::mat &series, const Layout &la
 
 void write_common(const ModelFile &file, const std::string &model, const std::string &varsel,
                   bool covar, bool structural, int h, const Layout &layout,
-                  const arma::mat &series, const arma::mat &z_train)
+                  const arma::mat &series, const arma::mat &z_train, int n_iid = 0)
 {
     // The CLI dispatches on /model/algorithm; the checked-in fixtures predate
     // it, which is why the golden harness has to tolerate its absence.
@@ -393,6 +400,13 @@ void write_common(const ModelFile &file, const std::string &model, const std::st
     write_attribute<int>(file, "/model", "burnin", discount ? 0 : kBurnin);
     write_attribute<std::string>(file, "/model", "varsel", varsel);
     write_attribute<bool>(file, "/model", "structural", structural);
+
+    // Left out altogether where nothing is restricted, so that every fixture
+    // but the one that asks for it stays the file it was.
+    if (n_iid > 0)
+    {
+        write_attribute<int>(file, "/model", "n_iid", n_iid);
+    }
 
     if (discount)
     {
@@ -1942,6 +1956,7 @@ int main(int argc, char *argv[])
     bool hold_states = false;
     bool score = false;
     bool noncentred = false;
+    bool iid = false;
     bool bare_group_seen = false;
 
     for (int i = 7; i < argc; i++)
@@ -1969,6 +1984,11 @@ int main(int argc, char *argv[])
             // `bayests forecasts` into a scoring run, so it is what puts a
             // fixture through the predictive density code at all.
             score = true;
+        }
+        else if (token == "--iid")
+        {
+            // The first equation carries no coefficients at all: /model/n_iid.
+            iid = true;
         }
         else if (token == "--noncentred")
         {
@@ -2075,6 +2095,21 @@ int main(int argc, char *argv[])
     if (varsel != "none" && varsel != "ssvs" && varsel != "bvs")
     {
         std::cerr << "Unknown variable selection scheme: " << varsel << '\n';
+        return 2;
+    }
+    if (iid && model != "VarNormalWishart")
+    {
+        std::cerr << "--iid is written on VarNormalWishart only. The other three constant VARs "
+                     "read n_iid as well and unit.iid_block covers them; every remaining "
+                     "algorithm refuses it, which is what require_supported_iid_block() is for\n";
+        return 2;
+    }
+    if (iid && (varsel != "none" || structural))
+    {
+        std::cerr << "--iid cannot be combined with variable selection or a structural form: "
+                     "both are refused by require_supported_iid_block(), the first because a "
+                     "coefficient fixed at zero has nothing left to select over, the second "
+                     "because the contemporaneous block is laid out by a different rule\n";
         return 2;
     }
     if (hold_states && model != "VarTvpWishart" && model != "VarTvpGamma" &&
@@ -2262,7 +2297,8 @@ int main(int argc, char *argv[])
         const arma::mat series = simulate_series(rng);
         const arma::mat z_train = build_train_regressors(series, layout, rng);
 
-        write_common(file, model, varsel, covar, structural, h, layout, series, z_train);
+        write_common(file, model, varsel, covar, structural, h, layout, series, z_train,
+                     iid ? 1 : 0);
 
         if (hold_states)
         {

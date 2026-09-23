@@ -226,6 +226,12 @@ VarSpec read_spec(const ModelFile &file, const char *covar_error)
     spec.burnin = get_attribute_int(file, "/model", "burnin");
     spec.thin = optional_attribute_int(file, "/model", "thin", 1);
     spec.p = optional_attribute_int(file, "/model", "p", 0);
+
+    // Absent from every file but one whose leading variables are white noise.
+    // Read for every algorithm rather than only the four that honour it, so
+    // that the refusal comes from the sampler's own validate() and names it --
+    // see require_supported_iid_block().
+    spec.n_iid = optional_attribute_int(file, "/model", "n_iid", 0);
     spec.m = optional_attribute_int(file, "/model", "m", 0);
     spec.s = optional_attribute_int(file, "/model", "s", 0);
     spec.h = optional_attribute_int(file, "/model", "h", 0);
@@ -520,7 +526,7 @@ bool is_model_attribute(const std::string &name)
     // every /model attribute this does not list.
     static const std::set<std::string> names = {
         "algorithm", "k",         "iterations", "burnin",       "thin",       "p",
-        "m",         "s",         "h",          "quantile",     "n",
+        "m",         "s",         "h",          "quantile",     "n",          "n_iid",
         "rank",      "k_beta",    "n_restricted", "n_factors",  "n_obs_factors",
         "varsel",    "structural", "error",     "seed",       "forecast_states",
         "delta_beta", "delta_sigma",

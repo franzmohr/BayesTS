@@ -50,6 +50,7 @@ seen from R.
 | `h` | int | 0 | Forecast horizon. Absent or 0 means no forecast was asked for |
 | `varsel` | string | `none` | `none`, `ssvs` or `bvs`. Any other spelling throws |
 | `structural` | bool | false | Move the last `k(k-1)/2` entries of `a` to contemporaneous coefficients. Read from an HDF5 boolean enumeration (h5py, HighFive, or an R logical, whose NA is refused) or an integer (non-zero is true) |
+| `n_iid` | int | 0 | Endogenous variables, ordered first, whose equations carry no coefficients at all: white noise, related to the rest only through Sigma. Read by `VarNormalWishart`, `VarNormalGamma`, `VarNormalStochvol` and `VarNormalAld`; every other algorithm refuses a non-zero value, as do those four alongside `structural` or `varsel`. Must be below `k` |
 | `error` | string | `""` | Descriptive, except for `gamma+covar` and `sv+covar` — see below |
 | `quantile` | double | 0.5 | The quantile an `*Ald` model estimates. Must lie in `(0, 1)`. Ignored by every other model |
 | `delta_beta` | double | 1.0 | `VarTvpDiscount` and `VecTvpDiscount`: how fast the coefficients drift. In `(0, 1]`; 1 holds them constant. Ignored by every other model |

@@ -87,6 +87,17 @@ this section. `VecKlgs2010`, the two `*TvpDiscount` entries, the four `Dfm*`
 entries and `FavarNormalWishart` are the exceptions to the rest, each in its own
 way — see below.
 
+**An equation can be restricted to carry no coefficients.** `/model/n_iid`
+names endogenous variables, ordered first, whose equations have no lags, no
+deterministic terms and nothing else — white noise, related to the rest of the
+model only through the error covariance. It is what puts a high-frequency
+surprise inside a monthly VAR rather than beside it, after Jarocinski and
+Karadi (2020). The four constant-coefficient VARs read it; every other
+algorithm refuses a non-zero value, as do those four alongside a structural
+form or variable selection. The restriction is exact: the restricted columns
+leave the system, so those coefficients are never drawn, and the free ones are
+drawn under the prior conditional on them being zero.
+
 **Every random walk can be drawn non-centred.** All nine samplers whose states
 drift take `omega_v` in place of `shape`/`rate`, for the blocks they have:
 `/priors/a` and `/priors/psi` for the coefficients and the covariance block,

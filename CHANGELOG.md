@@ -29,6 +29,42 @@ heading, and move down into a version section when one is cut.
 
 ### Added
 
+- **An equation can be restricted to carry no coefficients at all.**
+  `/model/n_iid` names endogenous variables, ordered first, whose equations have
+  no lags, no deterministic terms and nothing else: white noise that reaches the
+  rest of the model only through the error covariance. That is what makes a
+  high-frequency surprise a variable of a monthly VAR rather than an instrument
+  outside it, after Jarocinski and Karadi (2020); the surprise's contemporaneous
+  correlation with the other equations' errors is then what the model is
+  estimated to measure.
+
+  Read by the four constant-coefficient VARs — `VarNormalWishart`,
+  `VarNormalGamma`, `VarNormalStochvol` and `VarNormalAld`. Every other
+  algorithm refuses a non-zero value rather than ignoring it, and so do those
+  four together with a structural form, whose contemporaneous block is laid out
+  by a different rule, or with variable selection, which is a second way of
+  switching a coefficient off. `n_iid` at or above `k` is refused as well: it
+  leaves no equation with dynamics for the restricted ones to be correlated
+  with.
+
+  The restriction is exact rather than a tight prior. `iid_block()` in
+  `core/models/model_support.h` drops the restricted columns out of the SUR
+  system, so those coefficients are never drawn and the zeros are put back when
+  a draw is stored — which also means the free coefficients are drawn under the
+  prior *conditional* on the restricted ones being zero, precision `V_ff` and
+  precision-weighted mean `(V mu)_f`. Both are subsets of matrices the
+  unrestricted sampler already forms, so there is no new algebra. Masking the
+  regressors and leaving the prior alone, which is the other way to spell this,
+  would marginalise the restricted coefficients out instead of conditioning on
+  them, and the two agree only for a diagonal prior. `unit.iid_block` pins the
+  difference by running a restricted chain against a hand-reduced one under a
+  prior that is deliberately not diagonal, and the two agree bit for bit.
+
+  *Draws are unchanged for every model without `n_iid`*: all 417 tests that
+  existed before this pass untouched. The one arithmetic change on that path is
+  that the prior's precision-weighted mean is formed once rather than once per
+  draw, which is the same value computed the same way.
+
 - **The remaining five time-varying samplers take the non-centred prior.**
   `omega_v` in place of `shape` and `rate` now switches the random walk to the
   non-centred parameterisation in `VarTvpWishart`, `VecTvpWishart` and

@@ -86,6 +86,7 @@ add_executable(bayests_unit_thin unit_thin.cpp)
 add_executable(bayests_unit_coint_prior_symmetry unit_coint_prior_symmetry.cpp)
 add_executable(bayests_unit_coint_klgs_prior unit_coint_klgs_prior.cpp)
 add_executable(bayests_unit_bvs unit_bvs.cpp)
+add_executable(bayests_unit_iid_block unit_iid_block.cpp)
 add_executable(bayests_unit_input_values unit_input_values.cpp)
 add_executable(bayests_unit_var_normal_stochvol unit_var_normal_stochvol.cpp)
 # The one model that draws nothing, so unlike every sampler beside it the whole
@@ -141,6 +142,7 @@ foreach(_core_unit bayests_unit_identification bayests_unit_vec_klgs_2010 bayest
                    bayests_unit_dfm_tvp_gamma bayests_unit_dfm_tvp_stochvol
                    bayests_unit_var_ald bayests_unit_thin
                    bayests_unit_favar_normal_wishart bayests_unit_bvs bayests_unit_ssvs
+                   bayests_unit_iid_block
                    bayests_unit_input_values bayests_unit_var_normal_stochvol
                    bayests_unit_var_tvp_discount bayests_unit_vec_tvp_discount
                    bayests_unit_predictive_score bayests_unit_factor_score
@@ -313,7 +315,7 @@ foreach(_unit vec_to_var forecast_lags forecast_regressors_io forecast_group_io 
               vec_klgs_2010 vec_tvp_coint coint_prior_symmetry coint_klgs_prior coint_jacobian coint_dees_us dfm_normal_gamma dfm_normal_stochvol
               dfm_tvp_gamma dfm_tvp_stochvol favar_normal_wishart var_ald thin model_group bvs ssvs
               input_values var_normal_stochvol var_tvp_discount vec_tvp_discount read_path bool_attributes tvp_initial_state
-              forecast_states noncentred)
+              forecast_states noncentred iid_block)
     add_test(NAME "unit.${_unit}" COMMAND "bayests_unit_${_unit}")
     set_tests_properties("unit.${_unit}" PROPERTIES
         ENVIRONMENT_MODIFICATION "${_bayests_test_env_mod}")
@@ -462,6 +464,14 @@ bayests_add_model_fixture(VarNormalGamma-ssvs       VarNormalGamma     ssvs 0 0 
 bayests_add_model_fixture(VarNormalGamma-bvs        VarNormalGamma     bvs  0 0 4)
 bayests_add_model_fixture(VarNormalGamma-covar      VarNormalGamma     none 1 0 4)
 bayests_add_model_fixture(VarNormalGamma-structural VarNormalGamma     none 0 1 4)
+
+# The one fixture whose leading equation carries no coefficients: /model/n_iid.
+# It is a VAR of a white-noise variable and two that have dynamics, which is the
+# shape a high-frequency surprise gives a monthly model. The other three
+# constant VARs read the same attribute and unit.iid_block covers them; what
+# this adds is the file, so that reading the attribute, refusing it where it is
+# not supported and estimating under it are covered end to end.
+bayests_add_model_fixture(VarNormalWishart-iid VarNormalWishart none 0 0 4 --iid)
 bayests_add_model_fixture(VarNormalGamma-nofcst     VarNormalGamma     none 0 0 0)
 bayests_add_model_fixture(VarNormalGamma-ssvs-covar VarNormalGamma     ssvs 1 0 4)
 bayests_add_model_fixture(VarNormalGamma-bvs-covar  VarNormalGamma     bvs  1 0 4)
