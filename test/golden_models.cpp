@@ -107,9 +107,9 @@ constexpr const char *kOutputs[] = {
     "/posterior/v_sigma_inv/sigma",
     // What a random walk estimated under the non-centred parameterisation adds
     // beside its sigma: the signed standard deviation and the log ordinates at
-    // zero the Savage-Dickey test is built from. Written by the time-varying
-    // VARs and VECs with a gamma or stochastic volatility error term when the
-    // file sets omega_v, per block, and absent elsewhere.
+    // zero the Savage-Dickey test is built from. Written by every time-varying
+    // sampler when the file sets omega_v, per block, and absent elsewhere; for
+    // the two factor models the blocks are the loadings and the transition.
     "/posterior/a/omega",
     "/posterior/a/omega_log_zero",
     "/posterior/a/omega_log_zero_joint",
@@ -119,6 +119,12 @@ constexpr const char *kOutputs[] = {
     "/posterior/u_sigma_inv/omega",
     "/posterior/u_sigma_inv/omega_log_zero",
     "/posterior/u_sigma_inv/omega_log_zero_joint",
+    "/posterior/v_sigma_inv/omega",
+    "/posterior/v_sigma_inv/omega_log_zero",
+    "/posterior/v_sigma_inv/omega_log_zero_joint",
+    "/posterior/lambda/omega",
+    "/posterior/lambda/omega_log_zero",
+    "/posterior/lambda/omega_log_zero_joint",
     "/posterior/loglik",
     "/posterior/forecast/forecasts",
 };

@@ -567,6 +567,18 @@ bayests_add_model_fixture(VecTvpStochvol-noncentred-bvs-covar VecTvpStochvol bvs
 # precision being constant.
 bayests_add_model_fixture(VecTvpGamma-noncentred              VecTvpGamma    none 0 0 4 --noncentred)
 bayests_add_model_fixture(VecTvpGamma-noncentred-bvs-covar    VecTvpGamma    bvs  1 0 4 --noncentred)
+# The samplers whose only random walk is the coefficients: no covariance block
+# and no volatility path, so a single non-centred block each. The Wishart models
+# read one constant error covariance for every period, VarTvpAld one block per
+# period, and the two factor models put the loadings and the factor transition
+# through it -- the loadings row by row, which is the one place the block is
+# assembled from several draws.
+bayests_add_model_fixture(VarTvpWishart-noncentred            VarTvpWishart  none 0 0 4 --noncentred)
+bayests_add_model_fixture(VarTvpWishart-noncentred-bvs        VarTvpWishart  bvs  0 0 4 --noncentred)
+bayests_add_model_fixture(VecTvpWishart-noncentred            VecTvpWishart  none 0 0 4 --noncentred)
+bayests_add_model_fixture(VarTvpAld-noncentred                VarTvpAld      none 0 0 0 --noncentred)
+bayests_add_model_fixture(DfmTvpGamma-noncentred              DfmTvpGamma    none 0 0 4 --noncentred)
+bayests_add_model_fixture(DfmTvpStochvol-noncentred           DfmTvpStochvol none 0 0 4 --noncentred)
 
 # The dynamic factor model. Its own dimensions -- six series, two factors, a
 # transition of order two -- written by the DFM block at the bottom of

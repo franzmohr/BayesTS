@@ -39,6 +39,10 @@ VarTvpWishartInput read_input(const ModelFile &file)
         input.a_prior.sigma = read_gamma_prior(file, "/priors/a");
         input.a_prior.initial_state = read_normal_prior(file, "/priors/a");
 
+        // The non-centred parameterisation, in place of shape and rate. Which
+        // one the file chose is decided by validate(), which refuses both.
+        read_vec_if_present(file, "/priors/a/omega_v", input.a_prior.omega_v);
+
         // BVS is the only scheme this model implements. An SSVS file is left
         // unread here and rejected by validate(), which can say why.
         if (input.spec.varsel == VarSelection::bvs)
@@ -128,6 +132,7 @@ void write_coefficients(const ModelFile &file, const VarTvpWishartDraws &draws)
         {
             write_draws(file, "/posterior/a/lambda", draws.a_lambda);
         }
+        write_noncentred(file, "/posterior/a", draws.a_noncentred);
     }
 
     write_draws(file, "/posterior/u_sigma_inv/coeffs", draws.u_sigma_inv);

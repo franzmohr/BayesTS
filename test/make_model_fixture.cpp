@@ -736,11 +736,12 @@ void write_var_normal_ald(const ModelFile &file, const std::string &varsel, cons
 }
 
 /// The same model with the coefficients turned into a path.
-void write_var_tvp_ald(const ModelFile &file, const std::string &varsel, const Layout &layout)
+void write_var_tvp_ald(const ModelFile &file, const std::string &varsel, const Layout &layout,
+                       bool noncentred = false)
 {
     const arma::uword nparams = static_cast<arma::uword>(layout.nparams);
 
-    write_tvp_coefficients(file, varsel, nparams);
+    write_tvp_coefficients(file, varsel, nparams, noncentred);
 
     ensure_group(file, "/priors/u_scale");
     write_row(file, "/priors/u_scale/shape", arma::vec(kK, arma::fill::value(3.0)));
@@ -750,9 +751,10 @@ void write_var_tvp_ald(const ModelFile &file, const std::string &varsel, const L
     write_row(file, "/initial/u_scale", arma::vec(kK, arma::fill::ones));
 }
 
-void write_var_tvp_wishart(const ModelFile &file, const std::string &varsel, const Layout &layout)
+void write_var_tvp_wishart(const ModelFile &file, const std::string &varsel, const Layout &layout,
+                           bool noncentred = false)
 {
-    write_tvp_coefficients(file, varsel, static_cast<arma::uword>(layout.nparams));
+    write_tvp_coefficients(file, varsel, static_cast<arma::uword>(layout.nparams), noncentred);
 
     // The error covariance is the Wishart precision alone: no psi block, so
     // nothing here depends on the covar flag.
@@ -1277,9 +1279,10 @@ void write_vec_normal_stochvol(const ModelFile &file, const std::string &varsel,
     }
 }
 
-void write_vec_tvp_wishart(const ModelFile &file, const std::string &varsel, arma::uword nparams)
+void write_vec_tvp_wishart(const ModelFile &file, const std::string &varsel, arma::uword nparams,
+                           bool noncentred = false)
 {
-    write_vec_tvp_coefficients(file, varsel, nparams);
+    write_vec_tvp_coefficients(file, varsel, nparams, noncentred);
     write_vec_tvp_coint(file);
 
     // The error covariance is the Wishart precision alone: no psi block, so
@@ -1641,7 +1644,7 @@ void write_dfm_normal_stochvol(const ModelFile &file, int h, const arma::mat &x)
 /// rather than a vector as the starting value. That the same group holds both
 /// priors is the thing a file is most likely to get wrong here, which is why the
 /// fixture writes it rather than only the in-memory unit test covering it.
-void write_dfm_tvp_gamma(const ModelFile &file, int h, const arma::mat &x)
+void write_dfm_tvp_gamma(const ModelFile &file, int h, const arma::mat &x, bool noncentred = false)
 {
     write_attribute<std::string>(file, "/model", "algorithm", "DfmTvpGamma");
     write_attribute<int>(file, "/model", "k", kDfmK);
@@ -1674,8 +1677,15 @@ void write_dfm_tvp_gamma(const ModelFile &file, int h, const arma::mat &x)
               arma::mat(arma::diagmat(arma::vec(kDfmNLambda, arma::fill::value(100.0)))));
     write_row(file, "/initial/lambda_init", arma::vec(kDfmNLambda, arma::fill::value(0.5)));
 
-    write_row(file, "/priors/lambda/shape", arma::vec(kDfmNLambda, arma::fill::value(3.0)));
-    write_row(file, "/priors/lambda/rate", arma::vec(kDfmNLambda, arma::fill::value(0.01)));
+    if (noncentred)
+    {
+        write_row(file, "/priors/lambda/omega_v", arma::vec(kDfmNLambda, arma::fill::value(0.005)));
+    }
+    else
+    {
+        write_row(file, "/priors/lambda/shape", arma::vec(kDfmNLambda, arma::fill::value(3.0)));
+        write_row(file, "/priors/lambda/rate", arma::vec(kDfmNLambda, arma::fill::value(0.01)));
+    }
     write_row(file, "/priors/lambda/mu", arma::vec(kDfmNLambda, arma::fill::zeros));
     write_mat(file, "/priors/lambda/v_inv", arma::eye<arma::mat>(kDfmNLambda, kDfmNLambda));
 
@@ -1687,8 +1697,15 @@ void write_dfm_tvp_gamma(const ModelFile &file, int h, const arma::mat &x)
               arma::mat(arma::diagmat(arma::vec(kDfmNA, arma::fill::value(100.0)))));
     write_row(file, "/initial/a_init", arma::vec(kDfmNA, arma::fill::zeros));
 
-    write_row(file, "/priors/a/shape", arma::vec(kDfmNA, arma::fill::value(3.0)));
-    write_row(file, "/priors/a/rate", arma::vec(kDfmNA, arma::fill::value(0.01)));
+    if (noncentred)
+    {
+        write_row(file, "/priors/a/omega_v", arma::vec(kDfmNA, arma::fill::value(0.005)));
+    }
+    else
+    {
+        write_row(file, "/priors/a/shape", arma::vec(kDfmNA, arma::fill::value(3.0)));
+        write_row(file, "/priors/a/rate", arma::vec(kDfmNA, arma::fill::value(0.01)));
+    }
     write_row(file, "/priors/a/mu", arma::vec(kDfmNA, arma::fill::zeros));
     write_mat(file, "/priors/a/v_inv", arma::eye<arma::mat>(kDfmNA, kDfmNA));
 
@@ -1718,7 +1735,7 @@ void write_dfm_tvp_gamma(const ModelFile &file, int h, const arma::mat &x)
 /// `rate` now appear in all four prior groups, at three different widths, and a
 /// reader that fetched one group's pair for another would produce a well-formed
 /// model of the wrong shape.
-void write_dfm_tvp_stochvol(const ModelFile &file, int h, const arma::mat &x)
+void write_dfm_tvp_stochvol(const ModelFile &file, int h, const arma::mat &x, bool noncentred = false)
 {
     write_attribute<std::string>(file, "/model", "algorithm", "DfmTvpStochvol");
     write_attribute<int>(file, "/model", "k", kDfmK);
@@ -1748,8 +1765,15 @@ void write_dfm_tvp_stochvol(const ModelFile &file, int h, const arma::mat &x)
               arma::mat(arma::diagmat(arma::vec(kDfmNLambda, arma::fill::value(100.0)))));
     write_row(file, "/initial/lambda_init", arma::vec(kDfmNLambda, arma::fill::value(0.5)));
 
-    write_row(file, "/priors/lambda/shape", arma::vec(kDfmNLambda, arma::fill::value(3.0)));
-    write_row(file, "/priors/lambda/rate", arma::vec(kDfmNLambda, arma::fill::value(0.01)));
+    if (noncentred)
+    {
+        write_row(file, "/priors/lambda/omega_v", arma::vec(kDfmNLambda, arma::fill::value(0.005)));
+    }
+    else
+    {
+        write_row(file, "/priors/lambda/shape", arma::vec(kDfmNLambda, arma::fill::value(3.0)));
+        write_row(file, "/priors/lambda/rate", arma::vec(kDfmNLambda, arma::fill::value(0.01)));
+    }
     write_row(file, "/priors/lambda/mu", arma::vec(kDfmNLambda, arma::fill::zeros));
     write_mat(file, "/priors/lambda/v_inv", arma::eye<arma::mat>(kDfmNLambda, kDfmNLambda));
 
@@ -1758,8 +1782,15 @@ void write_dfm_tvp_stochvol(const ModelFile &file, int h, const arma::mat &x)
               arma::mat(arma::diagmat(arma::vec(kDfmNA, arma::fill::value(100.0)))));
     write_row(file, "/initial/a_init", arma::vec(kDfmNA, arma::fill::zeros));
 
-    write_row(file, "/priors/a/shape", arma::vec(kDfmNA, arma::fill::value(3.0)));
-    write_row(file, "/priors/a/rate", arma::vec(kDfmNA, arma::fill::value(0.01)));
+    if (noncentred)
+    {
+        write_row(file, "/priors/a/omega_v", arma::vec(kDfmNA, arma::fill::value(0.005)));
+    }
+    else
+    {
+        write_row(file, "/priors/a/shape", arma::vec(kDfmNA, arma::fill::value(3.0)));
+        write_row(file, "/priors/a/rate", arma::vec(kDfmNA, arma::fill::value(0.01)));
+    }
     write_row(file, "/priors/a/mu", arma::vec(kDfmNA, arma::fill::zeros));
     write_mat(file, "/priors/a/v_inv", arma::eye<arma::mat>(kDfmNA, kDfmNA));
 
@@ -1767,8 +1798,15 @@ void write_dfm_tvp_stochvol(const ModelFile &file, int h, const arma::mat &x)
     // one at the width of the observed series, one at the width of the factors.
     write_row(file, "/priors/u_sigma/offset", arma::vec(kDfmK, arma::fill::value(1e-4)));
     write_row(file, "/priors/u_sigma/sigma", arma::vec(kDfmK, arma::fill::value(0.1)));
-    write_row(file, "/priors/u_sigma/shape", arma::vec(kDfmK, arma::fill::value(3.0)));
-    write_row(file, "/priors/u_sigma/rate", arma::vec(kDfmK, arma::fill::value(0.2)));
+    if (noncentred)
+    {
+        write_row(file, "/priors/u_sigma/omega_v", arma::vec(kDfmK, arma::fill::value(0.1)));
+    }
+    else
+    {
+        write_row(file, "/priors/u_sigma/shape", arma::vec(kDfmK, arma::fill::value(3.0)));
+        write_row(file, "/priors/u_sigma/rate", arma::vec(kDfmK, arma::fill::value(0.2)));
+    }
     write_row(file, "/priors/u_sigma/mu", arma::vec(kDfmK, arma::fill::zeros));
     write_mat(file, "/priors/u_sigma/v_inv", arma::eye<arma::mat>(kDfmK, kDfmK));
 
@@ -1777,8 +1815,15 @@ void write_dfm_tvp_stochvol(const ModelFile &file, int h, const arma::mat &x)
 
     write_row(file, "/priors/v_sigma/offset", arma::vec(kDfmN, arma::fill::value(1e-4)));
     write_row(file, "/priors/v_sigma/sigma", arma::vec(kDfmN, arma::fill::value(0.1)));
-    write_row(file, "/priors/v_sigma/shape", arma::vec(kDfmN, arma::fill::value(3.0)));
-    write_row(file, "/priors/v_sigma/rate", arma::vec(kDfmN, arma::fill::value(0.2)));
+    if (noncentred)
+    {
+        write_row(file, "/priors/v_sigma/omega_v", arma::vec(kDfmN, arma::fill::value(0.1)));
+    }
+    else
+    {
+        write_row(file, "/priors/v_sigma/shape", arma::vec(kDfmN, arma::fill::value(3.0)));
+        write_row(file, "/priors/v_sigma/rate", arma::vec(kDfmN, arma::fill::value(0.2)));
+    }
     write_row(file, "/priors/v_sigma/mu", arma::vec(kDfmN, arma::fill::zeros));
     write_mat(file, "/priors/v_sigma/v_inv", arma::eye<arma::mat>(kDfmN, kDfmN));
 
@@ -1838,7 +1883,7 @@ bool write_vec_model(const ModelFile &file, const std::string &model, const std:
     }
     else if (model == "VecTvpWishart")
     {
-        write_vec_tvp_wishart(file, varsel, nparams);
+        write_vec_tvp_wishart(file, varsel, nparams, noncentred);
     }
     else if (model == "VecTvpGamma")
     {
@@ -2045,10 +2090,14 @@ int main(int argc, char *argv[])
         return 2;
     }
     if (noncentred && model != "VarTvpStochvol" && model != "VarTvpGamma" &&
-        model != "VecTvpStochvol" && model != "VecTvpGamma")
+        model != "VarTvpWishart" && model != "VarTvpAld" && model != "VecTvpStochvol" &&
+        model != "VecTvpGamma" && model != "VecTvpWishart" && model != "DfmTvpGamma" &&
+        model != "DfmTvpStochvol")
     {
-        std::cerr << "Only VarTvpStochvol, VarTvpGamma, VecTvpStochvol and VecTvpGamma read the "
-                     "non-centred prior omega_v so far\n";
+        std::cerr << "Only a sampler whose coefficients drift reads the non-centred prior "
+                     "omega_v: expected one of VarTvpWishart, VarTvpGamma, VarTvpStochvol, "
+                     "VarTvpAld, VecTvpWishart, VecTvpGamma, VecTvpStochvol, DfmTvpGamma, "
+                     "DfmTvpStochvol\n";
         return 2;
     }
     if (coint_rho && model != "VecTvpWishart" && model != "VecTvpGamma" &&
@@ -2132,11 +2181,11 @@ int main(int argc, char *argv[])
             }
             else if (model == "DfmTvpGamma")
             {
-                write_dfm_tvp_gamma(file, h, x);
+                write_dfm_tvp_gamma(file, h, x, noncentred);
             }
             else if (model == "DfmTvpStochvol")
             {
-                write_dfm_tvp_stochvol(file, h, x);
+                write_dfm_tvp_stochvol(file, h, x, noncentred);
             }
             else
             {
@@ -2247,11 +2296,11 @@ int main(int argc, char *argv[])
         }
         else if (model == "VarTvpAld")
         {
-            write_var_tvp_ald(file, varsel, layout);
+            write_var_tvp_ald(file, varsel, layout, noncentred);
         }
         else if (model == "VarTvpWishart")
         {
-            write_var_tvp_wishart(file, varsel, layout);
+            write_var_tvp_wishart(file, varsel, layout, noncentred);
         }
         else if (model == "VarTvpStochvol")
         {

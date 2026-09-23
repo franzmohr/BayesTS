@@ -27,6 +27,53 @@ Dates are ISO. Versions follow the `project(VERSION)` in `CMakeLists.txt`.
 New entries go here, under an `### Added`, `### Changed` or `### Fixed`
 heading, and move down into a version section when one is cut.
 
+### Added
+
+- **The remaining five time-varying samplers take the non-centred prior.**
+  `omega_v` in place of `shape` and `rate` now switches the random walk to the
+  non-centred parameterisation in `VarTvpWishart`, `VecTvpWishart` and
+  `VarTvpAld` under `/priors/a`, in `DfmTvpGamma` under `/priors/lambda` and
+  `/priors/a`, and in `DfmTvpStochvol` under those two and both of its
+  log-volatility groups, `/priors/u_sigma` and `/priors/v_sigma`. Each writes
+  `omega`, `omega_log_zero` and `omega_log_zero_joint` beside that block's
+  `sigma`, as the four samplers that already had it do. With this **every
+  random walk in every sampler** can be drawn either way; a VEC's cointegration
+  space is the one exception, its state variance being fixed at the identity to
+  pin beta's scale, so there is no variance to put a prior on.
+
+  Three of the five have no covariance block and no volatility path, so the
+  coefficients are their only random walk. The two Wishart models read one
+  constant error covariance for every period and `VarTvpAld` one block per
+  period, both of which `draw_noncentred_path()` already took. The factor
+  models' loadings are drawn row by row, so the block's draw is assembled from
+  the rows: each row is given its slice of the prior, and the row ordinates are
+  summed into the block's, which the prior of the loadings before the sample
+  being block diagonal across rows is what permits.
+
+  `validate_dfm_stochvol_block()` now puts its state variance prior through
+  `validate_state_variance_prior()`, the check the coefficient blocks already
+  shared, so that it accepts either parameterisation and refuses both at once.
+  A file that gives neither is still refused; the message names the innovations
+  rather than the variance, which is the wording every other block produces.
+
+  `unit.noncentred` runs `VarTvpWishart` and `VarTvpAld` on the shifting
+  intercept of the sample the other models are tested on: the log Bayes factors
+  came out at 11.9 and 27.6 for the intercept that moves, and −1.2 and −0.8 for
+  the one that does not. Six fixtures — one per model, plus a selection row for
+  `VarTvpWishart` — put the files through `golden.*` and `check.*`; the
+  `DfmTvpStochvol` one has all four of its random walks non-centred at once.
+
+  *Draws are unchanged* for every file without `omega_v`. The fingerprint
+  comparison of CONTRIBUTING.md was run in the CI image against `main`
+  (b023362): **all 120 fixtures that existed before are numerically identical**,
+  and the six new ones are the only additions. The comparison prints them as
+  "moved" all the same, and that is worth knowing before reading its output: the
+  recording gained six rows -- `/posterior/lambda/omega` and
+  `/posterior/v_sigma_inv/omega` with their two ordinates each -- which are
+  `absent` in every fixture but the factor models' and shift each block by six
+  lines. Discount those rows and nothing differs. `ctest` passes
+  in Debug and Release in the same image, 420 tests where there were 402.
+
 ## 0.3.0 — 2026-09-22
 
 ### Added

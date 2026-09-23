@@ -41,12 +41,20 @@
 /// variances and a constant in the first equation that shifts half way -- by
 /// twice as much as the VAR's, for the reason given at the check.
 ///
+/// VarTvpWishart and VarTvpAld are run on the shifting intercept as well. They
+/// have no covariance block and no volatility path, so the coefficients are the
+/// only random walk each of them has: the Wishart model reads one constant error
+/// covariance for every period and the asymmetric Laplace one block per period,
+/// which is the pair of layouts draw_noncentred_path() takes.
+///
 /// Last, what validate() refuses: a file that gives both priors on how far a
 /// random walk moves, and an omega_v it could not use.
 
 #include "bayests/reporter.h"
+#include "bayests/var_tvp_ald.h"
 #include "bayests/var_tvp_gamma.h"
 #include "bayests/var_tvp_stochvol.h"
+#include "bayests/var_tvp_wishart.h"
 #include "bayests/vec_tvp_gamma.h"
 #include "bayests/vec_tvp_stochvol.h"
 #include "core/models/noncentred_support.h"
@@ -617,6 +625,123 @@ void the_vec_gamma_model_finds_the_shifting_constant()
                              1e-12));
 }
 
+
+/// The same sample and coefficient prior as simulate(), for VarTvpWishart: one
+/// constant error covariance with a Wishart prior, and no covariance block, so
+/// the coefficients are the only random walk.
+bayests::VarTvpWishartInput as_wishart(const bayests::VarTvpStochvolInput &sv)
+{
+    const arma::uword k = static_cast<arma::uword>(sv.spec.k);
+
+    bayests::VarTvpWishartInput input;
+    input.spec = sv.spec;
+    input.train = sv.train;
+    input.a_prior = sv.a_prior;
+    input.initial.a = sv.initial.a;
+    input.initial.a_sigma_inv = sv.initial.a_sigma_inv;
+    input.initial.a_init = sv.initial.a_init;
+
+    input.u_sigma_prior.df = static_cast<int>(k);
+    input.u_sigma_prior.scale = arma::eye<arma::mat>(k, k);
+    input.initial.u_sigma_inv = arma::eye<arma::mat>(k, k);
+
+    return input;
+}
+
+void the_wishart_model_finds_the_shifting_intercept()
+{
+    std::printf("VarTvpWishart: the first equation's intercept shifts\n");
+
+    const bayests::VarTvpWishartInput input =
+        as_wishart(simulate(arma::ones<arma::mat>(200, 2), 4.0));
+
+    bayests::NullReporter reporter;
+    bayests::VarTvpWishartDraws d;
+    bool ran = false;
+    try
+    {
+        d = bayests::VarTvpWishartSampler{}.draw_coefficients(input, reporter);
+        ran = true;
+    }
+    catch (const std::exception &e)
+    {
+        std::printf("    threw: %s\n", e.what());
+    }
+    check("the chain runs to the end", ran);
+    if (!ran)
+    {
+        return;
+    }
+
+    const double c1 = log_bf(d.a_noncentred, 4, 0.01);
+    const double c2 = log_bf(d.a_noncentred, 5, 0.01);
+    std::printf("    log BF: intercepts %.2f, %.2f\n", c1, c2);
+    check("the shifting intercept is found to move", c1 > 3.0);
+    check("the other is not", c2 < 2.0);
+    check("a sigma is written as omega squared",
+          arma::approx_equal(d.a_sigma, arma::square(d.a_noncentred.omega), "absdiff", 1e-12));
+    check("omega visits both signs",
+          d.a_noncentred.omega.min() < 0.0 && d.a_noncentred.omega.max() > 0.0);
+}
+
+/// The same sample and coefficient prior again, for VarTvpAld: the error is an
+/// asymmetric Laplace, so the measurement covariance moves with the latent
+/// weights and the non-centred draw reads one block per period.
+bayests::VarTvpAldInput as_ald(const bayests::VarTvpStochvolInput &sv)
+{
+    const arma::uword k = static_cast<arma::uword>(sv.spec.k);
+    const arma::uword tt = sv.train.y.n_rows;
+
+    bayests::VarTvpAldInput input;
+    input.spec = sv.spec;
+    input.spec.quantile = 0.5;
+    input.train = sv.train;
+    input.a_prior = sv.a_prior;
+    input.initial.a = sv.initial.a;
+    input.initial.a_sigma_inv = sv.initial.a_sigma_inv;
+    input.initial.a_init = sv.initial.a_init;
+
+    input.u_scale_prior.shape = arma::vec(k, arma::fill::value(3.0));
+    input.u_scale_prior.rate = arma::vec(k, arma::fill::value(0.2));
+    input.initial.w = arma::ones<arma::mat>(tt, k);
+    input.initial.u_scale = arma::ones<arma::vec>(k);
+
+    return input;
+}
+
+void the_ald_model_finds_the_shifting_intercept()
+{
+    std::printf("VarTvpAld: the first equation's intercept shifts\n");
+
+    const bayests::VarTvpAldInput input = as_ald(simulate(arma::ones<arma::mat>(200, 2), 4.0));
+
+    bayests::NullReporter reporter;
+    bayests::VarTvpAldDraws d;
+    bool ran = false;
+    try
+    {
+        d = bayests::VarTvpAldSampler{}.draw_coefficients(input, reporter);
+        ran = true;
+    }
+    catch (const std::exception &e)
+    {
+        std::printf("    threw: %s\n", e.what());
+    }
+    check("the chain runs to the end", ran);
+    if (!ran)
+    {
+        return;
+    }
+
+    const double c1 = log_bf(d.a_noncentred, 4, 0.01);
+    const double c2 = log_bf(d.a_noncentred, 5, 0.01);
+    std::printf("    log BF: intercepts %.2f, %.2f\n", c1, c2);
+    check("the shifting intercept is found to move", c1 > 3.0);
+    check("the other is not", c2 < 2.0);
+    check("a sigma is written as omega squared",
+          arma::approx_equal(d.a_sigma, arma::square(d.a_noncentred.omega), "absdiff", 1e-12));
+}
+
 /// Whether validate() refuses `input`, and with a message that mentions `word`.
 bool refused(const bayests::VarTvpStochvolInput &input, const std::string &word)
 {
@@ -666,6 +791,8 @@ int main()
     the_gamma_model_finds_the_shifting_intercept();
     the_vec_finds_the_volatility_that_jumps();
     the_vec_gamma_model_finds_the_shifting_constant();
+    the_wishart_model_finds_the_shifting_intercept();
+    the_ald_model_finds_the_shifting_intercept();
     the_prior_is_one_or_the_other();
 
     std::printf("%s\n", failures == 0 ? "all checks passed" : "SOME CHECKS FAILED");

@@ -141,7 +141,7 @@ yet, and warns where there are some but `/model` asks for no horizon.
 | `/priors/u_sigma` | `df` (scalar), `scale` `(k, k)` | The Wishart models |
 | `/priors/u_sigma` | `shape` `(1, k)`, `rate` `(1, k)` | The gamma models |
 | `/priors/u_sigma` | `offset`, `sigma`, `shape`, `rate`, `mu` `(1, k)` and `v_inv` `(k, k)` | The stochastic volatility models |
-| `/priors/a`, `/priors/psi`, `/priors/u_sigma` | `omega_v` in place of `shape`/`rate` | `VarTvpStochvol` and `VecTvpStochvol`, and `VarTvpGamma` and `VecTvpGamma` for `a` and `psi`: the non-centred parameterisation of that block's random walk. See below |
+| `/priors/a`, `/priors/psi`, `/priors/lambda`, `/priors/u_sigma` | `omega_v` in place of `shape`/`rate` | Every time-varying sampler, for the blocks it has: the non-centred parameterisation of that block's random walk. See below |
 | `/priors/u_scale` | `shape` `(1, k)`, `rate` `(1, k)` | The two `*Ald` models: the scale of the asymmetric Laplace |
 | `/priors/beta` | `v_inv` (scalar), `p_tau_inv` `(k_beta, k_beta)` | The constant VECs: the cointegration space prior of Koop, León-González and Strachan (2010). `v_inv` at least zero; `p_tau_inv` positive definite when `v_inv > 0` |
 | `/priors/beta` | `g_inv` `(k, k)`, optional | `VecNormalStochvol` only: `G⁻¹`, the fixed matrix the loadings' prior is scaled by. Absent, it is the precision `/initial/h` implies, averaged over the sample. See *VEC* in `algorithms.md` |
@@ -185,7 +185,15 @@ Bayes factor is a Savage-Dickey density ratio that one run of the time-varying
 model estimates (Chan 2018). The draws for it are written beside the block's
 `sigma`; `results.md` has them and the formula.
 
-Only the four time-varying VARs and VECs with a gamma or stochastic volatility error term read `omega_v` so far. On any other model it is a dataset
+Every time-varying sampler reads `omega_v`, for the blocks it has:
+`VarTvpStochvol` and `VecTvpStochvol` on `a`, `psi` and `u_sigma`;
+`VarTvpGamma` and `VecTvpGamma` on `a` and `psi`; `VarTvpWishart`,
+`VecTvpWishart` and `VarTvpAld` on `a`, their only random walk; and
+`DfmTvpGamma` on `lambda` and `a`; and `DfmTvpStochvol` on those two and on
+both of its log-volatilities, `u_sigma` and `v_sigma`. A VEC's cointegration
+space is never among them: its state variance is fixed at the identity to pin
+beta's scale, so there is no variance to put a prior on. On a model without a
+random walk it is a dataset
 nothing reads, which `bayests check` warns about, and the model runs centred.
 
 `rho` is the autoregression of a time-varying VEC's cointegration state

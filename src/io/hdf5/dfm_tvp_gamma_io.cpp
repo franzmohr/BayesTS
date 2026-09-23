@@ -47,10 +47,17 @@ DfmTvpGammaInput read_input(const ModelFile &file)
             input.initial.lambda_sigma_inv = read_mat(file, "/initial/lambda_sigma_inv");
             input.initial.lambda_init = read_vec(file, "/initial/lambda_init");
         }
-        if (file.exist("/priors/lambda/shape"))
+        // Either parameterisation of how far the loadings move: shape and rate
+        // for the centred one, omega_v for the non-centred one. validate()
+        // refuses a file that gives both.
+        if (file.exist("/priors/lambda/shape") || file.exist("/priors/lambda/omega_v"))
         {
-            input.lambda_prior.sigma = read_gamma_prior(file, "/priors/lambda");
+            if (file.exist("/priors/lambda/shape"))
+            {
+                input.lambda_prior.sigma = read_gamma_prior(file, "/priors/lambda");
+            }
             input.lambda_prior.initial_state = read_normal_prior(file, "/priors/lambda");
+            read_vec_if_present(file, "/priors/lambda/omega_v", input.lambda_prior.omega_v);
         }
     }
 
@@ -64,10 +71,14 @@ DfmTvpGammaInput read_input(const ModelFile &file)
             input.initial.a_sigma_inv = read_mat(file, "/initial/a_sigma_inv");
             input.initial.a_init = read_vec(file, "/initial/a_init");
         }
-        if (file.exist("/priors/a/shape"))
+        if (file.exist("/priors/a/shape") || file.exist("/priors/a/omega_v"))
         {
-            input.a_prior.sigma = read_gamma_prior(file, "/priors/a");
+            if (file.exist("/priors/a/shape"))
+            {
+                input.a_prior.sigma = read_gamma_prior(file, "/priors/a");
+            }
             input.a_prior.initial_state = read_normal_prior(file, "/priors/a");
+            read_vec_if_present(file, "/priors/a/omega_v", input.a_prior.omega_v);
         }
     }
 
@@ -169,6 +180,7 @@ void write_coefficients(const ModelFile &file, const DfmTvpGammaDraws &draws)
     {
         write_draws(file, "/posterior/lambda/sigma", draws.lambda_sigma);
     }
+    write_noncentred(file, "/posterior/lambda", draws.lambda_noncentred);
 
     // The factor path, which is part of the posterior rather than a by-product:
     // the factors are unobserved, so nothing downstream -- not the forecast, not
@@ -182,6 +194,7 @@ void write_coefficients(const ModelFile &file, const DfmTvpGammaDraws &draws)
     {
         write_draws(file, "/posterior/a/coeffs", draws.a);
         write_draws(file, "/posterior/a/sigma", draws.a_sigma);
+        write_noncentred(file, "/posterior/a", draws.a_noncentred);
     }
 
     write_draws(file, "/posterior/u_sigma_inv/coeffs", draws.u_sigma_inv);
