@@ -33,6 +33,8 @@ void read_stochvol_group(const ModelFile &file, const std::string &group, Stochv
     read_vec_if_present(file, group + "/mu", prior.state.initial_state.mu);
     read_mat_if_present(file, group + "/v_inv", prior.state.initial_state.v_inv);
     read_vec_if_present(file, group + "/sigma", initial_h_sigma);
+    // omega_v in place of shape and rate, as for the coefficient blocks.
+    read_vec_if_present(file, group + "/omega_v", prior.state.omega_v);
 }
 
 /// One of the two coefficient blocks: a state equation and a path to start it
@@ -48,10 +50,17 @@ void read_random_walk_block(const ModelFile &file, const std::string &prior_grou
         sigma_inv = read_mat(file, "/initial/" + name + "_sigma_inv");
         init = read_vec(file, "/initial/" + name + "_init");
     }
-    if (file.exist(prior_group + "/shape"))
+    // Either parameterisation of how far the block moves: shape and rate for
+    // the centred one, omega_v for the non-centred one. validate() refuses a
+    // file that gives both.
+    if (file.exist(prior_group + "/shape") || file.exist(prior_group + "/omega_v"))
     {
-        prior.sigma = read_gamma_prior(file, prior_group);
+        if (file.exist(prior_group + "/shape"))
+        {
+            prior.sigma = read_gamma_prior(file, prior_group);
+        }
         prior.initial_state = read_normal_prior(file, prior_group);
+        read_vec_if_present(file, prior_group + "/omega_v", prior.omega_v);
     }
 }
 
@@ -188,6 +197,7 @@ void write_coefficients(const ModelFile &file, const DfmTvpStochvolDraws &draws)
     {
         write_draws(file, "/posterior/lambda/sigma", draws.lambda_sigma);
     }
+    write_noncentred(file, "/posterior/lambda", draws.lambda_noncentred);
 
     // The factor path, which is part of the posterior rather than a by-product:
     // the factors are unobserved, so nothing downstream -- not the forecast, not
@@ -201,10 +211,13 @@ void write_coefficients(const ModelFile &file, const DfmTvpStochvolDraws &draws)
     {
         write_draws(file, "/posterior/a/coeffs", draws.a);
         write_draws(file, "/posterior/a/sigma", draws.a_sigma);
+        write_noncentred(file, "/posterior/a", draws.a_noncentred);
     }
 
     write_draws(file, "/posterior/u_sigma_inv/coeffs", draws.u_sigma_inv);
     write_draws(file, "/posterior/v_sigma_inv/coeffs", draws.v_sigma_inv);
+    write_noncentred(file, "/posterior/u_sigma_inv", draws.u_h_noncentred);
+    write_noncentred(file, "/posterior/v_sigma_inv", draws.v_h_noncentred);
     write_draws(file, "/posterior/u_sigma_inv/sigma", draws.u_h_sigma);
     write_draws(file, "/posterior/v_sigma_inv/sigma", draws.v_h_sigma);
 }

@@ -37,6 +37,10 @@ VarTvpAldInput read_input(const ModelFile &file)
         input.a_prior.sigma = read_gamma_prior(file, "/priors/a");
         input.a_prior.initial_state = read_normal_prior(file, "/priors/a");
 
+        // The non-centred parameterisation, in place of shape and rate. Which
+        // one the file chose is decided by validate(), which refuses both.
+        read_vec_if_present(file, "/priors/a/omega_v", input.a_prior.omega_v);
+
         if (input.spec.varsel == VarSelection::bvs)
         {
             input.initial.a_lambda = read_vec(file, "/initial/a_lambda");
@@ -96,6 +100,7 @@ void write_coefficients(const ModelFile &file, const VarTvpAldDraws &draws)
         {
             write_draws(file, "/posterior/a/lambda", draws.a_lambda);
         }
+        write_noncentred(file, "/posterior/a", draws.a_noncentred);
     }
     write_draws(file, "/posterior/u_scale/coeffs", draws.u_scale);
     write_draws(file, "/posterior/u_omega_inv/coeffs", draws.u_omega_inv);

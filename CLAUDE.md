@@ -253,14 +253,15 @@ an embedded host hears it too. The exit code stays 0. A new sampler offering
 
 ### The non-centred random walks
 
-`VarTvpStochvol`, `VecTvpStochvol`, `VarTvpGamma` and `VecTvpGamma` read each
-random walk block in one of two parameterisations: the centred default
-(`shape`/`rate`, inverse gamma on the state variance) or, with `omega_v` in its
-place, the non-centred one of Frühwirth-Schnatter and Wagner (2010),
-`x_t = x_0 + omega * x~_t`, `omega ~ N(0, omega_v)`. The blocks are `a` and
-`psi` everywhere and `u_sigma` in the two stochvol models; a VEC's cointegration
-space is never one of them, its unit state variance being what pins beta's
-scale. Both priors on one block is refused.
+Every sampler whose states drift reads each random walk block in one of two
+parameterisations: the centred default (`shape`/`rate`, inverse gamma on the
+state variance) or, with `omega_v` in its place, the non-centred one of
+Frühwirth-Schnatter and Wagner (2010), `x_t = x_0 + omega * x~_t`,
+`omega ~ N(0, omega_v)`. The blocks are `a` and `psi` in the VARs and VECs,
+`lambda` and `a` in the two factor models, and the log-volatilities on top of
+those: `u_sigma` in the three stochvol models and `v_sigma` in `DfmTvpStochvol`.
+A VEC's cointegration space is never one of them, its unit state variance being
+what pins beta's scale. Both priors on one block is refused.
 
 The point of it is the Savage-Dickey test for time variation (Chan 2018):
 `omega = 0` is interior, so the sampler writes `<block>/omega`,

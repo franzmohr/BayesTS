@@ -27,6 +27,89 @@ Dates are ISO. Versions follow the `project(VERSION)` in `CMakeLists.txt`.
 New entries go here, under an `### Added`, `### Changed` or `### Fixed`
 heading, and move down into a version section when one is cut.
 
+### Added
+
+- **An equation can be restricted to carry no coefficients at all.**
+  `/model/n_iid` names endogenous variables, ordered first, whose equations have
+  no lags, no deterministic terms and nothing else: white noise that reaches the
+  rest of the model only through the error covariance. That is what makes a
+  high-frequency surprise a variable of a monthly VAR rather than an instrument
+  outside it, after Jarocinski and Karadi (2020); the surprise's contemporaneous
+  correlation with the other equations' errors is then what the model is
+  estimated to measure.
+
+  Read by the four constant-coefficient VARs — `VarNormalWishart`,
+  `VarNormalGamma`, `VarNormalStochvol` and `VarNormalAld`. Every other
+  algorithm refuses a non-zero value rather than ignoring it, and so do those
+  four together with a structural form, whose contemporaneous block is laid out
+  by a different rule, or with variable selection, which is a second way of
+  switching a coefficient off. `n_iid` at or above `k` is refused as well: it
+  leaves no equation with dynamics for the restricted ones to be correlated
+  with.
+
+  The restriction is exact rather than a tight prior. `iid_block()` in
+  `core/models/model_support.h` drops the restricted columns out of the SUR
+  system, so those coefficients are never drawn and the zeros are put back when
+  a draw is stored — which also means the free coefficients are drawn under the
+  prior *conditional* on the restricted ones being zero, precision `V_ff` and
+  precision-weighted mean `(V mu)_f`. Both are subsets of matrices the
+  unrestricted sampler already forms, so there is no new algebra. Masking the
+  regressors and leaving the prior alone, which is the other way to spell this,
+  would marginalise the restricted coefficients out instead of conditioning on
+  them, and the two agree only for a diagonal prior. `unit.iid_block` pins the
+  difference by running a restricted chain against a hand-reduced one under a
+  prior that is deliberately not diagonal, and the two agree bit for bit.
+
+  *Draws are unchanged for every model without `n_iid`*: all 417 tests that
+  existed before this pass untouched. The one arithmetic change on that path is
+  that the prior's precision-weighted mean is formed once rather than once per
+  draw, which is the same value computed the same way.
+
+- **The remaining five time-varying samplers take the non-centred prior.**
+  `omega_v` in place of `shape` and `rate` now switches the random walk to the
+  non-centred parameterisation in `VarTvpWishart`, `VecTvpWishart` and
+  `VarTvpAld` under `/priors/a`, in `DfmTvpGamma` under `/priors/lambda` and
+  `/priors/a`, and in `DfmTvpStochvol` under those two and both of its
+  log-volatility groups, `/priors/u_sigma` and `/priors/v_sigma`. Each writes
+  `omega`, `omega_log_zero` and `omega_log_zero_joint` beside that block's
+  `sigma`, as the four samplers that already had it do. With this **every
+  random walk in every sampler** can be drawn either way; a VEC's cointegration
+  space is the one exception, its state variance being fixed at the identity to
+  pin beta's scale, so there is no variance to put a prior on.
+
+  Three of the five have no covariance block and no volatility path, so the
+  coefficients are their only random walk. The two Wishart models read one
+  constant error covariance for every period and `VarTvpAld` one block per
+  period, both of which `draw_noncentred_path()` already took. The factor
+  models' loadings are drawn row by row, so the block's draw is assembled from
+  the rows: each row is given its slice of the prior, and the row ordinates are
+  summed into the block's, which the prior of the loadings before the sample
+  being block diagonal across rows is what permits.
+
+  `validate_dfm_stochvol_block()` now puts its state variance prior through
+  `validate_state_variance_prior()`, the check the coefficient blocks already
+  shared, so that it accepts either parameterisation and refuses both at once.
+  A file that gives neither is still refused; the message names the innovations
+  rather than the variance, which is the wording every other block produces.
+
+  `unit.noncentred` runs `VarTvpWishart` and `VarTvpAld` on the shifting
+  intercept of the sample the other models are tested on: the log Bayes factors
+  came out at 11.9 and 27.6 for the intercept that moves, and −1.2 and −0.8 for
+  the one that does not. Six fixtures — one per model, plus a selection row for
+  `VarTvpWishart` — put the files through `golden.*` and `check.*`; the
+  `DfmTvpStochvol` one has all four of its random walks non-centred at once.
+
+  *Draws are unchanged* for every file without `omega_v`. The fingerprint
+  comparison of CONTRIBUTING.md was run in the CI image against `main`
+  (b023362): **all 120 fixtures that existed before are numerically identical**,
+  and the six new ones are the only additions. The comparison prints them as
+  "moved" all the same, and that is worth knowing before reading its output: the
+  recording gained six rows -- `/posterior/lambda/omega` and
+  `/posterior/v_sigma_inv/omega` with their two ordinates each -- which are
+  `absent` in every fixture but the factor models' and shift each block by six
+  lines. Discount those rows and nothing differs. `ctest` passes
+  in Debug and Release in the same image, 420 tests where there were 402.
+
 ## 0.3.0 — 2026-09-22
 
 ### Added

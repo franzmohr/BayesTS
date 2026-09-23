@@ -87,10 +87,24 @@ this section. `VecKlgs2010`, the two `*TvpDiscount` entries, the four `Dfm*`
 entries and `FavarNormalWishart` are the exceptions to the rest, each in its own
 way — see below.
 
-**Four of them can draw their random walks non-centred.** `VarTvpStochvol`,
-`VecTvpStochvol`, `VarTvpGamma` and `VecTvpGamma` take `omega_v` in place of
-`shape`/`rate` under `/priors/a`, `/priors/psi` or — for the two stochastic
-volatility models — `/priors/u_sigma`. That block's random walk is then written
+**An equation can be restricted to carry no coefficients.** `/model/n_iid`
+names endogenous variables, ordered first, whose equations have no lags, no
+deterministic terms and nothing else — white noise, related to the rest of the
+model only through the error covariance. It is what puts a high-frequency
+surprise inside a monthly VAR rather than beside it, after Jarocinski and
+Karadi (2020). The four constant-coefficient VARs read it; every other
+algorithm refuses a non-zero value, as do those four alongside a structural
+form or variable selection. The restriction is exact: the restricted columns
+leave the system, so those coefficients are never drawn, and the free ones are
+drawn under the prior conditional on them being zero.
+
+**Every random walk can be drawn non-centred.** All nine samplers whose states
+drift take `omega_v` in place of `shape`/`rate`, for the blocks they have:
+`/priors/a` and `/priors/psi` for the coefficients and the covariance block,
+`/priors/lambda` for a factor model's loadings, and `/priors/u_sigma` — plus
+`/priors/v_sigma` in `DfmTvpStochvol` — for the log-volatilities. A VEC's
+cointegration space is the exception, its unit state variance being what pins
+beta's scale. That block's random walk is then written
 as a start plus `omega` times a standard random walk, with a normal prior of
 variance `omega_v` on the signed standard deviation `omega` (Frühwirth-Schnatter
 and Wagner 2010). "This state does not move" becomes `omega = 0`, a point inside
@@ -520,9 +534,9 @@ written for a simpler model still describes a valid one.
 | `/data/train/x` | The regressors in the compact layout, `tt` rows by one column each; read by `VecKlgs2010`, `VarTvpDiscount` and `VecTvpDiscount` in place of `z`. For the two VECs it holds the short-run blocks alone — the error correction columns are built from `w` and `beta` |
 | `/data/train/f_obs` | A FAVAR only: the observed factors, `tt` rows by `n_obs_factors` columns. The observed half of the state vector, not regressors |
 | `/data/forecast/x` | Out-of-sample regressors in the compact layout, `h` rows by one column per regressor; required when `h` > 0. A file written before this layout carries `/data/forecast/z` instead — the same regressors kroneckered up with `I_k` — and is still read, the reader compacting it on the way in |
-| `/priors/a`, `/priors/psi` | Normal prior `mu` and `v_inv` for the coefficients and the covariance block, plus `inprior`, `include`, and `tau0`/`tau1` for SSVS. A time-varying model adds `shape`/`rate` for the variance of the random walk's innovations, or `omega_v` in its place for the non-centred prior in the four models above that take it. The two `*TvpDiscount` models read `mean` and `cov` here instead — a matrix normal prior, `mean` being the `n_x` by `k` coefficient matrix and `cov` the regressor side of its covariance, the equation side being the error covariance the Wishart prior already carries. Different names for a different object, so a file bringing the wrong pair is read as having no coefficient prior and `bayests check` says so |
+| `/priors/a`, `/priors/psi` | Normal prior `mu` and `v_inv` for the coefficients and the covariance block, plus `inprior`, `include`, and `tau0`/`tau1` for SSVS. A time-varying model adds `shape`/`rate` for the variance of the random walk's innovations, or `omega_v` in its place for the non-centred prior, which every sampler whose states drift takes. The two `*TvpDiscount` models read `mean` and `cov` here instead — a matrix normal prior, `mean` being the `n_x` by `k` coefficient matrix and `cov` the regressor side of its covariance, the equation side being the error covariance the Wishart prior already carries. Different names for a different object, so a file bringing the wrong pair is read as having no coefficient prior and `bayests check` says so |
 | `/model/priors/psi` (attribute) | `varsel` for the covariance block on its own, read by the four time-varying models that have one; the `/model` attribute above governs the coefficients |
-| `/priors/u_sigma` | `shape`/`rate` for gamma precisions, `df`/`scale` for Wishart, `mu`/`v_inv`/`sigma`/`offset` for stochastic volatility, with `shape`/`rate` on the log-volatility innovations — or `omega_v` in their place under `VarTvpStochvol` and `VecTvpStochvol` |
+| `/priors/u_sigma` | `shape`/`rate` for gamma precisions, `df`/`scale` for Wishart, `mu`/`v_inv`/`sigma`/`offset` for stochastic volatility, with `shape`/`rate` on the log-volatility innovations — or `omega_v` in their place under `VarTvpStochvol`, `VecTvpStochvol` and `DfmTvpStochvol`, whose factor innovation volatility reads the same pair under `/priors/v_sigma` |
 | `/priors/beta` | A VEC only: `p_tau_inv`, the prior precision of the cointegration space, and for the time-varying three `mu`/`v_inv` over beta before the sample and the state autoregression `rho`. `rho_min`/`rho_max`, given together, make `rho` a drawn parameter with that uniform prior instead of a fixed one, and `rho` the value the chain starts at. `p_tau`, `k_beta` square, symmetric with eigenvalues in [0, 1], is the transition of the state equation with `rho` taken out -- Koop, Leon-Gonzalez and Strachan's informative marginal prior, which centres the space on the one `p_tau` has an eigenvalue of one along; absent, the transition is `rho` alone |
 | `/priors/lambda`, `/priors/v_sigma` | A factor model only: normal `mu`/`v_inv` over the free loadings, and `shape`/`rate` for the factor innovation precisions. Under `DfmTvpGamma` the loading group is a state equation instead, `shape`/`rate` on the innovation variance beside `mu`/`v_inv` on the state before the sample, and `/priors/a` reads the same way. Under `FavarNormalWishart` the `v_sigma` group is `df`/`scale` rather than `shape`/`rate`, its state innovation precision being a matrix |
 | `/initial/…` | Starting values — read by `VecTvpDiscount` as the space it conditions on rather than a start, nothing there being iterated: `a`, `psi`, `u_sigma_inv`, `u_omega_inv`, `h`, the `*_init` states and the `*_lambda`, `*_sigma_inv` blocks the samplers that need them read; `beta` for a VEC; `lambda`, `v_sigma_inv` and, under stochastic volatility, `u_h`/`v_h` for a DFM; `lambda` and `a` are paths under `DfmTvpGamma`, beside `lambda_sigma_inv`, `lambda_init`, `a_sigma_inv` and `a_init`; under `FavarNormalWishart` `v_sigma_inv` is an `n_state` square matrix rather than a diagonal |
