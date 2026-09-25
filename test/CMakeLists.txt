@@ -379,11 +379,9 @@ function(bayests_add_model_fixture name model varsel covar structural horizon)
         ENVIRONMENT_MODIFICATION "${_bayests_test_env_mod}")
 
     # `bayests check` over the same file, which golden.* runs to completion: a
-    # check that refuses it is stricter than the run it claims to predict. The
-    # other direction -- a file the check accepts and a run refuses -- is what
-    # the broken files in agents.recipes cover.
+    # check that refuses it is stricter than the run it claims to predict.
     #
-    # A warning fails it too, as it does the recipes: the generator writes the
+    # A warning fails it too: the generator writes the
     # file a model is meant to have, so anything the check warns about -- a
     # dataset nothing reads, an attribute no model knows -- is the generator's
     # mistake, and a warning every fixture prints is one nobody reads.
@@ -806,51 +804,37 @@ if(_bayests_recorded_count GREATER 0)
 endif()
 
 #####################################################################
-# The agent documentation
+# The tests written in Python
 #
-# agents/skills/bayests/ is what a coding agent copies into someone else's
-# project, so an example there that no longer matches the file format fails
-# silently somewhere nobody here will see it. check_agent_recipes.py runs every
-# Python example in it, runs the sampler over the file the example wrote, and
-# compares the shapes the text states with the ones the run produced.
-#
-# It needs a Python with h5py and numpy, which nothing else in the build does.
-# AUTO registers the test when one is found and says so when not. ON makes a
-# missing one a configure error, which is what CI asks for, so that the check
+# check.nonfinite and cli.interrupted edit copies of the fixtures, which needs a
+# Python with h5py and numpy -- something nothing else in the build does.
+# AUTO registers them when one is found and says so when not. ON makes a
+# missing one a configure error, which is what CI asks for, so that the checks
 # cannot quietly stop running there. Point Python3_EXECUTABLE at the interpreter
 # to use when the first one found lacks the modules.
-set(BAYESTS_TEST_AGENT_DOCS "AUTO" CACHE STRING
-    "Run the agent documentation's examples as the test agents.recipes: AUTO, ON or OFF")
-set_property(CACHE BAYESTS_TEST_AGENT_DOCS PROPERTY STRINGS AUTO ON OFF)
+set(BAYESTS_TEST_PYTHON "AUTO" CACHE STRING
+    "Run the tests written in Python (check.nonfinite, cli.interrupted): AUTO, ON or OFF")
+set_property(CACHE BAYESTS_TEST_PYTHON PROPERTY STRINGS AUTO ON OFF)
 
-if(NOT BAYESTS_TEST_AGENT_DOCS STREQUAL "OFF")
+if(NOT BAYESTS_TEST_PYTHON STREQUAL "OFF")
     find_package(Python3 COMPONENTS Interpreter)
 
-    set(_bayests_agent_docs_python FALSE)
+    set(_bayests_test_python FALSE)
     if(Python3_Interpreter_FOUND)
         execute_process(
             COMMAND "${Python3_EXECUTABLE}" -c "import h5py, numpy"
             RESULT_VARIABLE _bayests_h5py_result
             OUTPUT_QUIET ERROR_QUIET)
         if(_bayests_h5py_result EQUAL 0)
-            set(_bayests_agent_docs_python TRUE)
+            set(_bayests_test_python TRUE)
         endif()
     endif()
 
-    if(_bayests_agent_docs_python)
-        add_test(NAME agents.recipes
-            COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/check_agent_recipes.py"
-                    "$<TARGET_FILE:bayests>" "$<TARGET_FILE:bayests_make_model_fixture>"
-                    "${PROJECT_SOURCE_DIR}/agents/skills/bayests"
-                    "${CMAKE_CURRENT_BINARY_DIR}/agent_recipes")
-        set_tests_properties(agents.recipes PROPERTIES
-            ENVIRONMENT "${_bayests_pin_threads}"
-            ENVIRONMENT_MODIFICATION "${_bayests_test_env_mod}")
-
+    if(_bayests_test_python)
         # A NaN in any input a model reads is refused by `bayests check`, by
         # name: every (algorithm, dataset) pair the generated fixtures cover gets
         # one, in a copy. Here rather than beside the fixture rows because it
-        # needs the same Python with h5py -- and it requires every fixture, so a
+        # needs a Python with h5py -- and it requires every fixture, so a
         # dataset a model learns to read is covered the day a fixture writes it.
         get_property(_bayests_all_fixtures GLOBAL PROPERTY BAYESTS_MODEL_FIXTURES)
         add_test(NAME check.nonfinite
@@ -873,15 +857,14 @@ if(NOT BAYESTS_TEST_AGENT_DOCS STREQUAL "OFF")
             FIXTURES_REQUIRED "${_bayests_all_fixtures}"
             ENVIRONMENT "${_bayests_pin_threads}"
             ENVIRONMENT_MODIFICATION "${_bayests_test_env_mod}")
-        message(STATUS "Agent documentation examples registered as agents.recipes, "
-                       "run with ${Python3_EXECUTABLE}")
-    elseif(BAYESTS_TEST_AGENT_DOCS STREQUAL "ON")
+        message(STATUS "Python tests registered, run with ${Python3_EXECUTABLE}")
+    elseif(BAYESTS_TEST_PYTHON STREQUAL "ON")
         message(FATAL_ERROR
-            "BAYESTS_TEST_AGENT_DOCS is ON, but no Python with h5py and numpy was found"
+            "BAYESTS_TEST_PYTHON is ON, but no Python with h5py and numpy was found"
             " (tried: '${Python3_EXECUTABLE}'). Install them, or pass"
             " -DPython3_EXECUTABLE=<python> naming an interpreter that has them.")
     else()
-        message(STATUS "No Python with h5py and numpy - agents.recipes is not registered. "
+        message(STATUS "No Python with h5py and numpy - the Python tests are not registered. "
                        "Pass -DPython3_EXECUTABLE=<python> to name one that has them.")
     endif()
 endif()

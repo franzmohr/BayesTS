@@ -151,10 +151,7 @@ the group to write, because nothing computes one there yet.
    `src/models/*.cpp` name `/posterior/forecast/forecasts`. Note that they fail
    *open* if missed: `exist()` is true for a group, `getDataSet()` throws, the
    catch returns `false`, and every run silently forecasts again.
-3. `agents/skills/bayests/references/results.md`: the table of what gets
-   written, and the paragraph on drifting states that names
-   `/posterior/forecast`.
-4. `CHANGELOG.md`, as a breaking change to the file format.
+3. `CHANGELOG.md`, as a breaking change to the file format.
 
 **bvartools**
 

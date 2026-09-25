@@ -22,14 +22,6 @@ command line except which file to work on and which of those three results are
 wanted, so a run is fully described by the file it is given and can be repeated
 from it.
 
-Working with an AI coding assistant? Point it at [`agents/`](agents/) before it
-writes a model file, and have it run `bayests check` on the file before
-`bayests posterior` — see [With an AI coding
-assistant](#with-an-ai-coding-assistant). From R, the
-[bvartools](https://github.com/franzmohr/bvartools) and
-[dfmtools](https://github.com/franzmohr/dfmtools) packages carry guides of their
-own.
-
 The numerics are deliberately isolated. `bayests_core` links neither HDF5 nor
 HighFive, prints nothing, and touches no global state beyond the Armadillo RNG:
 values in, values out. That is what lets the same sampler objects serve this
@@ -111,9 +103,7 @@ and Wagner 2010). "This state does not move" becomes `omega = 0`, a point inside
 the prior, so one run gives the Savage-Dickey ordinates for a Bayes factor on
 time variation, per state and per block. Blocks switch one at a time, so a file
 can test its volatilities and keep its coefficients centred; a block given both
-priors is refused. What the file needs and what the run writes are in
-[agents/…/model-file.md](agents/skills/bayests/references/model-file.md) and
-[results.md](agents/skills/bayests/references/results.md).
+priors is refused.
 
 **The two `*Ald` entries estimate a conditional quantile rather than a
 conditional mean.** Minimising the quantile loss at `q` is maximising the
@@ -567,46 +557,6 @@ quantile models, `VecKlgs2010` and the factor models — has its reader compare
 against no spelling at all, so there the attribute describes the file without
 being read back.
 
-### With an AI coding assistant
-
-The model file is the whole interface, and it is the part that fails quietly. A
-`z` stacked the wrong way round, or `sv+covar` on a gamma model, runs to
-completion and reports plausible numbers. An assistant with only this README to
-go on will write files like that. [`agents/`](agents/) is documentation written
-for the assistant instead: the rules that prevent silently wrong files, the
-dimension arithmetic, the datasets each algorithm reads, and complete examples
-that the test suite runs against the binary.
-
-In Claude Code it installs as a plugin, and its skill loads whenever the work
-touches BayesTS:
-
-```
-/plugin marketplace add franzmohr/BayesTS
-/plugin install bayests@bayests
-```
-
-Any other assistant can be pointed at [`agents/AGENTS.md`](agents/AGENTS.md),
-which links to the rest. `agents/skills/bayests/` is plain Markdown in the
-`SKILL.md` layout that several assistants read. The documentation site serves
-the same files, indexed by `llms.txt`, and an installed package carries them
-under `share/doc/BayesTS/agents/`, matching the binary beside it.
-
-Whatever the assistant, have it run `bayests check` on a file it wrote before
-running the file. `check` reads the file the way a run would, without sampling,
-and prints what the file resolved to. It refuses what a run would refuse, and
-warns about every dataset the model never reads and every `/model` attribute
-no model looks for. Those warnings are where a silently different model shows.
-
-An analysis written in R goes through
-[bvartools](https://github.com/franzmohr/bvartools) for VAR and VEC models or
-[dfmtools](https://github.com/franzmohr/dfmtools) for factor models, which build
-the model without a file. Each carries its own guide in `inst/agents/`, installed
-with the package at `system.file("agents", package = "bvartools")` (or
-`"dfmtools"`), and installs as a plugin the same way:
-`/plugin marketplace add franzmohr/bvartools`. The file format in `agents/`
-matters there only when a model is moved to the command line with
-`write_to_hdf5()` and read back with `read_model_from_hdf5()`.
-
 ## Building from source
 
 The build needs nothing but CMake and the four dependencies above. The toolchain
@@ -756,7 +706,7 @@ subdirectory, or use a preset, which already does.
 | `BAYESTS_NATIVE_ARCH` | `OFF` | `-march=native`; not redistributable, see *Packaging* |
 | `BAYESTS_BUNDLE_RUNTIME_DEPS` | `ON` (Windows) | Copy the runtime DLLs next to the executable |
 | `BAYESTS_RECORDED_FIXTURES` | *(empty)* | Recorded model files, `;`-separated, each registering an extra golden test; the generated suite runs without them |
-| `BAYESTS_TEST_AGENT_DOCS` | `AUTO` | Register `agents.recipes`, which runs the examples in `agents/` against the binary. `AUTO` when a Python with h5py and numpy is found (name one with `Python3_EXECUTABLE`), `ON` to require one, `OFF` to skip |
+| `BAYESTS_TEST_PYTHON` | `AUTO` | Register the tests written in Python, `check.nonfinite` and `cli.interrupted`. `AUTO` when a Python with h5py and numpy is found (name one with `Python3_EXECUTABLE`), `ON` to require one, `OFF` to skip |
 | `BAYESTS_RUNTIME_DEP_DIRS` | *(empty)* | Extra directories to resolve the bundled runtime libraries from, see *Packaging* |
 
 ## Tests

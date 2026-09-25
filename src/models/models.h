@@ -109,7 +109,7 @@ struct ModelCheck
 /// rejected model file from a fitted one: `bayests` exited 0 either way, and
 /// the only trace was the absent datasets. The subcommands in src/ catch
 /// instead, report the location with the reason, and return 1 -- the exit code
-/// README and CLAUDE.md have always documented for a run that started and
+/// README has always documented for a run that started and
 /// failed. On a directory walk the walk continues and the status is still 1.
 ///
 /// Having nothing to do is not failing, and does not throw: output that is

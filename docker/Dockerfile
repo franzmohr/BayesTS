@@ -37,12 +37,12 @@ FROM ubuntu:${UBUNTU_VERSION}
 # doxygen and graphviz are here for the docs job; they cost little and having one
 # image rather than two keeps the two jobs honest about using the same compiler.
 #
-# python3-h5py and python3-numpy are what agents.recipes needs, and ci.sh asks
-# for that test by name rather than letting BAYESTS_TEST_AGENT_DOCS=AUTO decide.
-# Without them the image ran one test fewer than the Linux runner does and said
+# python3-h5py and python3-numpy are what the Python tests need, and ci.sh asks
+# for them by name rather than letting BAYESTS_TEST_PYTHON=AUTO decide.
+# Without them the image ran fewer tests than the Linux runner does and said
 # so in a line nobody reads, which is the opposite of what a pre-push gate is
 # for. apt rather than pip, as in the workflow: the system Python is externally
-# managed and the distribution's h5py is all the test needs.
+# managed and the distribution's h5py is all the tests need.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential \
         gfortran \

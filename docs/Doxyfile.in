@@ -31,10 +31,7 @@ INPUT                  = "@PROJECT_SOURCE_DIR@/include" \
                          "@PROJECT_SOURCE_DIR@/README.md" \
                          "@PROJECT_SOURCE_DIR@/CONTRIBUTING.md" \
                          "@PROJECT_SOURCE_DIR@/CHANGELOG.md" \
-                         "@PROJECT_SOURCE_DIR@/docker/README.md" \
-                         "@PROJECT_SOURCE_DIR@/agents/AGENTS.md" \
-                         "@PROJECT_SOURCE_DIR@/agents/skills/bayests/references/model-file.md" \
-                         "@PROJECT_SOURCE_DIR@/agents/skills/bayests/references/results.md"
+                         "@PROJECT_SOURCE_DIR@/docker/README.md"
 RECURSIVE              = YES
 FILE_PATTERNS          = *.c *.cc *.cpp *.h *.hpp *.md
 EXCLUDE_PATTERNS       = */build/* */.git/*

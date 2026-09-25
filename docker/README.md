@@ -18,7 +18,7 @@ Two files do the work:
 - `Dockerfile` — Ubuntu 24.04, gfortran, an upstream CMake, Ninja, Armadillo and
   HDF5 from vcpkg's `x64-linux-dynamic` triplet, HighFive at the ref
   `.github/highfive-version` pins, Doxygen, and h5py and numpy for
-  `agents.recipes`.
+  `check.nonfinite` and `cli.interrupted`.
 - `ci.sh` — the workflow steps, as a script short enough to read beside the YAML
   it mirrors. **When a workflow step changes, this is the file to change with
   it.**
