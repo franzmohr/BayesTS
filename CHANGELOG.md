@@ -110,6 +110,14 @@ heading, and move down into a version section when one is cut.
   lines. Discount those rows and nothing differs. `ctest` passes
   in Debug and Release in the same image, 420 tests where there were 402.
 
+### Changed
+
+- **The documentation for coding agents is no longer distributed.** `agents/`,
+  its plugin manifests, `llms.txt` and the `agents.recipes` test are gone from
+  the repository, the installed package and the documentation site. The CMake
+  option that gated the Python tests is now `BAYESTS_TEST_PYTHON` rather than
+  `BAYESTS_TEST_AGENT_DOCS`. *Draws are unchanged*: no sampler code is touched.
+
 ## 0.3.0 — 2026-09-22
 
 ### Added

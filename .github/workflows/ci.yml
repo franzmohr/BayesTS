@@ -58,11 +58,11 @@ jobs:
         id: deps
         uses: ./.github/actions/setup-linux-deps
 
-      # For agents.recipes, which runs the Python examples in agents/ against the
-      # binary this job builds. apt rather than pip: the runner's system Python
-      # is externally managed, and the distribution's h5py is all the test needs.
-      # The configure below asks for the test with BAYESTS_TEST_AGENT_DOCS=ON, so
-      # losing this step fails the job rather than dropping the check.
+      # For the tests written in Python (check.nonfinite, cli.interrupted). apt
+      # rather than pip: the runner's system Python is externally managed, and
+      # the distribution's h5py is all the tests need. The configure below asks
+      # for them with BAYESTS_TEST_PYTHON=ON, so losing this step fails the job
+      # rather than dropping the checks.
       - name: Install h5py
         run: sudo apt-get install -y --no-install-recommends python3-h5py python3-numpy
 
@@ -91,7 +91,7 @@ jobs:
             -DHIGHFIVE_DIR="${{ steps.deps.outputs.highfive-dir }}" \
             -DBAYESTS_BUILD_DOCS=OFF \
             -DBAYESTS_BUILD_TESTS=ON \
-            -DBAYESTS_TEST_AGENT_DOCS=ON \
+            -DBAYESTS_TEST_PYTHON=ON \
             -DPython3_EXECUTABLE=/usr/bin/python3 \
             -DBAYESTS_WERROR=ON \
             -DBAYESTS_NATIVE_ARCH=OFF
@@ -168,10 +168,10 @@ jobs:
           # group membership is how a job ends up with gcc and g++ but no
           # gfortran -- which fails at configure with "No CMAKE_Fortran_COMPILER
           # could be found", a message that names no package.
-          # python-h5py and python-numpy are what agents.recipes needs; the
-          # configure below asks for that test by name, so losing them fails
-          # the job rather than silently dropping the check, as it would
-          # under the default BAYESTS_TEST_AGENT_DOCS=AUTO.
+          # python-h5py and python-numpy are what the Python tests need; the
+          # configure below asks for them by name, so losing them fails the
+          # job rather than silently dropping the checks, as it would under
+          # the default BAYESTS_TEST_PYTHON=AUTO.
           pacboy: >-
             toolchain:p
             gcc-fortran:p
@@ -191,7 +191,7 @@ jobs:
             command -v "$tool" >/dev/null || { echo "::error::$tool not on PATH"; exit 1; }
             printf '%-9s %s\n' "$tool" "$($tool --version | head -1)"
           done
-          # agents.recipes is asked for by name in the configure below, so a
+          # The Python tests are asked for by name in the configure below, so a
           # missing h5py is reported here, against the step that installs it,
           # rather than as a test that quietly did not get registered.
           python -c 'import h5py, numpy; print(h5py.__version__, numpy.__version__)'
@@ -215,7 +215,7 @@ jobs:
             -DHIGHFIVE_DIR="$RUNNER_TEMP/highfive" \
             -DBAYESTS_BUILD_DOCS=OFF \
             -DBAYESTS_BUILD_TESTS=ON \
-            -DBAYESTS_TEST_AGENT_DOCS=ON \
+            -DBAYESTS_TEST_PYTHON=ON \
             -DPython3_EXECUTABLE="$PYTHON_EXE" \
             -DBAYESTS_WERROR=ON \
             -DBAYESTS_NATIVE_ARCH=OFF

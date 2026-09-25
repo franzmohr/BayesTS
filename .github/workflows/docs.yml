@@ -16,7 +16,6 @@ on:
   pull_request:
     paths:
       - 'docs/**'
-      - 'agents/**'
       - 'include/**'
       - 'src/**'
       - '*.md'
@@ -63,8 +62,6 @@ jobs:
           cmake --build build/bin/docs --target docs 2>&1 | tee doxygen.log
           test -f build/bin/docs/docs/html/index.html \
             || { echo "::error::Doxygen produced no index.html"; exit 1; }
-          test -f build/bin/docs/docs/html/llms.txt \
-            || { echo "::error::the docs target did not copy agents/llms.txt into the site"; exit 1; }
           if grep -E 'warning:' doxygen.log > warnings.txt; then
             echo "::group::Doxygen warnings ($(wc -l < warnings.txt))"
             cat warnings.txt

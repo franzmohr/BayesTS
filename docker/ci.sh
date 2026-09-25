@@ -120,15 +120,15 @@ job_ci() {
     # those -- testing BayesTS against a debug Armadillo and HDF5 that no user
     # has. Only BayesTS is built unoptimised, which is the point of the job.
     #
-    # BAYESTS_TEST_AGENT_DOCS is ON rather than left at AUTO, as it is in the
+    # BAYESTS_TEST_PYTHON is ON rather than left at AUTO, as it is in the
     # workflow: the image carries python3-h5py, so a configure that does not
-    # register agents.recipes means something is wrong with the image, and the
+    # register the Python tests means something is wrong with the image, and the
     # AUTO default would report that as one line of status output and a suite
-    # one test shorter than the runner's.
+    # shorter than the runner's.
     configure "$build_dir" "$build_type" \
         -DBAYESTS_BUILD_DOCS=OFF \
         -DBAYESTS_BUILD_TESTS=ON \
-        -DBAYESTS_TEST_AGENT_DOCS=ON \
+        -DBAYESTS_TEST_PYTHON=ON \
         -DPython3_EXECUTABLE=/usr/bin/python3
 
     group "Build ($build_type)"
