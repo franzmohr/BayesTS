@@ -40,8 +40,8 @@ FROM ubuntu:${UBUNTU_VERSION}
 # python3-h5py and python3-numpy are what the Python tests need, and ci.sh asks
 # for them by name rather than letting BAYESTS_TEST_PYTHON=AUTO decide.
 # Without them the image ran fewer tests than the Linux runner does and said
-# so in a line nobody reads, which is the opposite of what a pre-push gate is
-# for. apt rather than pip, as in the workflow: the system Python is externally
+# so in a line nobody reads, which is the opposite of what a CI check is for.
+# apt rather than pip, as in the workflow: the system Python is externally
 # managed and the distribution's h5py is all the tests need.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential \

@@ -112,6 +112,11 @@ heading, and move down into a version section when one is cut.
 
 ### Changed
 
+- **The `pre-push` hook is gone.** `.githooks/pre-push` no longer runs the
+  Linux CI jobs on every `git push`; run the image by hand before a push, as
+  `docker/README.md` describes. Clones that set `core.hooksPath .githooks`
+  should unset it. *Draws are unchanged*: no sampler code is touched.
+
 - **The documentation for coding agents is no longer distributed.** `agents/`,
   its plugin manifests, `llms.txt` and the `agents.recipes` test are gone from
   the repository, the installed package and the documentation site. The CMake
