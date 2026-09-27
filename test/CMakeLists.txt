@@ -512,6 +512,12 @@ bayests_add_model_fixture(VarNormalWishart-scenario      VarNormalWishart none 0
 # The quarterly averages observed up to an error: one soft group, its precision
 # drawn in every sweep and written beside the rest of the posterior.
 bayests_add_model_fixture(VarNormalWishart-mixed-soft VarNormalWishart none 0 0 4 --mixed --soft)
+
+# The same step in VarNormalGamma, with its covariance block: the whole error
+# precision, Psi' Omega Psi, is what the completion step conditions on.
+bayests_add_model_fixture(VarNormalGamma-mixed-covar      VarNormalGamma none 1 0 4 --mixed)
+bayests_add_model_fixture(VarNormalGamma-mixed-soft-score VarNormalGamma none 1 0 4 --mixed --soft --score)
+bayests_add_model_fixture(VarNormalGamma-scenario-covar   VarNormalGamma none 1 0 4 --scenario)
 bayests_add_model_fixture(VarNormalGamma-nofcst     VarNormalGamma     none 0 0 0)
 bayests_add_model_fixture(VarNormalGamma-ssvs-covar VarNormalGamma     ssvs 1 0 4)
 bayests_add_model_fixture(VarNormalGamma-bvs-covar  VarNormalGamma     bvs  1 0 4)

@@ -5,6 +5,7 @@
 
 #include "core/algorithms/bvs.h"
 #include "core/algorithms/ssvs.h"
+#include "core/models/completion_support.h"
 #include "core/models/forecast_states.h"
 #include "core/models/model_support.h"
 #include "core/models/predictive_score.h"
@@ -44,7 +45,8 @@ VarNormalGammaDraws VarNormalGammaSampler::draw_coefficients(const VarNormalGamm
     const int iterations = input.spec.iterations;
     const int draws = input.spec.draws();
 
-    const arma::vec y = stacked_response(input.train);
+    // Not const: where the panel is not observed whole, every sweep completes it.
+    arma::vec y = stacked_response(input.train);
     arma::mat z = input.train.z;
 
     const int nparams = static_cast<int>(z.n_cols);
@@ -167,11 +169,35 @@ VarNormalGammaDraws VarNormalGammaSampler::draw_coefficients(const VarNormalGamm
     arma::mat dz;
     arma::mat u = arma::reshape(y, k, tt);
 
+    // A panel not observed whole: each sweep starts by completing it given the
+    // current coefficients and the whole error precision, covariance block
+    // included, then runs on the completed panel unchanged -- see
+    // VarNormalWishart, whose sweep this is the same step in.
+    core::PanelCompletion completion(input.spec, input.train, use_a, input.constraints_prior,
+                                     input.initial.constraints_inv);
+    const bool complete = completion.active();
+    completion.allocate(out.y, out.constraints_inv, static_cast<arma::uword>(iterations),
+                        static_cast<arma::uword>(tt));
+
     // Start simulation
     for (int draw = 0; draw < draws; draw++)
     {
         reporter.check_interrupt();
         reporter.progress(draw + 1, draws);
+
+        if (complete)
+        {
+            y = arma::vectorise(
+                completion.complete(a, core::covariance_of(u_sigma_inv, "VarNormalGamma")));
+            if (use_a)
+            {
+                z = completion.regressors();
+                if (a_bvs)
+                {
+                    z_bvs = z;
+                }
+            }
+        }
 
         if (use_a)
         {
@@ -308,6 +334,7 @@ VarNormalGammaDraws VarNormalGammaSampler::draw_coefficients(const VarNormalGamm
             }
             out.u_omega_inv.col(draw_pos) = u_omega_inv.diag();
             out.u_sigma_inv.col(draw_pos) = arma::vectorise(u_sigma_inv);
+            completion.store(out.y, out.constraints_inv, static_cast<arma::uword>(draw_pos), y);
         }
     }
 
@@ -378,6 +405,14 @@ ForecastDraws VarNormalGammaSampler::forecast(const VarNormalGammaInput &input,
     const bool p_larger_than_0 = p > 0;
 
     arma::mat fcst = arma::zeros<arma::mat>(h * k, draws);
+
+    // A panel not observed whole: each draw's forecast starts from its own
+    // completed panel. A scenario draws the horizon whole, conditioned on it.
+    const bool complete = !input.train.constraints.empty();
+    const arma::uword tt =
+        complete ? stacked_response(input.train).n_elem / static_cast<arma::uword>(k) : 0;
+    core::require_completed_panels(input, coefficients, use_a);
+    const bool conditioned = !input.forecast.constraints.empty();
     const arma::mat diag_k = arma::eye<arma::mat>(k, k);
     arma::mat error_root;
 
@@ -386,6 +421,13 @@ ForecastDraws VarNormalGammaSampler::forecast(const VarNormalGammaInput &input,
     {
         reporter.check_interrupt();
         reporter.progress(static_cast<long long>(draw) + 1, static_cast<long long>(draws));
+
+        if (conditioned)
+        {
+            fcst.col(draw) = arma::vectorise(
+                core::conditioned_forecast(input, coefficients, draw, use_a, "VarNormalGamma"));
+            continue;
+        }
 
         // Once per draw: nothing in either depends on the horizon.
         const arma::mat a0_inv =
@@ -400,6 +442,12 @@ ForecastDraws VarNormalGammaSampler::forecast(const VarNormalGammaInput &input,
         // horizon: the precision is the same at every horizon, and the
         // factorisation draws nothing, so where it sits does not move a draw.
         error_root = covariance_root(arma::reshape(coefficients.u_sigma_inv.col(draw), k, k));
+
+        if (complete && use_a && p_larger_than_0)
+        {
+            core::start_from_panel(x, arma::reshape(coefficients.y.col(draw), k, tt),
+                                   static_cast<arma::uword>(p));
+        }
 
         for (int i = 0; i < h; i++)
         {
@@ -457,6 +505,13 @@ arma::mat VarNormalGammaSampler::log_likelihood(const VarNormalGammaInput &input
     const int tt = static_cast<int>(y.n_elem) / k;
     arma::mat loglik = arma::mat(draws, tt);
 
+    // A panel not observed whole: the density of what was observed, with the
+    // rest integrated out, period by period.
+    if (!input.train.constraints.empty())
+    {
+        return core::observed_log_likelihood(input, coefficients, "VarNormalGamma");
+    }
+
     // Calculate errors
     arma::mat u = arma::repmat(y, 1, draws);
     if (use_a)
@@ -488,6 +543,13 @@ arma::mat VarNormalGammaSampler::predictive_log_density(const VarNormalGammaInpu
     const arma::uword periods = core::scored_horizons(input.test.y, input.spec);
     const arma::mat x =
         core::realised_regressors(input.forecast.x, input.test.y, input.spec.k, input.spec.p);
+
+    // From a completed panel, or against a horizon realised in part: the
+    // completion step's density of what the horizon realised.
+    if (!input.train.constraints.empty() || !input.test.constraints.empty())
+    {
+        return core::score_from_panel(input, coefficients, periods, "VarNormalGamma");
+    }
 
     // The scored periods as a sample of their own. Nothing in this model moves
     // over the horizon, so a draw describes period T + i exactly as it

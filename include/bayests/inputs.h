@@ -64,6 +64,9 @@ struct VarNormalGammaInitial
     arma::vec psi;         ///< n_psi free elements of the covariance block.
     arma::vec psi_lambda;
     arma::mat u_sigma_inv; ///< k x k error precision.
+    /// The error precision of each soft group of TrainData::constraints, group g
+    /// at position g - 1. Empty when no row is soft.
+    arma::vec constraints_inv;
 };
 
 /// VAR with a normal prior on the coefficients and independent gamma priors on
@@ -82,6 +85,10 @@ struct VarNormalGammaInput
     VarSelPrior psi_varsel_prior;
 
     GammaPrior u_sigma_prior;
+    /// A gamma prior on the error precision of each soft group of
+    /// TrainData::constraints, one shape and one rate per group. Unused when
+    /// no row is soft.
+    GammaPrior constraints_prior;
 
     VarNormalGammaInitial initial;
 

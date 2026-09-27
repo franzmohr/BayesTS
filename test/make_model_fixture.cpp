@@ -2286,11 +2286,11 @@ int main(int argc, char *argv[])
         std::cerr << "Unknown variable selection scheme: " << varsel << '\n';
         return 2;
     }
-    if ((mixed || missing) && (model != "VarNormalWishart" || mixed == missing || iid ||
-                               structural || covar))
+    const bool completes = model == "VarNormalWishart" || model == "VarNormalGamma";
+    if ((mixed || missing) && (!completes || mixed == missing || iid || structural))
     {
-        std::cerr << "--mixed and --missing are written on VarNormalWishart only, one at a time, "
-                     "and without --iid, a structural form or a covariance block: the "
+        std::cerr << "--mixed and --missing are written on VarNormalWishart and VarNormalGamma "
+                     "only, one at a time, and without --iid or a structural form: the "
                      "combinations require_completion_spec() refuses\n";
         return 2;
     }
@@ -2300,10 +2300,11 @@ int main(int argc, char *argv[])
         return 2;
     }
     if ((partial_test || scenario) &&
-        (model != "VarNormalWishart" || iid || structural || h < 3 || (partial_test && !score) ||
+        (!completes || iid || structural || h < 3 || (partial_test && !score) ||
          (scenario && score)))
     {
-        std::cerr << "--partial-test and --scenario are written on VarNormalWishart only, with "
+        std::cerr << "--partial-test and --scenario are written on VarNormalWishart and "
+                     "VarNormalGamma only, with "
                      "h >= 3 and without --iid or a structural form; --partial-test needs "
                      "--score, and --scenario refuses it: a conditional forecast is not scored\n";
         return 2;

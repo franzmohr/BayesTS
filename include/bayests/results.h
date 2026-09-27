@@ -74,9 +74,19 @@ struct VarNormalGammaDraws
     /// (k * k) x iterations; each column a vectorised precision matrix.
     arma::mat u_sigma_inv;
 
+    /// (k * tt) x iterations, the panel as each draw completed it, where it was
+    /// not observed whole; see VarNormalWishartDraws::y.
+    arma::mat y;
+
+    /// G x iterations, the error precision of each soft group of the training
+    /// constraints; see VarNormalWishartDraws::constraints_inv.
+    arma::mat constraints_inv;
+
     arma::uword iterations() const { return u_sigma_inv.n_cols; }
     bool has_a() const { return a.n_elem > 0; }
     bool has_psi() const { return psi.n_elem > 0; }
+    bool has_y() const { return y.n_elem > 0; }
+    bool has_constraints_inv() const { return constraints_inv.n_elem > 0; }
 };
 
 /// Posterior draws of a VAR with stochastic volatility.

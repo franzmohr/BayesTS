@@ -15,8 +15,8 @@
 /// the entries a panel does not observe hold placeholders, and a sampler reading
 /// `y` whole would estimate a model from them and report it as a fit. That
 /// refusal is checked for each of those input types by name. VarNormalWishart
-/// reads a training set; unit.var_mixed_frequency covers what it does with one
-/// and what it still refuses.
+/// and VarNormalGamma read all three sets; unit.var_mixed_frequency covers what
+/// they do with them and what they still refuse.
 ///
 /// The rest is validate_constraints(), which a sampler that does read the set
 /// relies on, one refusal at a time against a set that is otherwise valid.
@@ -367,7 +367,6 @@ void check_refuses_scenario(const std::string &algorithm)
 
 void test_every_algorithm_refuses()
 {
-    check_refuses<bayests::VarNormalGammaInput>("VarNormalGamma");
     check_refuses<bayests::VarNormalStochvolInput>("VarNormalStochvol");
     check_refuses<bayests::VarNormalAldInput>("VarNormalAld");
     check_refuses<bayests::VarTvpWishartInput>("VarTvpWishart");
@@ -389,7 +388,6 @@ void test_every_algorithm_refuses()
     check_refuses<bayests::DfmTvpStochvolInput>("DfmTvpStochvol");
     check_refuses<bayests::FavarNormalWishartInput>("FavarNormalWishart");
 
-    check_refuses_scenario<bayests::VarNormalGammaInput>("VarNormalGamma");
     check_refuses_scenario<bayests::VarNormalStochvolInput>("VarNormalStochvol");
     check_refuses_scenario<bayests::VarNormalAldInput>("VarNormalAld");
     check_refuses_scenario<bayests::VarTvpWishartInput>("VarTvpWishart");

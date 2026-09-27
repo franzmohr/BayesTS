@@ -36,6 +36,7 @@
 /// recovered and is smoothed by the model. And what is refused is refused.
 
 #include "bayests/reporter.h"
+#include "bayests/var_normal_gamma.h"
 #include "bayests/var_normal_wishart.h"
 #include "core/algorithms/constrained_var_path.h"
 #include "core/models/completion_support.h"
@@ -596,6 +597,101 @@ void test_soft_rows()
     check("and is refused without them", refused);
 }
 
+/// VarNormalGamma with a covariance block, through the same completion step:
+/// a panel pinned whole is the complete panel bit for bit, and a quarterly
+/// series has its averages hold in every draw. The completion step is handed
+/// the whole error precision, Psi' Omega Psi, so the block reaches it.
+bayests::VarNormalGammaInput gamma_input_for(const arma::mat &y_file, const arma::vec &lag0,
+                                             const int iterations, const int burnin)
+{
+    bayests::VarNormalGammaInput input;
+    input.spec.k = static_cast<int>(kK);
+    input.spec.p = 1;
+    input.spec.n = 1;
+    input.spec.covar = true;
+    input.spec.iterations = iterations;
+    input.spec.burnin = burnin;
+    input.train.y = y_file;
+    input.train.z = regressors(y_file, lag0);
+    input.a_prior.mu = arma::vec(kK * kNx, arma::fill::zeros);
+    input.a_prior.v_inv = 0.1 * arma::eye<arma::mat>(kK * kNx, kK * kNx);
+    const arma::uword n_psi = kK * (kK - 1) / 2;
+    input.psi_prior.mu = arma::vec(n_psi, arma::fill::zeros);
+    input.psi_prior.v_inv = arma::eye<arma::mat>(n_psi, n_psi);
+    input.u_sigma_prior.shape = arma::vec(kK, arma::fill::value(3.0));
+    input.u_sigma_prior.rate = arma::vec(kK, arma::fill::value(1.0));
+    input.initial.a = arma::vec(kK * kNx, arma::fill::zeros);
+    input.initial.psi = arma::vec(n_psi, arma::fill::zeros);
+    input.initial.u_sigma_inv = arma::eye<arma::mat>(kK, kK);
+    return input;
+}
+
+void test_var_normal_gamma()
+{
+    std::printf("VarNormalGamma with a covariance block\n");
+    bayests::NullReporter reporter;
+    const bayests::VarNormalGammaSampler sampler;
+
+    const Sample s = simulate(60);
+    bayests::VarNormalGammaInput plain = gamma_input_for(s.y, s.lag0, 200, 50);
+    bayests::VarNormalGammaInput pinned = plain;
+    RowBuilder all;
+    for (arma::uword t = 0; t < s.y.n_rows; t++)
+    {
+        for (arma::uword i = 0; i < kK; i++)
+        {
+            all.add(s.y(t, i), {{t, i}}, 1.0);
+        }
+    }
+    pinned.train.constraints = all.build();
+    arma::arma_rng::set_seed(11);
+    const auto a = sampler.draw_coefficients(plain, reporter);
+    arma::arma_rng::set_seed(11);
+    const auto b = sampler.draw_coefficients(pinned, reporter);
+    check("a panel pinned whole: coefficient draws agree bit for bit",
+          arma::approx_equal(a.a, b.a, "absdiff", 0.0) &&
+              arma::approx_equal(a.psi, b.psi, "absdiff", 0.0) &&
+              arma::approx_equal(a.u_sigma_inv, b.u_sigma_inv, "absdiff", 0.0));
+    const arma::mat ll_a = sampler.log_likelihood(plain, a);
+    check_below("and the log likelihood agrees to rounding",
+                arma::abs(sampler.log_likelihood(pinned, b) - ll_a).max() / arma::abs(ll_a).max(),
+                1e-12);
+
+    const arma::uword tt = 120;
+    const Sample m = simulate(tt);
+    arma::mat y_file = m.y;
+    y_file.col(2).zeros();
+    RowBuilder rows;
+    arma::vec quarterly(tt / 3);
+    for (arma::uword t = 0; t < tt; t++)
+    {
+        rows.add(m.y(t, 0), {{t, 0}}, 1.0);
+        rows.add(m.y(t, 1), {{t, 1}}, 1.0);
+    }
+    for (arma::uword q = 0; q < tt / 3; q++)
+    {
+        quarterly(q) = arma::mean(m.y.col(2).subvec(3 * q, 3 * q + 2));
+        rows.add(quarterly(q), {{3 * q, 2}, {3 * q + 1, 2}, {3 * q + 2, 2}}, 1.0 / 3.0);
+    }
+    bayests::VarNormalGammaInput mixed = gamma_input_for(y_file, m.lag0, 500, 200);
+    mixed.train.constraints = rows.build();
+    arma::arma_rng::set_seed(12);
+    const auto draws = sampler.draw_coefficients(mixed, reporter);
+    double worst = 0.0;
+    for (arma::uword d = 0; d < draws.y.n_cols; d++)
+    {
+        const arma::mat path = arma::reshape(draws.y.col(d), kK, tt);
+        for (arma::uword q = 0; q < tt / 3; q++)
+        {
+            worst = std::max(worst, std::abs(arma::mean(path.row(2).subvec(3 * q, 3 * q + 2)) -
+                                             quarterly(q)));
+        }
+    }
+    check_below("a quarterly series: every average holds in every draw", worst, 1e-10);
+    check("and the observed-data log likelihood is finite",
+          sampler.log_likelihood(mixed, draws).is_finite());
+}
+
 void test_refusals()
 {
     std::printf("what is refused\n");
@@ -693,6 +789,7 @@ int main()
         test_scores();
         test_conditional_forecast();
         test_soft_rows();
+        test_var_normal_gamma();
         test_refusals();
     }
     catch (const std::exception &e)

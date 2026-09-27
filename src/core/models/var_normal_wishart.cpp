@@ -37,43 +37,6 @@ using core::require_forecast_regressors;
 using core::update_forecast_lags;
 using core::report_flat_selection_prior;
 
-namespace
-{
-
-/// The panel a forecast from draw `draw` starts from, k x tt: the draw's own
-/// completion where the sample was not observed whole, the sample otherwise.
-arma::mat starting_panel(const VarNormalWishartInput &input,
-                         const VarNormalWishartDraws &coefficients, const arma::uword draw,
-                         const arma::uword k)
-{
-    const arma::vec y = stacked_response(input.train);
-    const arma::uword tt = y.n_elem / k;
-    return input.train.constraints.empty() ? arma::mat(arma::reshape(y, k, tt))
-                                           : arma::mat(arma::reshape(coefficients.y.col(draw), k, tt));
-}
-
-/// The draw's coefficients as k x n_x, or k x 0 for a model with none.
-arma::mat coefficient_matrix(const VarNormalWishartDraws &coefficients, const arma::uword draw,
-                             const arma::uword k, const arma::uword n_x)
-{
-    return n_x > 0 ? arma::mat(arma::reshape(coefficients.a.col(draw), k, n_x)) : arma::mat(k, 0);
-}
-
-arma::mat error_covariance(const VarNormalWishartDraws &coefficients, const arma::uword draw,
-                           const arma::uword k)
-{
-    arma::mat covariance;
-    if (!arma::inv_sympd(covariance,
-                         arma::mat(arma::reshape(coefficients.u_sigma_inv.col(draw), k, k))))
-    {
-        throw std::runtime_error("VarNormalWishart: a draw of the error precision is not "
-                                 "positive definite");
-    }
-    return covariance;
-}
-
-} // namespace
-
 VarNormalWishartDraws VarNormalWishartSampler::draw_coefficients(const VarNormalWishartInput &input,
                                                                  Reporter &reporter) const
 {
@@ -163,27 +126,13 @@ VarNormalWishartDraws VarNormalWishartSampler::draw_coefficients(const VarNormal
     // lag block of the regressors from the completed panel, and everything
     // after that is the sweep of a complete panel, unchanged. A file without
     // constraints never enters any of this, so its draws are untouched.
-    const bool complete = !input.train.constraints.empty();
-    const arma::uword p = static_cast<arma::uword>(input.spec.p);
-    const arma::uword n_x = use_a ? static_cast<arma::uword>(nparams / k) : 0;
-    arma::mat x_completion, presample;
-    if (complete)
-    {
-        x_completion = use_a ? core::compact_regressors(input.train.z, static_cast<arma::uword>(k))
-                             : arma::mat(static_cast<arma::uword>(tt), 0);
-        presample = core::lag_presample(x_completion, static_cast<arma::uword>(k), p);
-        out.y = arma::mat(k * tt, iterations);
-    }
-
-    // The error precision of each soft group, drawn after every completion from
-    // what the completed panel leaves its rows to explain. None where every row
-    // is hard, and then nothing here consumes a random number.
-    const arma::uword soft = complete ? core::soft_groups(input.train.constraints) : 0;
-    arma::vec constraints_inv = soft > 0 ? input.initial.constraints_inv : arma::vec();
-    if (soft > 0)
-    {
-        out.constraints_inv = arma::mat(soft, iterations);
-    }
+    // The error precision of each soft group is drawn there too, after every
+    // completion, from what the completed panel leaves its rows to explain.
+    core::PanelCompletion completion(input.spec, input.train, use_a, input.constraints_prior,
+                                     input.initial.constraints_inv);
+    const bool complete = completion.active();
+    completion.allocate(out.y, out.constraints_inv, static_cast<arma::uword>(iterations),
+                        static_cast<arma::uword>(tt));
 
     // Start simulation
     for (int draw = 0; draw < draws; draw++)
@@ -193,24 +142,12 @@ VarNormalWishartDraws VarNormalWishartSampler::draw_coefficients(const VarNormal
 
         if (complete)
         {
-            arma::mat covariance;
-            if (!arma::inv_sympd(covariance, u_sigma_inv))
-            {
-                throw std::runtime_error("VarNormalWishart: the error precision is not positive "
-                                         "definite, so the panel cannot be completed");
-            }
-            const arma::mat a_matrix =
-                use_a ? arma::mat(arma::reshape(a, k, n_x)) : arma::mat(k, 0);
-            const arma::mat path = core::draw_constrained_var_path(
-                core::var_path_prior(a_matrix, x_completion, presample, covariance, p),
-                input.train.constraints, core::soft_variances(constraints_inv));
-            core::draw_soft_precisions(constraints_inv, input.train.constraints, path,
-                                       input.constraints_prior);
+            const arma::mat path =
+                completion.complete(a, core::covariance_of(u_sigma_inv, "VarNormalWishart"));
             y = arma::vectorise(path);
             if (use_a)
             {
-                core::fill_lags(x_completion, path, p);
-                z = core::sur_regressors(x_completion, k);
+                z = completion.regressors();
                 if (a_bvs)
                 {
                     z_bvs = z;
@@ -282,14 +219,7 @@ VarNormalWishartDraws VarNormalWishartSampler::draw_coefficients(const VarNormal
                 }
             }
             out.u_sigma_inv.col(draw_pos) = arma::vectorise(u_sigma_inv);
-            if (complete)
-            {
-                out.y.col(draw_pos) = y;
-            }
-            if (soft > 0)
-            {
-                out.constraints_inv.col(draw_pos) = constraints_inv;
-            }
+            completion.store(out.y, out.constraints_inv, static_cast<arma::uword>(draw_pos), y);
         }
     }
 
@@ -369,14 +299,7 @@ ForecastDraws VarNormalWishartSampler::forecast(const VarNormalWishartInput &inp
     const bool complete = !input.train.constraints.empty();
     const arma::uword tt =
         complete ? stacked_response(input.train).n_elem / static_cast<arma::uword>(k) : 0;
-    if (complete && use_a && p_larger_than_0 &&
-        (!coefficients.has_y() || coefficients.y.n_rows != tt * static_cast<arma::uword>(k) ||
-         coefficients.y.n_cols != draws))
-    {
-        throw std::invalid_argument(
-            "the panel was not observed whole, so a forecast starts from each draw's completed "
-            "panel, and /posterior/y/coeffs is missing or not one column of k tt per draw");
-    }
+    core::require_completed_panels(input, coefficients, use_a);
     const arma::mat diag_k = arma::eye<arma::mat>(k, k);
     arma::mat error_root;
 
@@ -386,9 +309,6 @@ ForecastDraws VarNormalWishartSampler::forecast(const VarNormalWishartInput &inp
     // scenario is given: an unconditional forecast keeps the recursion below,
     // and with it every draw it made before.
     const bool conditioned = !input.forecast.constraints.empty();
-    const arma::uword kk = static_cast<arma::uword>(k);
-    const arma::mat horizon_x =
-        use_a ? input.forecast.x : arma::mat(static_cast<arma::uword>(h), 0);
 
     // Calculate forecasts
     for (arma::uword draw = 0; draw < draws; draw++)
@@ -398,15 +318,8 @@ ForecastDraws VarNormalWishartSampler::forecast(const VarNormalWishartInput &inp
 
         if (conditioned)
         {
-            const arma::mat path = core::draw_constrained_var_path(
-                core::var_path_prior(coefficient_matrix(coefficients, draw, kk, horizon_x.n_cols),
-                                     horizon_x,
-                                     core::horizon_presample(starting_panel(input, coefficients, draw, kk),
-                                                             static_cast<arma::uword>(p)),
-                                     error_covariance(coefficients, draw, kk),
-                                     static_cast<arma::uword>(p)),
-                input.forecast.constraints, arma::vec());
-            fcst.col(draw) = arma::vectorise(path);
+            fcst.col(draw) = arma::vectorise(
+                core::conditioned_forecast(input, coefficients, draw, use_a, "VarNormalWishart"));
             continue;
         }
 
@@ -429,15 +342,8 @@ ForecastDraws VarNormalWishartSampler::forecast(const VarNormalWishartInput &inp
         // forecast's own and update_forecast_lags() writes them below.
         if (complete && use_a && p_larger_than_0)
         {
-            const arma::mat path = arma::reshape(coefficients.y.col(draw), k, tt);
-            for (int i = 0; i < std::min(h, p); i++)
-            {
-                for (int j = i + 1; j <= p; j++)
-                {
-                    x.submat(i, (j - 1) * k, i, j * k - 1) =
-                        arma::trans(path.col(tt + static_cast<arma::uword>(i) - static_cast<arma::uword>(j)));
-                }
-            }
+            core::start_from_panel(x, arma::reshape(coefficients.y.col(draw), k, tt),
+                                   static_cast<arma::uword>(p));
         }
 
         for (int i = 0; i < h; i++)
@@ -504,30 +410,7 @@ arma::mat VarNormalWishartSampler::log_likelihood(const VarNormalWishartInput &i
     // rows ending in t given those ending before it.
     if (!input.train.constraints.empty())
     {
-        const arma::uword kk = static_cast<arma::uword>(k);
-        const arma::uword p = static_cast<arma::uword>(input.spec.p);
-        const arma::mat x = use_a ? core::compact_regressors(z, kk)
-                                  : arma::mat(static_cast<arma::uword>(tt), 0);
-        const arma::mat presample = core::lag_presample(x, kk, p);
-        const arma::uword n_x = x.n_cols;
-        const arma::uword soft = core::soft_groups(input.train.constraints);
-        if (soft > 0 && (!coefficients.has_constraints_inv() ||
-                         coefficients.constraints_inv.n_rows != soft))
-        {
-            throw std::invalid_argument(
-                "/data/train/constraints has " + std::to_string(soft) + " soft groups, and the "
-                "density of what they observed needs their precisions: "
-                "/posterior/constraints_inv/coeffs is missing or not one row per group");
-        }
-        for (arma::uword draw = 0; draw < draws; draw++)
-        {
-            loglik.row(draw) = arma::trans(core::constrained_var_path_log_density(
-                core::var_path_prior(coefficient_matrix(coefficients, draw, kk, n_x), x, presample,
-                                     error_covariance(coefficients, draw, kk), p),
-                input.train.constraints,
-                soft > 0 ? core::soft_variances(coefficients.constraints_inv.col(draw)) : arma::vec()));
-        }
-        return loglik;
+        return core::observed_log_likelihood(input, coefficients, "VarNormalWishart");
     }
 
     // Calculate errors
@@ -570,47 +453,7 @@ arma::mat VarNormalWishartSampler::predictive_log_density(const VarNormalWishart
     // every file without constraints, so its scores do not move.
     if (!input.train.constraints.empty() || !input.test.constraints.empty())
     {
-        const arma::uword k = static_cast<arma::uword>(input.spec.k);
-        const arma::uword p = static_cast<arma::uword>(input.spec.p);
-        const arma::mat realised = input.test.y.head_rows(periods);
-
-        // Scoring runs from draws a previous stage wrote, without validate():
-        // the realised rows are checked against what the horizon holds here.
-        Constraints observed = core::pin_every_entry(realised);
-        if (!input.test.constraints.empty())
-        {
-            core::validate_constraints(input.test.constraints, arma::trans(realised),
-                                       "/data/test/constraints");
-            observed = input.test.constraints;
-        }
-
-        const bool use_a = input.train.z.n_cols > 0;
-        if (use_a && !coefficients.has_a())
-        {
-            throw std::invalid_argument(
-                "the model has regressors but posterior draws of a are missing");
-        }
-        if (!input.train.constraints.empty() && p > 0 && !coefficients.has_y())
-        {
-            throw std::invalid_argument(
-                "the sample was not observed whole, so a score starts from each draw's completed "
-                "panel, and /posterior/y/coeffs is missing");
-        }
-        const arma::mat horizon_x =
-            use_a ? arma::mat(input.forecast.x.head_rows(periods)) : arma::mat(periods, 0);
-
-        const arma::uword draws = coefficients.iterations();
-        arma::mat score(draws, periods);
-        for (arma::uword draw = 0; draw < draws; draw++)
-        {
-            score.row(draw) = arma::trans(core::constrained_var_path_log_density(
-                core::var_path_prior(coefficient_matrix(coefficients, draw, k, horizon_x.n_cols),
-                                     horizon_x,
-                                     core::horizon_presample(starting_panel(input, coefficients, draw, k), p),
-                                     error_covariance(coefficients, draw, k), p),
-                observed, arma::vec()));
-        }
-        return score;
+        return core::score_from_panel(input, coefficients, periods, "VarNormalWishart");
     }
 
     // The scored periods as a sample of their own. Nothing in this model moves

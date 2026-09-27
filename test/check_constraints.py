@@ -34,7 +34,7 @@ import h5py
 import numpy as np
 
 # The algorithms that read /data/train/constraints.
-READS = {"VarNormalWishart"}
+READS = {"VarNormalWishart", "VarNormalGamma"}
 
 # The one row: a noisy reading of the first variable in the first period. Soft,
 # so that nothing about it depends on what the fixture's y holds.
@@ -92,6 +92,12 @@ def main():
                 if "posterior" in f:
                     del f["posterior"]
                 row = dict(ROW)
+                if reads and section == "test" and "data/test/y" not in f:
+                    # No scored fixture of this algorithm to copy: realise its
+                    # horizon here, as zeros -- (k, h) in dataspace terms.
+                    k = int(f["model"].attrs["k"])
+                    h = int(f["model"].attrs.get("h", 0))
+                    f["data/test/y"] = np.zeros((k, max(h, 1)))
                 if reads:
                     # A hard pin: of the first entry of y, stacked by period for
                     # the sample and one row per period for the horizon, at the

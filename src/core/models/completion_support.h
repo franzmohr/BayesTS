@@ -8,8 +8,11 @@
 #include "bayests/priors.h"
 #include "bayests/spec.h"
 #include "core/algorithms/constrained_var_path.h"
+#include "core/models/constraint_support.h"
 #include "core/models/model_support.h"
+#include "core/models/predictive_score.h"
 
+#include <algorithm>
 #include <stdexcept>
 #include <string>
 
@@ -221,6 +224,351 @@ inline void require_soft_prior(const Constraints &c, const GammaPrior &prior,
     positive(initial, "/initial/constraints_inv");
 }
 
+/// var_path_prior() from a draw of the coefficients as the samplers carry it:
+/// one column vec(A) of the k x n_x coefficient matrix for a constant VAR, or
+/// one such column per period, nparams x tt, for a time-varying one. The
+/// covariance is k x k, or one block per period stacked.
+inline VarPathPrior var_path_prior_from(const arma::mat &a, const arma::uword k, const arma::mat &x,
+                                        const arma::mat &presample, const arma::mat &covariance,
+                                        const arma::uword p)
+{
+    const arma::uword n_x = x.n_cols;
+    if (a.n_cols <= 1)
+    {
+        return var_path_prior(n_x > 0 ? arma::mat(arma::reshape(a, k, n_x)) : arma::mat(k, 0), x,
+                              presample, covariance, p);
+    }
+
+    const arma::uword tt = x.n_rows;
+    const arma::uword lag = k * p;
+    VarPathPrior prior;
+    prior.presample = presample;
+    prior.coefficients = arma::mat(tt * k, lag);
+    prior.offset = arma::mat(k, tt, arma::fill::zeros);
+    prior.covariance = covariance;
+    for (arma::uword t = 0; t < tt; t++)
+    {
+        const arma::mat a_t = arma::reshape(a.col(t), k, n_x);
+        if (lag > 0)
+        {
+            prior.coefficients.rows(t * k, t * k + k - 1) = a_t.cols(0, lag - 1);
+        }
+        if (n_x > lag)
+        {
+            prior.offset.col(t) = a_t.cols(lag, n_x - 1) * arma::trans(x.submat(t, lag, t, n_x - 1));
+        }
+    }
+    return prior;
+}
+
+/// The covariance a precision stands for, the completion step taking the one
+/// and the samplers carrying the other. `algorithm` names the sampler in the
+/// message.
+inline arma::mat covariance_of(const arma::mat &precision, const char *algorithm)
+{
+    arma::mat covariance;
+    if (!arma::inv_sympd(covariance, precision))
+    {
+        throw std::runtime_error(std::string(algorithm) +
+                                 ": the error precision is not positive definite, so the panel "
+                                 "cannot be completed");
+    }
+    return covariance;
+}
+
+/// The data-completion step in a VAR sampler's sweep, and what it keeps from
+/// one sweep to the next: the compact regressors whose lag block it rewrites,
+/// the presample it conditions on, and the error precision of each soft group.
+///
+/// A sampler constructs one before its first sweep and, when active(), calls
+/// complete() at the start of every sweep with its current coefficients and
+/// error covariance; what it gets back is the panel to run the rest of the
+/// sweep on, and regressors() the SUR matrix that goes with it. Inactive --
+/// no constraints -- it does nothing and consumes no random number, which is
+/// what keeps a complete panel's draws where they were.
+class PanelCompletion
+{
+public:
+    PanelCompletion(const VarSpec &spec, const TrainData &train, const bool use_a,
+                    const GammaPrior &soft_prior, const arma::vec &initial_soft)
+        : constraints_(train.constraints), soft_prior_(soft_prior),
+          k_(static_cast<arma::uword>(spec.k)), p_(static_cast<arma::uword>(spec.p)),
+          use_a_(use_a), active_(!train.constraints.empty())
+    {
+        if (!active_)
+        {
+            return;
+        }
+        const arma::uword tt = train.y.n_elem / k_;
+        x_ = use_a_ ? compact_regressors(train.z, k_) : arma::mat(tt, 0);
+        presample_ = lag_presample(x_, k_, p_);
+        soft_ = core::soft_groups(train.constraints);
+        precision_ = soft_ > 0 ? initial_soft : arma::vec();
+    }
+
+    bool active() const { return active_; }
+    arma::uword soft_groups() const { return soft_; }
+
+    /// The compact regressors and presample, for a stage after the chain -- a
+    /// log likelihood -- that needs the prior over the path again.
+    const arma::mat &regressors_compact() const { return x_; }
+    const arma::mat &presample() const { return presample_; }
+
+    /// Draws the panel given the sweep's coefficients (see var_path_prior_from())
+    /// and error covariance, then each soft group's precision given the panel,
+    /// and rebuilds the lag block of the regressors from it. Returns the panel,
+    /// k x tt.
+    arma::mat complete(const arma::mat &a, const arma::mat &covariance)
+    {
+        const arma::mat path = draw_constrained_var_path(
+            var_path_prior_from(a, k_, x_, presample_, covariance, p_), constraints_,
+            soft_variances(precision_));
+        draw_soft_precisions(precision_, constraints_, path, soft_prior_);
+        if (use_a_)
+        {
+            fill_lags(x_, path, p_);
+        }
+        return path;
+    }
+
+    /// The SUR regressors of the last completed panel, (tt k) x nparams.
+    arma::mat regressors() const
+    {
+        return x_.n_cols > 0 ? arma::mat(arma::kron(x_, arma::eye<arma::mat>(k_, k_))) : arma::mat();
+    }
+
+    /// Sizes the two outputs a chain keeps of this: the completed panel and the
+    /// soft precisions, one column per kept draw. Left empty when inactive.
+    void allocate(arma::mat &y_draws, arma::mat &soft_draws, const arma::uword iterations,
+                  const arma::uword tt) const
+    {
+        if (active_)
+        {
+            y_draws = arma::mat(k_ * tt, iterations);
+        }
+        if (soft_ > 0)
+        {
+            soft_draws = arma::mat(soft_, iterations);
+        }
+    }
+
+    void store(arma::mat &y_draws, arma::mat &soft_draws, const arma::uword position,
+               const arma::vec &y) const
+    {
+        if (active_)
+        {
+            y_draws.col(position) = y;
+        }
+        if (soft_ > 0)
+        {
+            soft_draws.col(position) = precision_;
+        }
+    }
+
+private:
+    const Constraints &constraints_;
+    const GammaPrior &soft_prior_;
+    arma::uword k_;
+    arma::uword p_;
+    bool use_a_;
+    bool active_;
+    arma::mat x_;
+    arma::mat presample_;
+    arma::uword soft_ = 0;
+    arma::vec precision_;
+};
+
+/// The pointwise log likelihood of a panel not observed whole, one draw: the
+/// density of what the constraints observed with the rest integrated out,
+/// period by period, given the draw's coefficients `a` (see
+/// var_path_prior_from()), error covariance and soft precisions -- empty where
+/// no row is soft.
+inline arma::rowvec observed_log_likelihood(const Constraints &constraints, const arma::mat &x,
+                                            const arma::mat &presample, const arma::mat &a,
+                                            const arma::mat &covariance,
+                                            const arma::vec &soft_precision, const arma::uword k,
+                                            const arma::uword p)
+{
+    return arma::trans(constrained_var_path_log_density(
+        var_path_prior_from(a, k, x, presample, covariance, p), constraints,
+        soft_variances(soft_precision)));
+}
+
+/// Refuses a chain's output that a panel with soft rows cannot be read without:
+/// the precision of each soft group, one row per group and one column per draw.
+inline void require_soft_draws(const Constraints &constraints, const arma::mat &soft_draws,
+                               const arma::uword draws)
+{
+    const arma::uword soft = soft_groups(constraints);
+    if (soft > 0 && (soft_draws.n_rows != soft || soft_draws.n_cols != draws))
+    {
+        throw std::invalid_argument(
+            "/data/train/constraints has " + std::to_string(soft) + " soft groups, and the "
+            "density of what they observed needs their precisions: "
+            "/posterior/constraints_inv/coeffs is missing or not one row per group and one "
+            "column per draw");
+    }
+}
+
+/// The lags of a forecast's first horizons that reach back into the sample,
+/// from a completed panel, k x tt: horizon i's lag j for every j > i. The lags
+/// inside the horizon are the forecast's own, written as it unfolds.
+inline void start_from_panel(arma::mat &x, const arma::mat &panel, const arma::uword p)
+{
+    const arma::uword k = panel.n_rows;
+    const arma::uword tt = panel.n_cols;
+    for (arma::uword i = 0; i < std::min<arma::uword>(x.n_rows, p); i++)
+    {
+        for (arma::uword j = i + 1; j <= p; j++)
+        {
+            x.submat(i, (j - 1) * k, i, j * k - 1) = arma::trans(panel.col(tt + i - j));
+        }
+    }
+}
+
+// What the constant-coefficient VARs share on the other side of the chain --
+// the log likelihood, the forecast's start, a scenario and a score -- written
+// once against their draws: `a` one column vec(A) per draw, `u_sigma_inv` one
+// column of the whole k x k precision per draw, `y` the completed panels and
+// `constraints_inv` the soft precisions. VarNormalWishart and VarNormalGamma
+// both carry exactly that.
+
+/// The panel a forecast from draw `draw` starts from, k x tt: the draw's own
+/// completion where the sample was not observed whole, the sample otherwise.
+template <typename Input, typename Draws>
+arma::mat starting_panel(const Input &input, const Draws &draws, const arma::uword draw,
+                         const arma::uword k)
+{
+    const arma::vec y = stacked_response(input.train);
+    const arma::uword tt = y.n_elem / k;
+    return input.train.constraints.empty() ? arma::mat(arma::reshape(y, k, tt))
+                                           : arma::mat(arma::reshape(draws.y.col(draw), k, tt));
+}
+
+/// Draw `draw`'s error covariance, from the precision the draws carry.
+template <typename Draws>
+arma::mat draw_covariance(const Draws &draws, const arma::uword draw, const arma::uword k,
+                          const char *algorithm)
+{
+    return covariance_of(arma::reshape(draws.u_sigma_inv.col(draw), k, k), algorithm);
+}
+
+/// Draw `draw`'s coefficients as var_path_prior_from() takes them, or none.
+template <typename Draws>
+arma::mat draw_coefficients_column(const Draws &draws, const arma::uword draw, const bool use_a)
+{
+    return use_a ? arma::mat(draws.a.col(draw)) : arma::mat();
+}
+
+/// The pointwise log likelihood of a panel not observed whole, every draw: the
+/// density of what was observed, with the rest integrated out.
+template <typename Input, typename Draws>
+arma::mat observed_log_likelihood(const Input &input, const Draws &draws, const char *algorithm)
+{
+    const arma::uword k = static_cast<arma::uword>(input.spec.k);
+    const arma::uword p = static_cast<arma::uword>(input.spec.p);
+    const bool use_a = input.train.z.n_cols > 0;
+    const arma::uword tt = input.train.y.n_elem / k;
+    const arma::mat x = use_a ? compact_regressors(input.train.z, k) : arma::mat(tt, 0);
+    const arma::mat presample = lag_presample(x, k, p);
+    const arma::uword n_draws = draws.iterations();
+    require_soft_draws(input.train.constraints, draws.constraints_inv, n_draws);
+    const bool soft = soft_groups(input.train.constraints) > 0;
+
+    arma::mat loglik(n_draws, tt);
+    for (arma::uword draw = 0; draw < n_draws; draw++)
+    {
+        loglik.row(draw) = observed_log_likelihood(
+            input.train.constraints, x, presample, draw_coefficients_column(draws, draw, use_a),
+            draw_covariance(draws, draw, k, algorithm),
+            soft ? arma::vec(draws.constraints_inv.col(draw)) : arma::vec(), k, p);
+    }
+    return loglik;
+}
+
+/// Refuses a forecast from a panel not observed whole without the completed
+/// panels it starts from.
+template <typename Input, typename Draws>
+void require_completed_panels(const Input &input, const Draws &draws, const bool use_a)
+{
+    if (input.train.constraints.empty() || !use_a || input.spec.p <= 0)
+    {
+        return;
+    }
+    const arma::uword k = static_cast<arma::uword>(input.spec.k);
+    const arma::uword tt = input.train.y.n_elem / k;
+    if (draws.y.n_rows != tt * k || draws.y.n_cols != draws.iterations())
+    {
+        throw std::invalid_argument(
+            "the panel was not observed whole, so a forecast starts from each draw's completed "
+            "panel, and /posterior/y/coeffs is missing or not one column of k tt per draw");
+    }
+}
+
+/// One draw of a forecast conditioned on /data/forecast/constraints: the path
+/// the draw's VAR puts on the horizon, starting where its panel ends, drawn by
+/// the completion step. k x h.
+template <typename Input, typename Draws>
+arma::mat conditioned_forecast(const Input &input, const Draws &draws, const arma::uword draw,
+                               const bool use_a, const char *algorithm)
+{
+    const arma::uword k = static_cast<arma::uword>(input.spec.k);
+    const arma::uword p = static_cast<arma::uword>(input.spec.p);
+    const arma::mat x = use_a ? input.forecast.x : arma::mat(static_cast<arma::uword>(input.spec.h), 0);
+    return draw_constrained_var_path(
+        var_path_prior_from(draw_coefficients_column(draws, draw, use_a), k, x,
+                            horizon_presample(starting_panel(input, draws, draw, k), p),
+                            draw_covariance(draws, draw, k, algorithm), p),
+        input.forecast.constraints, arma::vec());
+}
+
+/// The score where the sample was not observed whole or the horizon was
+/// realised in part: the completion step's log density of what the horizon
+/// realised, from where each draw's panel ends, draws x periods. `periods` is
+/// what scored_horizons() found; the realised rows are checked here, a score
+/// running from draws without validate() in between.
+template <typename Input, typename Draws>
+arma::mat score_from_panel(const Input &input, const Draws &draws, const arma::uword periods,
+                           const char *algorithm)
+{
+    const arma::uword k = static_cast<arma::uword>(input.spec.k);
+    const arma::uword p = static_cast<arma::uword>(input.spec.p);
+    const arma::mat realised = input.test.y.head_rows(periods);
+
+    Constraints observed = pin_every_entry(realised);
+    if (!input.test.constraints.empty())
+    {
+        validate_constraints(input.test.constraints, arma::trans(realised),
+                             "/data/test/constraints");
+        observed = input.test.constraints;
+    }
+
+    const bool use_a = input.train.z.n_cols > 0;
+    if (use_a && draws.a.n_elem == 0)
+    {
+        throw std::invalid_argument("the model has regressors but posterior draws of a are missing");
+    }
+    if (!input.train.constraints.empty() && p > 0 && draws.y.n_elem == 0)
+    {
+        throw std::invalid_argument(
+            "the sample was not observed whole, so a score starts from each draw's completed "
+            "panel, and /posterior/y/coeffs is missing");
+    }
+    const arma::mat x = use_a ? arma::mat(input.forecast.x.head_rows(periods)) : arma::mat(periods, 0);
+
+    const arma::uword n_draws = draws.iterations();
+    arma::mat score(n_draws, periods);
+    for (arma::uword draw = 0; draw < n_draws; draw++)
+    {
+        score.row(draw) = arma::trans(constrained_var_path_log_density(
+            var_path_prior_from(draw_coefficients_column(draws, draw, use_a), k, x,
+                                horizon_presample(starting_panel(input, draws, draw, k), p),
+                                draw_covariance(draws, draw, k, algorithm), p),
+            observed, arma::vec()));
+    }
+    return score;
+}
+
 /// The combinations a VAR sampler reading constraints refuses, beside the
 /// checks require_supported_constraints() has already made on the sets
 /// themselves. `forecast` carries the scenario, `test` what the horizon
@@ -232,19 +580,34 @@ inline void require_soft_prior(const Constraints &c, const GammaPrior &prior,
 /// the horizon realised under the model's own forecast, and a scenario replaces
 /// that forecast with another. A structural form or an i.i.d. block rearranges
 /// the coefficients the lag block is read from.
+///
+/// `horizon` says whether the sampler scores from a completed panel and
+/// conditions a forecast on a scenario. Where it does not -- a model whose
+/// forecast carries states forward, until that is done for it -- a score beside
+/// training constraints, constraints on what the horizon realised and a
+/// scenario are all refused by name.
 inline void require_completion_spec(const VarSpec &spec, const TrainData &train,
                                     const ForecastData &forecast, const TestData &test,
-                                    const char *algorithm)
+                                    const char *algorithm, const bool horizon = true)
 {
     if (train.constraints.empty() && test.constraints.empty() && forecast.constraints.empty())
     {
         return;
     }
 
+    const std::string name(algorithm);
+    if (!horizon && (!test.constraints.empty() || !forecast.constraints.empty() ||
+                     (!train.constraints.empty() && test.y.n_elem > 0)))
+    {
+        throw std::invalid_argument(
+            name + " does not score or condition a forecast from a panel not observed whole "
+                   "yet: drop /data/test and /data/forecast/constraints, or estimate without "
+                   "/data/train/constraints");
+    }
+
     // Soft rows in the sample have their variances drawn. On the horizon nothing
     // would inform one: a realised value or a scenario with an error would need
     // the error's variance given, which the file has no place for yet.
-    const std::string name(algorithm);
     const auto require_hard = [&](const Constraints &c, const char *where) {
         if (soft_groups(c) > 0)
         {

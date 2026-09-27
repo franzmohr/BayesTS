@@ -779,8 +779,11 @@ void VarNormalWishartInput::validate() const
 void VarNormalGammaInput::validate() const
 {
     core::require_supported_iid_block(spec, true, "VarNormalGamma");
-    core::require_supported_constraints(spec, train, test, false, "VarNormalGamma");
-    core::require_supported_forecast_constraints(spec, forecast, false, "VarNormalGamma");
+    core::require_completion_spec(spec, train, forecast, test, "VarNormalGamma");
+    core::require_supported_constraints(spec, train, test, true, "VarNormalGamma");
+    core::require_supported_forecast_constraints(spec, forecast, true, "VarNormalGamma");
+    core::require_soft_prior(train.constraints, constraints_prior, initial.constraints_inv,
+                             "VarNormalGamma");
     // Before anything that would read a value: a NaN or an infinity here would
     // otherwise surface as a failed factorisation, or as NaN in the output.
     core::require_finite_observations(train, forecast, test);
