@@ -3,6 +3,7 @@
 
 #include "bayests/inputs.h"
 
+#include "core/models/completion_support.h"
 #include "core/models/constraint_support.h"
 #include "core/models/model_support.h"
 
@@ -734,7 +735,10 @@ namespace bayests
 void VarNormalWishartInput::validate() const
 {
     core::require_supported_iid_block(spec, true, "VarNormalWishart");
-    core::require_supported_constraints(spec, train, test, false, "VarNormalWishart");
+    // What this sampler does not do with constraints yet is refused first, so the
+    // message names that rather than a shape the set was never going to be read in.
+    core::require_completion_spec(spec, train, test, "VarNormalWishart");
+    core::require_supported_constraints(spec, train, test, true, "VarNormalWishart");
     // Before anything that would read a value: a NaN or an infinity here would
     // otherwise surface as a failed factorisation, or as NaN in the output.
     core::require_finite_observations(train, forecast, test);

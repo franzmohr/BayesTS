@@ -47,6 +47,16 @@
 //                 model but VarNormalWishart, which is the one the fixtures
 //                 cover it on; the other three constant VARs read it too and
 //                 are covered by unit.iid_block.
+//     --mixed
+//                 writes /data/train/constraints for a panel not observed whole:
+//                 the third series quarterly, each quarter's three-month average
+//                 observed exactly, the second series missing its last two
+//                 months, the first observed throughout. /data/train/y holds
+//                 zeros wherever nothing was observed. VarNormalWishart only.
+//     --missing
+//                 the same, with every series monthly but the second missing its
+//                 last two months and the third missing a month in the middle:
+//                 missing values and a ragged edge, no aggregation.
 //     --hold-states
 //                 writes /model/forecast_states = "hold", so the forecast keeps
 //                 the last in-sample states rather than simulating them forward.
@@ -74,6 +84,7 @@
 #include <filesystem>
 #include <iostream>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace
@@ -376,6 +387,69 @@ arma::mat build_var_compact_regressors(const arma::mat &series, const Layout &la
         x.submat(t, 0, t, layout.n_x_lag - 1) = arma::trans(series.col(t));
     }
     return x;
+}
+
+/// /data/train/constraints for --mixed and --missing, and /data/train/y again
+/// with zeros where nothing was observed: the panel as a host writes one it did
+/// not observe whole. Positions are one-based, as the file counts them; each
+/// dataset is one row, how every other vector here is stored.
+void write_incomplete_panel(const ModelFile &file, const arma::mat &series, const bool mixed)
+{
+    const arma::mat sample = series.cols(kP, kTT + kP - 1); // k x tt
+    arma::mat held = sample;
+    std::vector<double> value, group, row, period, variable, weight;
+    const auto add = [&](const double v, const std::vector<std::pair<int, int>> &entries,
+                         const double w) {
+        value.push_back(v);
+        group.push_back(0.0);
+        for (const auto &e : entries)
+        {
+            row.push_back(static_cast<double>(value.size()));
+            period.push_back(static_cast<double>(e.first + 1));
+            variable.push_back(static_cast<double>(e.second + 1));
+            weight.push_back(w);
+        }
+    };
+
+    for (int t = 0; t < kTT; ++t)
+    {
+        add(sample(0, t), {{t, 0}}, 1.0);
+        if (t < kTT - 2)
+        {
+            add(sample(1, t), {{t, 1}}, 1.0);
+        }
+        else
+        {
+            held(1, t) = 0.0;
+        }
+        if (!mixed && t != kTT / 2)
+        {
+            add(sample(2, t), {{t, 2}}, 1.0);
+        }
+    }
+    if (mixed)
+    {
+        held.row(2).zeros();
+        for (int q = 0; q < kTT / 3; ++q)
+        {
+            const double average =
+                (sample(2, 3 * q) + sample(2, 3 * q + 1) + sample(2, 3 * q + 2)) / 3.0;
+            add(average, {{3 * q, 2}, {3 * q + 1, 2}, {3 * q + 2, 2}}, 1.0 / 3.0);
+        }
+    }
+    else
+    {
+        held(2, kTT / 2) = 0.0;
+    }
+
+    write_row(file, "/data/train/y", arma::vectorise(held));
+    ensure_group(file, "/data/train/constraints");
+    write_row(file, "/data/train/constraints/value", arma::vec(value));
+    write_row(file, "/data/train/constraints/group", arma::vec(group));
+    write_row(file, "/data/train/constraints/row", arma::vec(row));
+    write_row(file, "/data/train/constraints/period", arma::vec(period));
+    write_row(file, "/data/train/constraints/variable", arma::vec(variable));
+    write_row(file, "/data/train/constraints/weight", arma::vec(weight));
 }
 
 void write_common(const ModelFile &file, const std::string &model, const std::string &varsel,
@@ -1957,6 +2031,8 @@ int main(int argc, char *argv[])
     bool score = false;
     bool noncentred = false;
     bool iid = false;
+    bool mixed = false;
+    bool missing = false;
     bool bare_group_seen = false;
 
     for (int i = 7; i < argc; i++)
@@ -1984,6 +2060,16 @@ int main(int argc, char *argv[])
             // `bayests forecasts` into a scoring run, so it is what puts a
             // fixture through the predictive density code at all.
             score = true;
+        }
+        else if (token == "--mixed")
+        {
+            // A quarterly series among monthly ones: /data/train/constraints.
+            mixed = true;
+        }
+        else if (token == "--missing")
+        {
+            // Missing values and a ragged edge: /data/train/constraints.
+            missing = true;
         }
         else if (token == "--iid")
         {
@@ -2095,6 +2181,14 @@ int main(int argc, char *argv[])
     if (varsel != "none" && varsel != "ssvs" && varsel != "bvs")
     {
         std::cerr << "Unknown variable selection scheme: " << varsel << '\n';
+        return 2;
+    }
+    if ((mixed || missing) && (model != "VarNormalWishart" || mixed == missing || score || iid ||
+                               structural || covar))
+    {
+        std::cerr << "--mixed and --missing are written on VarNormalWishart only, one at a time, "
+                     "and without --score, --iid, a structural form or a covariance block: the "
+                     "combinations require_completion_spec() refuses\n";
         return 2;
     }
     if (iid && model != "VarNormalWishart")
@@ -2310,6 +2404,11 @@ int main(int argc, char *argv[])
             write_test_observations(file, series.col(kTT + kP - 1), h);
         }
 
+        if (mixed || missing)
+        {
+            write_incomplete_panel(file, series, mixed);
+        }
+
         if (model == "VarTvpDiscount")
         {
             write_var_tvp_discount(file, layout);
@@ -2352,6 +2451,7 @@ int main(int argc, char *argv[])
                   << ", k=" << kK << ", tt=" << kTT << ", nparams=" << layout.nparams
                   << (hold_states ? ", forecast_states=hold" : "")
                   << (score ? ", score=1" : "") << (noncentred ? ", noncentred=1" : "")
+                  << (mixed ? ", mixed=1" : "") << (missing ? ", missing=1" : "")
                   << ")\n";
     }
     catch (const std::exception &e)

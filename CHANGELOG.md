@@ -29,6 +29,48 @@ heading, and move down into a version section when one is cut.
 
 ### Added
 
+- **`VarNormalWishart` estimates from a panel not observed whole** — the first
+  sampler to read `/data/train/constraints`, and with it mixed-frequency VARs:
+  a quarterly series in a monthly model, observed as the average of its three
+  months, missing values, a ragged edge. Each sweep starts by completing the
+  panel with `draw_constrained_var_path()` given the current coefficients and
+  precision, rebuilds the lag block of the regressors from it, and then runs the
+  sweep of a complete panel unchanged; SSVS and BVS work as before. The pieces
+  between sampler and completion step are in the new
+  `core/models/completion_support.h`, for the VARs that follow.
+
+  The completed panel is written as `/posterior/y/coeffs`, one column of `k tt`
+  per draw, stacked by period like `/data/train/y`. It is part of the posterior
+  and it is what the forecast starts from: each draw's own last `p` periods,
+  never the placeholders the host wrote into `/data/forecast/x`, and a forecast
+  without it is refused. `/posterior/loglik` becomes the density of what was
+  observed, with the rest integrated out, period by period. The forecast is of
+  the monthly panel; aggregating it is the host's.
+
+  The `p` periods before the sample are conditioned on, as a VAR conditions on
+  its first observations, from the first row of `/data/train/z`: a host fills
+  them for a series it did not observe then. Refused for now, each by name
+  (`require_completion_spec()`): a soft row, whose variance is not drawn yet;
+  `/data/test/y` or `/data/test/constraints` beside training constraints, since
+  a score would have to start from each draw's panel; a structural form and
+  `n_iid`. Every other algorithm still refuses constraints outright.
+
+  `unit.var_mixed_frequency` checks that a panel pinned whole gives draws
+  bit-identical to the same panel without constraints and the same log
+  likelihood to 6e-16; that on a simulated monthly VAR with one series seen only
+  as quarterly averages every average holds in every draw, the coefficients lie
+  within 2.8 posterior sds of the truth — the complete panel misses it the same
+  way, and the two posteriors are centred within 1.8 of the quarterly one's sds
+  — and the posterior monthly path has 0.74 times the RMSE of the quarterly
+  figure repeated; that the forecast starts from the completed panel; and the
+  refusals. New fixtures `VarNormalWishart-mixed`, `-mixed-bvs` and `-missing`,
+  from `make_model_fixture --mixed` and `--missing`; `check.constraints` now
+  expects `VarNormalWishart` to read a training set. *Draws are unchanged* for
+  every file without constraints: the fingerprints of the 127 existing fixtures
+  agree before and after, once the one new line each carries —
+  `/posterior/y/coeffs absent`, the harness now listing the dataset — is set
+  aside.
+
 - **The data-completion step for a VAR whose panel is not observed whole**, in
   `core/algorithms/constrained_var_path.{h,cpp}`; no sampler calls it yet.
   Given a VAR's parameters — `VarPathPrior`: the presample, the offsets, and

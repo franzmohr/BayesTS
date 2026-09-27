@@ -64,6 +64,10 @@ VarNormalWishartDraws read_coefficients(const ModelFile &file)
     {
         draws.u_sigma_inv = read_draws(file, "/posterior/u_sigma_inv/coeffs");
     }
+    if (dataset_has_data(file, "/posterior/y/coeffs"))
+    {
+        draws.y = read_draws(file, "/posterior/y/coeffs");
+    }
 
     return draws;
 }
@@ -81,6 +85,10 @@ void write_coefficients(const ModelFile &file, const VarNormalWishartDraws &draw
         }
     }
     write_draws(file, "/posterior/u_sigma_inv/coeffs", draws.u_sigma_inv);
+    if (draws.has_y())
+    {
+        write_draws(file, "/posterior/y/coeffs", draws.y);
+    }
 }
 
 } // namespace bayests::hdf5_io::var_normal_wishart

@@ -11,10 +11,12 @@
 /// mixed-frequency estimation, where a quarterly figure is one row over the
 /// months it aggregates.
 ///
-/// No algorithm reads one yet, and every one of the twenty-two has to refuse a
-/// file that carries it: the entries a panel does not observe hold placeholders,
-/// and a sampler reading `y` whole would estimate a model from them and report
-/// it as a fit. That refusal is checked for each input type by name.
+/// Every algorithm that does not read one has to refuse a file that carries it:
+/// the entries a panel does not observe hold placeholders, and a sampler reading
+/// `y` whole would estimate a model from them and report it as a fit. That
+/// refusal is checked for each of those input types by name. VarNormalWishart
+/// reads a training set; unit.var_mixed_frequency covers what it does with one
+/// and what it still refuses.
 ///
 /// The rest is validate_constraints(), which a sampler that does read the set
 /// relies on, one refusal at a time against a set that is otherwise valid.
@@ -332,7 +334,6 @@ void check_refuses(const std::string &algorithm)
 
 void test_every_algorithm_refuses()
 {
-    check_refuses<bayests::VarNormalWishartInput>("VarNormalWishart");
     check_refuses<bayests::VarNormalGammaInput>("VarNormalGamma");
     check_refuses<bayests::VarNormalStochvolInput>("VarNormalStochvol");
     check_refuses<bayests::VarNormalAldInput>("VarNormalAld");

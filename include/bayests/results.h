@@ -32,11 +32,20 @@ struct VarNormalWishartDraws
     /// (k * k) x iterations; each column is a vectorised precision matrix.
     arma::mat u_sigma_inv;
 
+    /// (k * tt) x iterations, each column the panel as that draw completed it,
+    /// stacked by period the way TrainData::y is: where TrainData::constraints
+    /// pins an entry it is the observation, and everywhere else a draw. Empty
+    /// unless the panel was not observed whole. It is part of the posterior, not
+    /// derivable from it -- the draws of `a` were made given these paths -- and
+    /// it is what a forecast starts from.
+    arma::mat y;
+
     /// Length of the chain these draws came from.
     arma::uword iterations() const { return u_sigma_inv.n_cols; }
 
     bool has_a() const { return a.n_elem > 0; }
     bool has_lambda() const { return a_lambda.n_elem > 0; }
+    bool has_y() const { return y.n_elem > 0; }
 };
 
 /// Posterior draws of a VAR with independent gamma priors on the error

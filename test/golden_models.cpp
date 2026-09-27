@@ -93,6 +93,9 @@ constexpr const char *kOutputs[] = {
     "/posterior/lambda/coeffs",
     "/posterior/lambda/sigma",
     "/posterior/factors/coeffs",
+    // The panel as each draw completed it, where it was not observed whole:
+    // part of the posterior, and what a forecast from such a panel starts from.
+    "/posterior/y/coeffs",
     "/posterior/v_sigma_inv/coeffs",
     "/posterior/psi/coeffs",
     "/posterior/psi/lambda",

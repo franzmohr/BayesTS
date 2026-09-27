@@ -4,12 +4,15 @@
 #include "bayests/var_normal_wishart.h"
 
 #include "core/algorithms/bvs.h"
+#include "core/algorithms/constrained_var_path.h"
 #include "core/algorithms/ssvs.h"
 #include "core/algorithms/wishart.h"
+#include "core/models/completion_support.h"
 #include "core/models/forecast_states.h"
 #include "core/models/model_support.h"
 #include "core/models/predictive_score.h"
 
+#include <algorithm>
 #include <cmath>
 #include <optional>
 #include <stdexcept>
@@ -42,7 +45,8 @@ VarNormalWishartDraws VarNormalWishartSampler::draw_coefficients(const VarNormal
     const int iterations = input.spec.iterations;
     const int draws = input.spec.draws();
 
-    const arma::vec y = stacked_response(input.train);
+    // Not const: where the panel is not observed whole, every sweep completes it.
+    arma::vec y = stacked_response(input.train);
     arma::mat z = input.train.z;
 
     const int nparams = static_cast<int>(z.n_cols);
@@ -116,11 +120,57 @@ VarNormalWishartDraws VarNormalWishartSampler::draw_coefficients(const VarNormal
     out.u_sigma_inv = arma::mat(k * k, iterations);
     arma::mat u = arma::reshape(y, k, tt);
 
+    // A panel not observed whole. Each sweep starts by drawing what was not
+    // observed given the current coefficients and precision, then rebuilds the
+    // lag block of the regressors from the completed panel, and everything
+    // after that is the sweep of a complete panel, unchanged. A file without
+    // constraints never enters any of this, so its draws are untouched.
+    const bool complete = !input.train.constraints.empty();
+    const arma::uword p = static_cast<arma::uword>(input.spec.p);
+    const arma::uword n_x = use_a ? static_cast<arma::uword>(nparams / k) : 0;
+    arma::mat x_completion, presample;
+    if (complete)
+    {
+        x_completion = use_a ? core::compact_regressors(input.train.z, static_cast<arma::uword>(k))
+                             : arma::mat(static_cast<arma::uword>(tt), 0);
+        presample = core::lag_presample(x_completion, static_cast<arma::uword>(k), p);
+        out.y = arma::mat(k * tt, iterations);
+    }
+
     // Start simulation
     for (int draw = 0; draw < draws; draw++)
     {
         reporter.check_interrupt();
         reporter.progress(draw + 1, draws);
+
+        if (complete)
+        {
+            arma::mat covariance;
+            if (!arma::inv_sympd(covariance, u_sigma_inv))
+            {
+                throw std::runtime_error("VarNormalWishart: the error precision is not positive "
+                                         "definite, so the panel cannot be completed");
+            }
+            const arma::mat a_matrix =
+                use_a ? arma::mat(arma::reshape(a, k, n_x)) : arma::mat(k, 0);
+            const arma::mat path = core::draw_constrained_var_path(
+                core::var_path_prior(a_matrix, x_completion, presample, covariance, p),
+                input.train.constraints, arma::vec());
+            y = arma::vectorise(path);
+            if (use_a)
+            {
+                core::fill_lags(x_completion, path, p);
+                z = core::sur_regressors(x_completion, k);
+                if (a_bvs)
+                {
+                    z_bvs = z;
+                }
+            }
+            else
+            {
+                u = path;
+            }
+        }
 
         if (use_a)
         {
@@ -182,6 +232,10 @@ VarNormalWishartDraws VarNormalWishartSampler::draw_coefficients(const VarNormal
                 }
             }
             out.u_sigma_inv.col(draw_pos) = arma::vectorise(u_sigma_inv);
+            if (complete)
+            {
+                out.y.col(draw_pos) = y;
+            }
         }
     }
 
@@ -254,6 +308,21 @@ ForecastDraws VarNormalWishartSampler::forecast(const VarNormalWishartInput &inp
     const bool p_larger_than_0 = p > 0;
 
     arma::mat fcst = arma::zeros<arma::mat>(h * k, draws);
+
+    // A panel not observed whole: the lags a forecast starts from are the
+    // draw's own completed panel, not what the host wrote into x, which for an
+    // entry nothing observed is a placeholder.
+    const bool complete = !input.train.constraints.empty();
+    const arma::uword tt =
+        complete ? stacked_response(input.train).n_elem / static_cast<arma::uword>(k) : 0;
+    if (complete && use_a && p_larger_than_0 &&
+        (!coefficients.has_y() || coefficients.y.n_rows != tt * static_cast<arma::uword>(k) ||
+         coefficients.y.n_cols != draws))
+    {
+        throw std::invalid_argument(
+            "the panel was not observed whole, so a forecast starts from each draw's completed "
+            "panel, and /posterior/y/coeffs is missing or not one column of k tt per draw");
+    }
     const arma::mat diag_k = arma::eye<arma::mat>(k, k);
     arma::mat error_root;
 
@@ -276,6 +345,22 @@ ForecastDraws VarNormalWishartSampler::forecast(const VarNormalWishartInput &inp
         // horizon: the precision is the same at every horizon, and the
         // factorisation draws nothing, so where it sits does not move a draw.
         error_root = covariance_root(arma::reshape(coefficients.u_sigma_inv.col(draw), k, k));
+
+        // Every lag that reaches back into the sample, from this draw's panel:
+        // horizon i's lag j for j > i. The ones inside the horizon are the
+        // forecast's own and update_forecast_lags() writes them below.
+        if (complete && use_a && p_larger_than_0)
+        {
+            const arma::mat path = arma::reshape(coefficients.y.col(draw), k, tt);
+            for (int i = 0; i < std::min(h, p); i++)
+            {
+                for (int j = i + 1; j <= p; j++)
+                {
+                    x.submat(i, (j - 1) * k, i, j * k - 1) =
+                        arma::trans(path.col(tt + static_cast<arma::uword>(i) - static_cast<arma::uword>(j)));
+                }
+            }
+        }
 
         for (int i = 0; i < h; i++)
         {
@@ -334,6 +419,36 @@ arma::mat VarNormalWishartSampler::log_likelihood(const VarNormalWishartInput &i
     const arma::uword draws = coefficients.iterations();
     const int tt = static_cast<int>(y.n_elem) / k;
     arma::mat loglik = arma::mat(draws, tt);
+
+    // A panel not observed whole: the density of what was observed, with what
+    // was not integrated out -- never the density of one draw's completion,
+    // which is not a likelihood of the data. Period t is the density of the
+    // rows ending in t given those ending before it.
+    if (!input.train.constraints.empty())
+    {
+        const arma::uword kk = static_cast<arma::uword>(k);
+        const arma::uword p = static_cast<arma::uword>(input.spec.p);
+        const arma::mat x = use_a ? core::compact_regressors(z, kk)
+                                  : arma::mat(static_cast<arma::uword>(tt), 0);
+        const arma::mat presample = core::lag_presample(x, kk, p);
+        const arma::uword n_x = x.n_cols;
+        for (arma::uword draw = 0; draw < draws; draw++)
+        {
+            arma::mat covariance;
+            if (!arma::inv_sympd(covariance,
+                                 arma::mat(arma::reshape(coefficients.u_sigma_inv.col(draw), kk, kk))))
+            {
+                throw std::runtime_error("VarNormalWishart: a draw of the error precision is not "
+                                         "positive definite");
+            }
+            const arma::mat a_matrix = use_a ? arma::mat(arma::reshape(coefficients.a.col(draw), kk, n_x))
+                                             : arma::mat(kk, 0);
+            loglik.row(draw) = arma::trans(core::constrained_var_path_log_density(
+                core::var_path_prior(a_matrix, x, presample, covariance, p),
+                input.train.constraints, arma::vec()));
+        }
+        return loglik;
+    }
 
     // Calculate errors
     arma::mat u = arma::repmat(y, 1, draws);

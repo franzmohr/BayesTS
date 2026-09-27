@@ -1,13 +1,13 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright (c) 2026 Franz X. Mohr
 
-"""A constraint set is refused by `bayests check`, by name, for every algorithm.
+"""A constraint set is refused by `bayests check`, by name, where it is not read.
 
     python check_constraints.py <bayests> <fixture directory> <scratch directory>
 
 A constraint set says what was observed of a panel that is not observed whole
 -- /data/train/constraints for the sample, /data/test/constraints for the
-horizon. No algorithm reads one yet, and each has to refuse a file that carries
+horizon. An algorithm that does not read one has to refuse a file that carries
 one: the entries a panel does not observe hold placeholders, and a sampler that
 reads /data/train/y whole would estimate from them and report a fit.
 
@@ -17,6 +17,11 @@ gets a one-row set, first under /data/train and then under /data/test, and
 each model's own reader, which unit.constraints does not: it builds the inputs
 in memory, so a reader that forgot the datasets would pass there and here
 would not.
+
+The algorithms in READS read a training set: for them the row is a hard pin of
+the first entry of /data/train/y, at the value the file holds there, and `check`
+must pass. They do not score yet, so a test set is still refused, by a message
+saying that.
 """
 
 import os
@@ -26,6 +31,9 @@ import sys
 
 import h5py
 import numpy as np
+
+# The algorithms that read /data/train/constraints.
+READS = {"VarNormalWishart"}
 
 # The one row: a noisy reading of the first variable in the first period. Soft,
 # so that nothing about it depends on what the fixture's y holds.
@@ -58,6 +66,8 @@ def main():
             with h5py.File(path, "r") as f:
                 if "model" not in f or "algorithm" not in f["model"].attrs:
                     continue  # a multi-model file
+                if "data/train/constraints" in f or "data/test/y" in f:
+                    continue  # a panel not observed whole already, or one scored
                 first.setdefault(algorithm_of(f), path)
         except OSError:
             continue  # one another test is writing
@@ -71,24 +81,41 @@ def main():
         for section in ("train", "test"):
             target = os.path.join(scratch, "constraints.h5")
             shutil.copyfile(source, target)
+            reads = algorithm in READS and section == "train"
             with h5py.File(target, "a") as f:
                 if "posterior" in f:
                     del f["posterior"]
-                for member, values in ROW.items():
+                row = dict(ROW)
+                if reads:
+                    # A hard pin of the first entry of y: stacked by period, the
+                    # first variable of the first period.
+                    row["value"] = [float(np.asarray(f["data/train/y"][()]).flatten()[0])]
+                    row["group"] = [0.0]
+                for member, values in row.items():
                     f[f"data/{section}/constraints/{member}"] = np.array(values, dtype=float)
 
             run = subprocess.run([bayests, "check", target], capture_output=True, text=True)
             said = run.stdout + run.stderr
-            named = (f"{algorithm} does not read /data/train/constraints" in said)
+            if reads:
+                if run.returncode != 0:
+                    line = next((l for l in said.splitlines() if "rror" in l), "")
+                    failures.append(f"{algorithm} /data/{section}/constraints "
+                                    f"(from {os.path.basename(source)}): refused, exit "
+                                    f"{run.returncode}; {line.strip()[:160]}")
+                continue
+            if algorithm in READS:
+                named = f"{algorithm} does not score" in said
+            else:
+                named = f"{algorithm} does not read /data/train/constraints" in said
             if run.returncode != 1 or not named:
                 line = next((l for l in said.splitlines() if "rror" in l), "")
                 failures.append(f"{algorithm} /data/{section}/constraints "
                                 f"(from {os.path.basename(source)}): exit {run.returncode}; "
                                 f"{line.strip()[:160]}")
 
-    print(f"{len(first)} algorithms, {2 * len(first)} files, {len(failures)} not refused")
+    print(f"{len(first)} algorithms, {2 * len(first)} files, {len(failures)} not as expected")
     for failure in failures:
-        print("  NOT REFUSED:", failure)
+        print("  UNEXPECTED:", failure)
     return 1 if failures else 0
 
 
