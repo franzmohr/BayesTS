@@ -71,6 +71,13 @@
 //                 /data/forecast/constraints, a forecast conditioned on the first
 //                 series' path over two periods and the third series' average
 //                 over three. Needs h >= 3 and no --score. VarNormalWishart only.
+//     --shrinkage=minnesota | --shrinkage=horseshoe
+//                 writes /model/shrinkage and /priors/a/shrinkage: own lags in
+//                 group 1, other lags in group 2, the intercepts as given, and
+//                 under minnesota an inverse gamma per group. The three
+//                 constant-coefficient Gaussian VARs only, without varsel.
+//     --stationary
+//                 writes /model/stationary = true. The same three only.
 //     --hold-states
 //                 writes /model/forecast_states = "hold", so the forecast keeps
 //                 the last in-sample states rather than simulating them forward.
@@ -534,6 +541,30 @@ void write_incomplete_panel(const ModelFile &file, const arma::mat &series, cons
         write_row(file, "/priors/constraints/shape", arma::vec{2.0});
         write_row(file, "/priors/constraints/rate", arma::vec{0.2});
         write_row(file, "/initial/constraints_inv", arma::vec{10.0});
+    }
+}
+
+/// --shrinkage: /model/shrinkage and /priors/a/shrinkage. `a` is vec of the
+/// k x n_x coefficient matrix, lags first, so coefficient (i, j) sits at j k + i:
+/// own lags (j == i within the lag block) in group 1, other lags in group 2,
+/// the intercepts in group 0, their prior as given.
+void write_shrinkage(const ModelFile &file, const std::string &scheme, const Layout &layout)
+{
+    write_attribute<std::string>(file, "/model", "shrinkage", scheme);
+    arma::vec group(static_cast<arma::uword>(layout.nparams), arma::fill::zeros);
+    for (int j = 0; j < layout.n_x_lag; ++j)
+    {
+        for (int i = 0; i < kK; ++i)
+        {
+            group(static_cast<arma::uword>(j * kK + i)) = (j % kK == i) ? 1.0 : 2.0;
+        }
+    }
+    ensure_group(file, "/priors/a/shrinkage");
+    write_row(file, "/priors/a/shrinkage/group", group);
+    if (scheme == "minnesota")
+    {
+        write_row(file, "/priors/a/shrinkage/shape", arma::vec{3.0, 3.0});
+        write_row(file, "/priors/a/shrinkage/rate", arma::vec{1.0, 0.25});
     }
 }
 
@@ -2119,6 +2150,8 @@ int main(int argc, char *argv[])
     bool mixed = false;
     bool missing = false;
     bool partial_test = false;
+    std::string shrinkage;
+    bool stationary = false;
     bool soft = false;
     bool scenario = false;
     bool bare_group_seen = false;
@@ -2153,6 +2186,16 @@ int main(int argc, char *argv[])
         {
             // A quarterly series among monthly ones: /data/train/constraints.
             mixed = true;
+        }
+        else if (token.rfind("--shrinkage=", 0) == 0)
+        {
+            // An adaptive prior on `a`: /model/shrinkage and /priors/a/shrinkage.
+            shrinkage = token.substr(12);
+        }
+        else if (token == "--stationary")
+        {
+            // Every kept draw of `a` stationary: /model/stationary.
+            stationary = true;
         }
         else if (token == "--soft")
         {
@@ -2297,6 +2340,17 @@ int main(int argc, char *argv[])
                      "time, without --iid or a structural form, and with --score only on "
                      "VarNormalWishart and VarNormalGamma: the combinations "
                      "require_completion_spec() refuses\n";
+        return 2;
+    }
+    const bool adapts = model == "VarNormalWishart" || model == "VarNormalGamma" ||
+                        model == "VarNormalStochvol";
+    if ((!shrinkage.empty() || stationary) && (!adapts || varsel != "none" || iid || structural ||
+                                               (!shrinkage.empty() && shrinkage != "minnesota" &&
+                                                shrinkage != "horseshoe")))
+    {
+        std::cerr << "--shrinkage=minnesota|horseshoe and --stationary are written on "
+                     "VarNormalWishart, VarNormalGamma and VarNormalStochvol only, without "
+                     "variable selection, --iid or a structural form\n";
         return 2;
     }
     if (soft && !mixed)
@@ -2539,6 +2593,14 @@ int main(int argc, char *argv[])
         {
             write_incomplete_panel(file, series, mixed, soft);
         }
+        if (!shrinkage.empty())
+        {
+            write_shrinkage(file, shrinkage, layout);
+        }
+        if (stationary)
+        {
+            write_attribute<bool>(file, "/model", "stationary", true);
+        }
 
         if (model == "VarTvpDiscount")
         {
@@ -2585,6 +2647,8 @@ int main(int argc, char *argv[])
                   << (mixed ? ", mixed=1" : "") << (missing ? ", missing=1" : "")
                   << (partial_test ? ", partial_test=1" : "") << (scenario ? ", scenario=1" : "")
                   << (soft ? ", soft=1" : "")
+                  << (shrinkage.empty() ? "" : ", shrinkage=" + shrinkage)
+                  << (stationary ? ", stationary=1" : "")
                   << ")\n";
     }
     catch (const std::exception &e)

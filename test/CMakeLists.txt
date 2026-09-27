@@ -98,6 +98,10 @@ add_executable(bayests_unit_constraints unit_constraints.cpp)
 # panel when everything is pinned, and a quarterly series recovered inside a
 # monthly VAR -- statistical, with margins read off the run.
 add_executable(bayests_unit_var_mixed_frequency unit_var_mixed_frequency.cpp)
+# The adaptive priors on the coefficients -- hierarchical Minnesota and the
+# horseshoe -- and the stationarity condition: a conditional checked against
+# its mean, and the horseshoe and the condition doing what they are for.
+add_executable(bayests_unit_shrinkage unit_shrinkage.cpp)
 add_executable(bayests_unit_input_values unit_input_values.cpp)
 add_executable(bayests_unit_var_normal_stochvol unit_var_normal_stochvol.cpp)
 # The one model that draws nothing, so unlike every sampler beside it the whole
@@ -154,6 +158,7 @@ foreach(_core_unit bayests_unit_identification bayests_unit_vec_klgs_2010 bayest
                    bayests_unit_var_ald bayests_unit_thin
                    bayests_unit_favar_normal_wishart bayests_unit_bvs bayests_unit_ssvs
                    bayests_unit_iid_block bayests_unit_constraints bayests_unit_var_mixed_frequency
+                   bayests_unit_shrinkage
                    bayests_unit_input_values bayests_unit_var_normal_stochvol
                    bayests_unit_var_tvp_discount bayests_unit_vec_tvp_discount
                    bayests_unit_predictive_score bayests_unit_factor_score
@@ -337,7 +342,7 @@ foreach(_unit vec_to_var forecast_lags forecast_regressors_io forecast_group_io 
               vec_klgs_2010 vec_tvp_coint coint_prior_symmetry coint_klgs_prior coint_jacobian coint_dees_us dfm_normal_gamma dfm_normal_stochvol
               dfm_tvp_gamma dfm_tvp_stochvol favar_normal_wishart var_ald thin model_group bvs ssvs
               input_values var_normal_stochvol var_tvp_discount vec_tvp_discount read_path bool_attributes tvp_initial_state
-              forecast_states noncentred iid_block constraints constraints_io var_mixed_frequency)
+              forecast_states noncentred iid_block constraints constraints_io var_mixed_frequency shrinkage)
     add_test(NAME "unit.${_unit}" COMMAND "bayests_unit_${_unit}")
     set_tests_properties("unit.${_unit}" PROPERTIES
         ENVIRONMENT_MODIFICATION "${_bayests_test_env_mod}")
@@ -527,6 +532,13 @@ bayests_add_model_fixture(VarNormalStochvol-mixed-covar VarNormalStochvol none 1
 bayests_add_model_fixture(VarTvpWishart-mixed           VarTvpWishart     none 0 0 4 --mixed)
 bayests_add_model_fixture(VarTvpGamma-mixed-soft-covar  VarTvpGamma       none 1 0 4 --mixed --soft)
 bayests_add_model_fixture(VarTvpStochvol-missing-covar  VarTvpStochvol    none 1 0 4 --missing)
+
+# The adaptive priors and the stationarity condition, on the three
+# constant-coefficient Gaussian VARs that read them.
+bayests_add_model_fixture(VarNormalWishart-minnesota        VarNormalWishart  none 0 0 4 --shrinkage=minnesota)
+bayests_add_model_fixture(VarNormalGamma-horseshoe-covar    VarNormalGamma    none 1 0 4 --shrinkage=horseshoe)
+bayests_add_model_fixture(VarNormalStochvol-stationary      VarNormalStochvol none 0 0 4 --stationary)
+bayests_add_model_fixture(VarNormalWishart-minnesota-mixed  VarNormalWishart  none 0 0 4 --shrinkage=minnesota --stationary --mixed)
 bayests_add_model_fixture(VarNormalGamma-nofcst     VarNormalGamma     none 0 0 0)
 bayests_add_model_fixture(VarNormalGamma-ssvs-covar VarNormalGamma     ssvs 1 0 4)
 bayests_add_model_fixture(VarNormalGamma-bvs-covar  VarNormalGamma     bvs  1 0 4)

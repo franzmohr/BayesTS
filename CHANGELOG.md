@@ -29,6 +29,45 @@ heading, and move down into a version section when one is cut.
 
 ### Added
 
+- **Adaptive priors on the coefficients, and a stationarity condition**, for
+  the three constant-coefficient Gaussian VARs — `VarNormalWishart`,
+  `VarNormalGamma` and `VarNormalStochvol`. `/model/shrinkage` names the scheme
+  (`none`, `minnesota` or `horseshoe`) and `/priors/a/shrinkage/group` the group
+  of every coefficient, zero leaving its prior as given; the file's own
+  `/priors/a/v_inv` stays each coefficient's base scale and has to be diagonal
+  wherever one is shrunk. Under `minnesota` — the hierarchical Minnesota prior
+  of Chan (2021) — each group's prior variance is scaled by `s_g ~ IG(shape_g,
+  rate_g)`, from `/priors/a/shrinkage/shape` and `rate`; under `horseshoe`
+  (Carvalho, Polson and Scott 2010) by a global half-Cauchy scale per group and
+  a local one per coefficient, drawn through the auxiliary inverse gammas of
+  Makalic and Schmidt (2016). Every conditional is conjugate, so the scales are
+  Gibbs blocks after the coefficients (`CoefficientShrinkage` in the new
+  `core/models/shrinkage_support.h`); they start at `/initial/a_shrinkage` and
+  `/initial/a_local`, or at one, and are written as `/posterior/a/shrinkage` and
+  `/posterior/a/local`. `/model/stationary = true` redraws a coefficient draw
+  whose companion matrix has an eigenvalue of modulus one or more, up to 100
+  times, and keeps the previous draw if none qualifies — the reject of an
+  independence Metropolis-Hastings step, so the truncated posterior is left
+  invariant — saying through `Reporter::message()` how many sweeps did.
+
+  Every other algorithm refuses both by name (`require_supported_shrinkage()`),
+  and the three refuse them beside variable selection, a structural form or
+  `n_iid`. `validate_shrinkage()` refuses groups that do not cover the block or
+  leave a gap, a base precision coupling a shrunk position, and a Minnesota
+  prior without a positive shape and rate per group.
+
+  `unit.shrinkage` checks that the Minnesota scales average their inverse
+  gamma's mean (1.3 standard errors), the horseshoe's precision identity, that
+  on a sparse simulated VAR the horseshoe cuts the squared error over the 28
+  zero coefficients from 0.292 under a diffuse prior to 0.024, and that near a
+  unit root every kept draw is stationary where 69 of 400 were not without the
+  condition. New fixtures `VarNormalWishart-minnesota`,
+  `VarNormalGamma-horseshoe-covar`, `VarNormalStochvol-stationary` and
+  `VarNormalWishart-minnesota-mixed`, from `make_model_fixture --shrinkage=`
+  and `--stationary`. *Draws are unchanged* for every file without either: the
+  fingerprints of all 141 earlier fixtures agree, `/posterior/a/shrinkage` and
+  `/posterior/a/local absent` set aside.
+
 - **All six Gaussian VARs estimate from a panel not observed whole.**
   `VarNormalGamma` reads the three constraint groups as `VarNormalWishart` does
   — estimation, soft rows, scores from a completed panel or against a horizon

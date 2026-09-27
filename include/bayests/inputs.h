@@ -20,6 +20,10 @@ struct VarNormalWishartInitial
     /// The error precision of each soft group of TrainData::constraints, group g
     /// at position g - 1. Empty when no row is soft.
     arma::vec constraints_inv;
+    /// The starting group scales and, under a horseshoe, local scales of the
+    /// adaptive prior on `a` (VarSpec::shrinkage). Empty starts them at one.
+    arma::vec a_shrinkage;
+    arma::vec a_local;
 };
 
 /// The complete argument of the VarNormalWishart sampler.
@@ -42,6 +46,10 @@ struct VarNormalWishartInput
     /// TrainData::constraints, one shape and one rate per group. Unused when
     /// no row is soft.
     GammaPrior constraints_prior;
+
+    /// The groups and hyperparameters of VarSpec::shrinkage on `a`. Unused
+    /// without it.
+    ShrinkagePrior a_shrinkage_prior;
 
     VarNormalWishartInitial initial;
 
@@ -67,6 +75,10 @@ struct VarNormalGammaInitial
     /// The error precision of each soft group of TrainData::constraints, group g
     /// at position g - 1. Empty when no row is soft.
     arma::vec constraints_inv;
+    /// The starting group scales and, under a horseshoe, local scales of the
+    /// adaptive prior on `a` (VarSpec::shrinkage). Empty starts them at one.
+    arma::vec a_shrinkage;
+    arma::vec a_local;
 };
 
 /// VAR with a normal prior on the coefficients and independent gamma priors on
@@ -89,6 +101,10 @@ struct VarNormalGammaInput
     /// TrainData::constraints, one shape and one rate per group. Unused when
     /// no row is soft.
     GammaPrior constraints_prior;
+
+    /// The groups and hyperparameters of VarSpec::shrinkage on `a`. Unused
+    /// without it.
+    ShrinkagePrior a_shrinkage_prior;
 
     VarNormalGammaInitial initial;
 
@@ -116,6 +132,10 @@ struct VarNormalStochvolInitial
     /// The error precision of each soft group of TrainData::constraints, group g
     /// at position g - 1. Empty when no row is soft.
     arma::vec constraints_inv;
+    /// The starting group scales and, under a horseshoe, local scales of the
+    /// adaptive prior on `a` (VarSpec::shrinkage). Empty starts them at one.
+    arma::vec a_shrinkage;
+    arma::vec a_local;
 };
 
 /// VAR with a normal prior on the coefficients and stochastic volatility in
@@ -141,6 +161,10 @@ struct VarNormalStochvolInput
     /// TrainData::constraints, one shape and one rate per group. Unused when
     /// no row is soft.
     GammaPrior constraints_prior;
+
+    /// The groups and hyperparameters of VarSpec::shrinkage on `a`. Unused
+    /// without it.
+    ShrinkagePrior a_shrinkage_prior;
 
     VarNormalStochvolInitial initial;
 

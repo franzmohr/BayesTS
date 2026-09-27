@@ -8,6 +8,7 @@
 #include "core/models/forecast_states.h"
 #include "core/models/completion_support.h"
 #include "core/models/model_support.h"
+#include "core/models/shrinkage_support.h"
 #include "core/models/predictive_score.h"
 
 #include <cmath>
@@ -176,6 +177,21 @@ VarNormalStochvolDraws VarNormalStochvolSampler::draw_coefficients(
     completion.allocate(out.y, out.constraints_inv, static_cast<arma::uword>(iterations),
                         static_cast<arma::uword>(tt));
 
+    // The adaptive prior on the coefficients, and how many sweeps found no
+    // stationary draw and kept the one before; see shrinkage_support.h. Both
+    // idle -- no random number, no rescaled prior -- unless /model asks.
+    core::CoefficientShrinkage shrinkage(input.spec.shrinkage, input.a_shrinkage_prior, input.a_prior,
+                                         input.initial.a_shrinkage, input.initial.a_local);
+    if (shrinkage.active())
+    {
+        out.a_shrinkage = arma::mat(shrinkage.groups(), iterations);
+        if (input.spec.shrinkage == Shrinkage::horseshoe)
+        {
+            out.a_local = arma::mat(nparams, iterations);
+        }
+    }
+    int unstationary_sweeps = 0;
+
     for (int draw = 0; draw < draws; draw++)
     {
         reporter.check_interrupt();
@@ -202,9 +218,30 @@ VarNormalStochvolDraws VarNormalStochvolSampler::draw_coefficients(
             }
 
             // Update a
+            // An adaptive prior: the precision this draw is made under, rescaled
+            // by the scales of the last sweep.
+            if (shrinkage.active())
+            {
+                a_prior_vinv = shrinkage.precision();
+                a_prior_rhs = shrinkage.rhs();
+            }
             a_post_v = a_prior_vinv + arma::trans(z) * u_sigma_inv_diag * z;
-            a = draw_normal_precision(a_post_v,
-                                      a_prior_rhs + arma::trans(z) * u_sigma_inv_diag * y);
+            if (input.spec.stationary)
+            {
+                const arma::vec a_rhs = a_prior_rhs + arma::trans(z) * u_sigma_inv_diag * y;
+                if (!core::draw_stationary(
+                        a, [&]() { return draw_normal_precision(a_post_v, a_rhs); },
+                        static_cast<arma::uword>(k), static_cast<arma::uword>(input.spec.p)))
+                {
+                    unstationary_sweeps++;
+                }
+            }
+            else
+            {
+                a = draw_normal_precision(a_post_v,
+                                          a_prior_rhs + arma::trans(z) * u_sigma_inv_diag * y);
+            }
+            shrinkage.update(a);
 
             if (a_bvs)
             {
@@ -303,6 +340,14 @@ VarNormalStochvolDraws VarNormalStochvolSampler::draw_coefficients(
         if (input.spec.keeps(draw))
         {
             const int draw_pos = input.spec.kept_index(draw);
+            if (shrinkage.active())
+            {
+                out.a_shrinkage.col(draw_pos) = shrinkage.scale();
+                if (input.spec.shrinkage == Shrinkage::horseshoe)
+                {
+                    out.a_local.col(draw_pos) = shrinkage.local();
+                }
+            }
             completion.store(out.y, out.constraints_inv, static_cast<arma::uword>(draw_pos), y);
 
             if (use_a)
@@ -334,6 +379,14 @@ VarNormalStochvolDraws VarNormalStochvolSampler::draw_coefficients(
     }
 
     reporter.finish();
+    if (unstationary_sweeps > 0)
+    {
+        reporter.message(std::to_string(unstationary_sweeps) + " of " + std::to_string(draws) +
+                         " sweeps found no stationary draw of the coefficients in " +
+                         std::to_string(core::kStationaryTries) +
+                         " tries and kept the one before: the posterior may put much of its mass "
+                         "on explosive coefficients");
+    }
     return out;
 }
 

@@ -4,6 +4,7 @@
 #include "bayests/vec_tvp_discount.h"
 
 #include "core/models/constraint_support.h"
+#include "core/models/shrinkage_support.h"
 #include "core/models/discount_support.h"
 #include "core/models/vec_support.h"
 
@@ -145,6 +146,7 @@ struct VecTvpDiscountWalk
 void VecTvpDiscountInput::validate() const
 {
     core::require_supported_iid_block(spec, false, "VecTvpDiscount");
+    core::require_supported_shrinkage(spec, false, "VecTvpDiscount");
     core::require_supported_constraints(spec, train, test, false, "VecTvpDiscount");
     core::require_supported_forecast_constraints(spec, forecast, false, "VecTvpDiscount");
     // Before anything that would read a value: a NaN or an infinity here would

@@ -45,6 +45,12 @@ struct VarNormalWishartDraws
     /// log likelihood of a panel with soft rows depends on it.
     arma::mat constraints_inv;
 
+    /// G x iterations: the group scales of the adaptive prior on `a`, and
+    /// nparams x iterations: its local scales under a horseshoe. Empty without
+    /// one (VarSpec::shrinkage).
+    arma::mat a_shrinkage;
+    arma::mat a_local;
+
     /// Length of the chain these draws came from.
     arma::uword iterations() const { return u_sigma_inv.n_cols; }
 
@@ -81,6 +87,12 @@ struct VarNormalGammaDraws
     /// G x iterations, the error precision of each soft group of the training
     /// constraints; see VarNormalWishartDraws::constraints_inv.
     arma::mat constraints_inv;
+
+    /// G x iterations: the group scales of the adaptive prior on `a`, and
+    /// nparams x iterations: its local scales under a horseshoe. Empty without
+    /// one (VarSpec::shrinkage).
+    arma::mat a_shrinkage;
+    arma::mat a_local;
 
     arma::uword iterations() const { return u_sigma_inv.n_cols; }
     bool has_a() const { return a.n_elem > 0; }
@@ -121,6 +133,12 @@ struct VarNormalStochvolDraws
     /// G x iterations, the error precision of each soft group of the training
     /// constraints; see VarNormalWishartDraws::constraints_inv.
     arma::mat constraints_inv;
+
+    /// G x iterations: the group scales of the adaptive prior on `a`, and
+    /// nparams x iterations: its local scales under a horseshoe. Empty without
+    /// one (VarSpec::shrinkage).
+    arma::mat a_shrinkage;
+    arma::mat a_local;
 
     arma::uword iterations() const { return u_sigma_inv.n_cols; }
     bool has_a() const { return a.n_elem > 0; }

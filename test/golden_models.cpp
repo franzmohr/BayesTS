@@ -98,6 +98,10 @@ constexpr const char *kOutputs[] = {
     "/posterior/y/coeffs",
     // The error precision of each soft group of /data/train/constraints.
     "/posterior/constraints_inv/coeffs",
+    // The adaptive prior on `a`: its group scales, and its local scales under a
+    // horseshoe.
+    "/posterior/a/shrinkage",
+    "/posterior/a/local",
     "/posterior/v_sigma_inv/coeffs",
     "/posterior/psi/coeffs",
     "/posterior/psi/lambda",

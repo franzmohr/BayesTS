@@ -121,6 +121,20 @@ void read_constraint_prior(const ModelFile &file, GammaPrior &prior, arma::vec &
 /// /posterior/constraints_inv/coeffs -- read where present, written where not
 /// empty.
 void read_completion_draws(const ModelFile &file, arma::mat &y, arma::mat &constraints_inv);
+
+/// The adaptive prior on a block of coefficients (VarSpec::shrinkage) --
+/// /priors/<block>/shrinkage/{group,shape,rate}, group counted from zero, zero
+/// leaving a coefficient's prior as given -- and its starting scales,
+/// /initial/<block>_shrinkage and /initial/<block>_local, each where present.
+void read_shrinkage_prior(const ModelFile &file, const std::string &block, ShrinkagePrior &prior,
+                          arma::vec &initial_scale, arma::vec &initial_local);
+
+/// Its draws: /posterior/<block>/shrinkage, one row per group, and
+/// /posterior/<block>/local, one row per coefficient under a horseshoe.
+void read_shrinkage_draws(const ModelFile &file, const std::string &block, arma::mat &scale,
+                          arma::mat &local);
+void write_shrinkage_draws(const ModelFile &file, const std::string &block, const arma::mat &scale,
+                           const arma::mat &local);
 void write_completion_draws(const ModelFile &file, const arma::mat &y,
                             const arma::mat &constraints_inv);
 

@@ -97,6 +97,8 @@ VarNormalStochvolInput read_input(const ModelFile &file)
     read_vec_if_present(file, "/initial/h_init", input.initial.h_init);
 
     read_constraint_prior(file, input.constraints_prior, input.initial.constraints_inv);
+    read_shrinkage_prior(file, "a", input.a_shrinkage_prior, input.initial.a_shrinkage,
+                         input.initial.a_local);
     return input;
 }
 
@@ -111,6 +113,7 @@ VarNormalStochvolDraws read_coefficients(const ModelFile &file)
     }
 
     read_completion_draws(file, draws.y, draws.constraints_inv);
+    read_shrinkage_draws(file, "a", draws.a_shrinkage, draws.a_local);
     return draws;
 }
 
@@ -143,6 +146,7 @@ VarNormalStochvolDraws read_forecast_coefficients(const ModelFile &file,
     }
 
     read_completion_draws(file, draws.y, draws.constraints_inv);
+    read_shrinkage_draws(file, "a", draws.a_shrinkage, draws.a_local);
     return draws;
 }
 
@@ -168,6 +172,7 @@ void write_coefficients(const ModelFile &file, const VarNormalStochvolDraws &dra
     }
     write_draws(file, "/posterior/u_omega_inv/coeffs", draws.u_omega_inv);
     write_draws(file, "/posterior/u_sigma_inv/coeffs", draws.u_sigma_inv);
+    write_shrinkage_draws(file, "a", draws.a_shrinkage, draws.a_local);
     write_completion_draws(file, draws.y, draws.constraints_inv);
     write_draws(file, "/posterior/u_sigma_inv/sigma", draws.h_sigma);
 }

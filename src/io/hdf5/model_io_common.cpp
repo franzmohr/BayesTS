@@ -306,6 +306,56 @@ void read_constraint_prior(const ModelFile &file, GammaPrior &prior, arma::vec &
     read_vec_if_present(file, "/initial/constraints_inv", initial);
 }
 
+void read_shrinkage_prior(const ModelFile &file, const std::string &block, ShrinkagePrior &prior,
+                          arma::vec &initial_scale, arma::vec &initial_local)
+{
+    const std::string group = "/priors/" + block + "/shrinkage";
+    if (file.exist(group + "/group"))
+    {
+        // Whole numbers from zero, zero meaning the prior stays as given.
+        const arma::vec values = read_vec(file, group + "/group");
+        for (const double v : values)
+        {
+            if (!std::isfinite(v) || v != std::floor(v) || v < 0.0)
+            {
+                throw std::invalid_argument("'" + group + "/group' holds " + std::to_string(v) +
+                                            ", which is not a whole number of at least 0");
+            }
+        }
+        prior.group = arma::conv_to<arma::uvec>::from(values);
+    }
+    read_vec_if_present(file, group + "/shape", prior.shape);
+    read_vec_if_present(file, group + "/rate", prior.rate);
+    read_vec_if_present(file, "/initial/" + block + "_shrinkage", initial_scale);
+    read_vec_if_present(file, "/initial/" + block + "_local", initial_local);
+}
+
+void read_shrinkage_draws(const ModelFile &file, const std::string &block, arma::mat &scale,
+                          arma::mat &local)
+{
+    if (dataset_has_data(file, "/posterior/" + block + "/shrinkage"))
+    {
+        scale = read_draws(file, "/posterior/" + block + "/shrinkage");
+    }
+    if (dataset_has_data(file, "/posterior/" + block + "/local"))
+    {
+        local = read_draws(file, "/posterior/" + block + "/local");
+    }
+}
+
+void write_shrinkage_draws(const ModelFile &file, const std::string &block, const arma::mat &scale,
+                           const arma::mat &local)
+{
+    if (scale.n_elem > 0)
+    {
+        write_draws(file, "/posterior/" + block + "/shrinkage", scale);
+    }
+    if (local.n_elem > 0)
+    {
+        write_draws(file, "/posterior/" + block + "/local", local);
+    }
+}
+
 void read_completion_draws(const ModelFile &file, arma::mat &y, arma::mat &constraints_inv)
 {
     if (dataset_has_data(file, "/posterior/y/coeffs"))
@@ -402,6 +452,9 @@ VarSpec read_spec(const ModelFile &file, const char *covar_error)
 
     spec.varsel = var_selection_from_string(
         optional_attribute_string(file, "/model", "varsel", "none"));
+    spec.shrinkage = shrinkage_from_string(
+        optional_attribute_string(file, "/model", "shrinkage", "none"));
+    spec.stationary = optional_attribute_bool(file, "/model", "stationary", false);
     spec.structural = optional_attribute_bool(file, "/model", "structural", false);
 
     // Absent from every file written before the choice existed. Those files
@@ -661,7 +714,7 @@ bool is_model_attribute(const std::string &name)
         "m",         "s",         "h",          "quantile",     "n",          "n_iid",
         "rank",      "k_beta",    "n_restricted", "n_factors",  "n_obs_factors",
         "varsel",    "structural", "error",     "seed",       "forecast_states",
-        "delta_beta", "delta_sigma",
+        "delta_beta", "delta_sigma", "shrinkage", "stationary",
     };
     return names.count(name) > 0;
 }
