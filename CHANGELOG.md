@@ -29,6 +29,35 @@ heading, and move down into a version section when one is cut.
 
 ### Added
 
+- **The data-completion step for a VAR whose panel is not observed whole**, in
+  `core/algorithms/constrained_var_path.{h,cpp}`; no sampler calls it yet.
+  Given a VAR's parameters — `VarPathPrior`: the presample, the offsets, and
+  the coefficients and error covariance as one block or one per period — and a
+  constraint set, `draw_constrained_var_path()` draws the path conditioned on
+  what was observed and `constrained_var_path_log_density()` gives the log
+  density of the observations, one element per period.
+
+  The draw works in band storage on the precision `H' S^-1 H` of the path.
+  Hard single-entry rows pin their entry and are partitioned out, so only what
+  was not observed is drawn; soft rows enter the precision, widening the band
+  where a row reaches further than the VAR's own `p + 1` periods; hard rows of
+  several entries — an aggregate observed exactly — are imposed afterwards by
+  conditioning the draw on them (Rue and Held 2005, §2.3.3), so they hold to
+  rounding in every draw. The log density is a Kalman filter over a state as
+  long as the wider of `p` and the widest row, which gives each period's
+  observations given the ones before: with a path pinned whole it is the VAR's
+  own conditional log likelihood, period by period. A dense
+  `constrained_var_path_moments()` exposes the distribution drawn from, for
+  checking.
+
+  `unit.constrained_var_path` checks the mean, the covariance and the log
+  density against the joint Gaussian conditioned densely, to rounding, with
+  pinned entries, hard aggregates and soft rows each alone and together, a
+  constant and a per-period VAR, zero to two lags and a soft row wider than
+  the band; then 20,000 draws against the exact moments, the hard rows holding
+  in every draw. *Draws are unchanged*: no sampler reaches the new code, and
+  the fingerprints of all 127 generated fixtures agree before and after.
+
 - **A model file can say what was observed of a panel not observed whole** —
   the file format and validation for mixed-frequency and missing-data
   estimation, which no algorithm reads yet. `/data/train/constraints` and
