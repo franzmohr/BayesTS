@@ -501,6 +501,13 @@ bayests_add_model_fixture(VarNormalWishart-iid VarNormalWishart none 0 0 4 --iid
 bayests_add_model_fixture(VarNormalWishart-mixed     VarNormalWishart none 0 0 4 --mixed)
 bayests_add_model_fixture(VarNormalWishart-mixed-bvs VarNormalWishart bvs  0 0 4 --mixed)
 bayests_add_model_fixture(VarNormalWishart-missing   VarNormalWishart none 0 0 4 --missing)
+
+# Scored where the sample was not observed whole, scored against a horizon
+# realised in part, and forecast under a scenario: the completion step over the
+# horizon, from where each draw's panel ends.
+bayests_add_model_fixture(VarNormalWishart-mixed-score   VarNormalWishart none 0 0 4 --mixed --score)
+bayests_add_model_fixture(VarNormalWishart-score-partial VarNormalWishart none 0 0 4 --score --partial-test)
+bayests_add_model_fixture(VarNormalWishart-scenario      VarNormalWishart none 0 0 4 --scenario)
 bayests_add_model_fixture(VarNormalGamma-nofcst     VarNormalGamma     none 0 0 0)
 bayests_add_model_fixture(VarNormalGamma-ssvs-covar VarNormalGamma     ssvs 1 0 4)
 bayests_add_model_fixture(VarNormalGamma-bvs-covar  VarNormalGamma     bvs  1 0 4)

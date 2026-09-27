@@ -57,6 +57,16 @@
 //                 the same, with every series monthly but the second missing its
 //                 last two months and the third missing a month in the middle:
 //                 missing values and a ragged edge, no aggregation.
+//     --partial-test
+//                 with --score: /data/test/constraints, a horizon realised in
+//                 part -- the first series throughout, the third as the average
+//                 of the first three periods, the second not at all -- and
+//                 /data/test/y with zeros where nothing was realised.
+//                 VarNormalWishart only.
+//     --scenario
+//                 /data/forecast/constraints, a forecast conditioned on the first
+//                 series' path over two periods and the third series' average
+//                 over three. Needs h >= 3 and no --score. VarNormalWishart only.
 //     --hold-states
 //                 writes /model/forecast_states = "hold", so the forecast keeps
 //                 the last in-sample states rather than simulating them forward.
@@ -351,7 +361,7 @@ arma::mat build_forecast_regressors(const arma::mat &series, const Layout &layou
 /// `--score` additive: the file's stream is consumed in the same order and the
 /// same number of times whether the flag is there or not, so adding the flag to
 /// a fixture row adds a dataset and moves no number that was there before.
-void write_test_observations(const ModelFile &file, const arma::vec &last, int h)
+arma::mat write_test_observations(const ModelFile &file, const arma::vec &last, int h)
 {
     Lcg rng(20260920ULL);
 
@@ -368,6 +378,65 @@ void write_test_observations(const ModelFile &file, const arma::vec &last, int h
 
     ensure_group(file, "/data/test");
     write_mat(file, "/data/test/y", realised);
+    return realised;
+}
+
+/// Six one-row datasets under `group`, the constraint set a host writes. Rows,
+/// periods and variables are zero-based here and one-based in the file.
+void write_constraint_set(const ModelFile &file, const std::string &group,
+                          const std::vector<double> &value,
+                          const std::vector<std::vector<std::pair<int, int>>> &entries,
+                          const std::vector<double> &weights)
+{
+    std::vector<double> row, period, variable, weight;
+    for (std::size_t r = 0; r < entries.size(); ++r)
+    {
+        for (const auto &e : entries[r])
+        {
+            row.push_back(static_cast<double>(r + 1));
+            period.push_back(static_cast<double>(e.first + 1));
+            variable.push_back(static_cast<double>(e.second + 1));
+            weight.push_back(weights[r]);
+        }
+    }
+    ensure_group(file, group);
+    write_row(file, group + "/value", arma::vec(value));
+    write_row(file, group + "/group", arma::vec(value.size(), arma::fill::zeros));
+    write_row(file, group + "/row", arma::vec(row));
+    write_row(file, group + "/period", arma::vec(period));
+    write_row(file, group + "/variable", arma::vec(variable));
+    write_row(file, group + "/weight", arma::vec(weight));
+}
+
+/// --partial-test: what a horizon of at least three periods realised in part,
+/// and /data/test/y again with zeros where it realised nothing.
+void write_partial_test(const ModelFile &file, arma::mat realised)
+{
+    std::vector<double> value;
+    std::vector<std::vector<std::pair<int, int>>> entries;
+    std::vector<double> weights;
+    for (int t = 0; t < static_cast<int>(realised.n_rows); ++t)
+    {
+        value.push_back(realised(static_cast<arma::uword>(t), 0));
+        entries.push_back({{t, 0}});
+        weights.push_back(1.0);
+    }
+    value.push_back(arma::mean(realised.col(2).head(3)));
+    entries.push_back({{0, 2}, {1, 2}, {2, 2}});
+    weights.push_back(1.0 / 3.0);
+    write_constraint_set(file, "/data/test/constraints", value, entries, weights);
+
+    realised.col(1).zeros();
+    realised.col(2).zeros();
+    write_mat(file, "/data/test/y", realised);
+}
+
+/// --scenario: the first series at 0.5 and then -0.25, the third averaging 0.1
+/// over the first three periods of the horizon.
+void write_scenario(const ModelFile &file)
+{
+    write_constraint_set(file, "/data/forecast/constraints", {0.5, -0.25, 0.1},
+                         {{{0, 0}}, {{1, 0}}, {{0, 2}, {1, 2}, {2, 2}}}, {1.0, 1.0, 1.0 / 3.0});
 }
 
 /// tt x n_x, the compact reading of the same regressors build_train_regressors()
@@ -2033,6 +2102,8 @@ int main(int argc, char *argv[])
     bool iid = false;
     bool mixed = false;
     bool missing = false;
+    bool partial_test = false;
+    bool scenario = false;
     bool bare_group_seen = false;
 
     for (int i = 7; i < argc; i++)
@@ -2065,6 +2136,16 @@ int main(int argc, char *argv[])
         {
             // A quarterly series among monthly ones: /data/train/constraints.
             mixed = true;
+        }
+        else if (token == "--partial-test")
+        {
+            // A horizon realised in part: /data/test/constraints.
+            partial_test = true;
+        }
+        else if (token == "--scenario")
+        {
+            // A conditional forecast: /data/forecast/constraints.
+            scenario = true;
         }
         else if (token == "--missing")
         {
@@ -2183,12 +2264,21 @@ int main(int argc, char *argv[])
         std::cerr << "Unknown variable selection scheme: " << varsel << '\n';
         return 2;
     }
-    if ((mixed || missing) && (model != "VarNormalWishart" || mixed == missing || score || iid ||
+    if ((mixed || missing) && (model != "VarNormalWishart" || mixed == missing || iid ||
                                structural || covar))
     {
         std::cerr << "--mixed and --missing are written on VarNormalWishart only, one at a time, "
-                     "and without --score, --iid, a structural form or a covariance block: the "
+                     "and without --iid, a structural form or a covariance block: the "
                      "combinations require_completion_spec() refuses\n";
+        return 2;
+    }
+    if ((partial_test || scenario) &&
+        (model != "VarNormalWishart" || iid || structural || h < 3 || (partial_test && !score) ||
+         (scenario && score)))
+    {
+        std::cerr << "--partial-test and --scenario are written on VarNormalWishart only, with "
+                     "h >= 3 and without --iid or a structural form; --partial-test needs "
+                     "--score, and --scenario refuses it: a conditional forecast is not scored\n";
         return 2;
     }
     if (iid && model != "VarNormalWishart")
@@ -2401,7 +2491,15 @@ int main(int argc, char *argv[])
 
         if (score)
         {
-            write_test_observations(file, series.col(kTT + kP - 1), h);
+            const arma::mat realised = write_test_observations(file, series.col(kTT + kP - 1), h);
+            if (partial_test)
+            {
+                write_partial_test(file, realised);
+            }
+        }
+        if (scenario)
+        {
+            write_scenario(file);
         }
 
         if (mixed || missing)
@@ -2452,6 +2550,7 @@ int main(int argc, char *argv[])
                   << (hold_states ? ", forecast_states=hold" : "")
                   << (score ? ", score=1" : "") << (noncentred ? ", noncentred=1" : "")
                   << (mixed ? ", mixed=1" : "") << (missing ? ", missing=1" : "")
+                  << (partial_test ? ", partial_test=1" : "") << (scenario ? ", scenario=1" : "")
                   << ")\n";
     }
     catch (const std::exception &e)

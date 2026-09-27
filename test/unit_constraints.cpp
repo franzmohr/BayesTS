@@ -332,6 +332,39 @@ void check_refuses(const std::string &algorithm)
     }
 }
 
+/// A scenario, /data/forecast/constraints, on an algorithm that does not
+/// condition its forecast: one pin on the first period of a two-period horizon.
+/// Only the inputs that carry forecast data can be handed one; a factor model's
+/// reader refuses the group instead, which unit.constraints_io covers.
+template <typename Input>
+void check_refuses_scenario(const std::string &algorithm)
+{
+    Input input;
+    input.spec.k = static_cast<int>(kVariables);
+    input.spec.h = 2;
+    input.train.y = panel();
+    Constraints scenario;
+    scenario.value = {0.5};
+    scenario.group = {0};
+    scenario.row = {0};
+    scenario.period = {0};
+    scenario.variable = {0};
+    scenario.weight = {1.0};
+    input.forecast.constraints = scenario;
+
+    std::string message;
+    try
+    {
+        input.validate();
+    }
+    catch (const std::exception &e)
+    {
+        message = e.what();
+    }
+    check(message.find(algorithm + " does not read /data/forecast/constraints") != std::string::npos,
+          algorithm + " refuses a scenario by name");
+}
+
 void test_every_algorithm_refuses()
 {
     check_refuses<bayests::VarNormalGammaInput>("VarNormalGamma");
@@ -355,6 +388,23 @@ void test_every_algorithm_refuses()
     check_refuses<bayests::DfmTvpGammaInput>("DfmTvpGamma");
     check_refuses<bayests::DfmTvpStochvolInput>("DfmTvpStochvol");
     check_refuses<bayests::FavarNormalWishartInput>("FavarNormalWishart");
+
+    check_refuses_scenario<bayests::VarNormalGammaInput>("VarNormalGamma");
+    check_refuses_scenario<bayests::VarNormalStochvolInput>("VarNormalStochvol");
+    check_refuses_scenario<bayests::VarNormalAldInput>("VarNormalAld");
+    check_refuses_scenario<bayests::VarTvpWishartInput>("VarTvpWishart");
+    check_refuses_scenario<bayests::VarTvpGammaInput>("VarTvpGamma");
+    check_refuses_scenario<bayests::VarTvpStochvolInput>("VarTvpStochvol");
+    check_refuses_scenario<bayests::VarTvpAldInput>("VarTvpAld");
+    check_refuses_scenario<bayests::VarTvpDiscountInput>("VarTvpDiscount");
+    check_refuses_scenario<bayests::VecNormalWishartInput>("VecNormalWishart");
+    check_refuses_scenario<bayests::VecNormalGammaInput>("VecNormalGamma");
+    check_refuses_scenario<bayests::VecNormalStochvolInput>("VecNormalStochvol");
+    check_refuses_scenario<bayests::VecTvpWishartInput>("VecTvpWishart");
+    check_refuses_scenario<bayests::VecTvpGammaInput>("VecTvpGamma");
+    check_refuses_scenario<bayests::VecTvpStochvolInput>("VecTvpStochvol");
+    check_refuses_scenario<bayests::VecTvpDiscountInput>("VecTvpDiscount");
+    check_refuses_scenario<bayests::VecKlgs2010Input>("VecKlgs2010");
 }
 
 } // namespace

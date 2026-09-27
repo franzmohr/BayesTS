@@ -297,6 +297,16 @@ bool read_constraints(const ModelFile &file, const std::string &group, Constrain
     return true;
 }
 
+void refuse_constraints(const ModelFile &file, const std::string &group, const char *algorithm)
+{
+    if (file.exist(group))
+    {
+        throw std::invalid_argument(std::string(algorithm) + " does not read " + group +
+                                    ": it does not condition a forecast on a scenario. Drop the "
+                                    "constraints for an unconditional forecast");
+    }
+}
+
 void ensure_group(const ModelFile &file, const std::string &group)
 {
     if (!file.exist(group))

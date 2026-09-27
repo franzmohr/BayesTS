@@ -27,6 +27,7 @@ FavarNormalWishartInput read_input(const ModelFile &file)
     read_test_observations(file, input.spec, input.test.y);
     read_constraints(file, "/data/train/constraints", input.train.constraints);
     read_constraints(file, "/data/test/constraints", input.test.constraints);
+    refuse_constraints(file, "/data/forecast/constraints", "FavarNormalWishart");
 
     // Only draw_coefficients needs the priors and the starting values. A file
     // that holds nothing but a fitted posterior can still be forecast from, so a

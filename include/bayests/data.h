@@ -119,6 +119,13 @@ struct ForecastData
     /// gigabyte there, and every multiplication the wide form adds is against a
     /// structural zero.
     arma::mat x;
+
+    /// What the forecast is conditioned on: a scenario, in the form of
+    /// TrainData::constraints, periods counting the horizon with the first
+    /// period ahead zero. Not observations -- nothing here was realised -- but
+    /// assumptions, so it is read only by the forecast and never scored against.
+    /// Empty for an unconditional forecast.
+    Constraints constraints;
 };
 
 /// What the forecast horizon turned out to be, where the file carries it.

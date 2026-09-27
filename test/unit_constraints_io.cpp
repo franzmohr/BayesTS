@@ -169,6 +169,37 @@ void test_positions_are_whole_numbers(HighFive::File &h5)
     check(throws(negative, "/c", "at least 0"), "a negative group is refused");
 }
 
+/// A group a model has nowhere to put -- a scenario in a factor model's file --
+/// is refused by the reader, naming the model, and its absence passes.
+void test_refused_group(HighFive::File &h5)
+{
+    const ModelFile file(h5, "/refused");
+    file.createGroup("/data");
+    bool absent_passes = true;
+    try
+    {
+        bayests::hdf5_io::refuse_constraints(file, "/data/forecast/constraints", "DfmNormalGamma");
+    }
+    catch (const std::exception &)
+    {
+        absent_passes = false;
+    }
+    check(absent_passes, "no scenario, nothing refused");
+
+    write_set(file, "/data/forecast/constraints");
+    bool refused = false;
+    try
+    {
+        bayests::hdf5_io::refuse_constraints(file, "/data/forecast/constraints", "DfmNormalGamma");
+    }
+    catch (const std::exception &e)
+    {
+        refused = std::string(e.what()).find("DfmNormalGamma does not read "
+                                             "/data/forecast/constraints") != std::string::npos;
+    }
+    check(refused, "a scenario is refused by name where the model has nowhere to put it");
+}
+
 } // namespace
 
 int main()
@@ -189,6 +220,7 @@ int main()
         test_group_under_a_model(h5);
         test_a_missing_member_is_refused(h5);
         test_positions_are_whole_numbers(h5);
+        test_refused_group(h5);
     }
     catch (const std::exception &e)
     {

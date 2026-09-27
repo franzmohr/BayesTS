@@ -78,6 +78,7 @@ DfmTvpStochvolInput read_input(const ModelFile &file)
     read_test_observations(file, input.spec, input.test.y);
     read_constraints(file, "/data/train/constraints", input.train.constraints);
     read_constraints(file, "/data/test/constraints", input.test.constraints);
+    refuse_constraints(file, "/data/forecast/constraints", "DfmTvpStochvol");
 
     const arma::uword tt = sample_periods(input);
     const arma::uword n_lambda = static_cast<arma::uword>(input.spec.n_lambda());

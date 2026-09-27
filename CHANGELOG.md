@@ -29,6 +29,42 @@ heading, and move down into a version section when one is cut.
 
 ### Added
 
+- **`VarNormalWishart` scores from a panel not observed whole, scores against a
+  horizon realised in part, and forecasts under a scenario.** A new
+  `/data/forecast/constraints`, in the six-dataset form of the other two
+  groups, conditions the forecast on assumptions about the horizon — hard pins
+  on a path, a quarter's average — and is read into `ForecastData::constraints`
+  by the seventeen readers of models with forecast data; the five factor
+  models' readers refuse it by name (`refuse_constraints()`), having nowhere to
+  put it. It is assumptions, not observations: never scored against.
+
+  Where a scenario is given, each draw's horizon is drawn whole by the
+  completion step, conditioned on it and starting where that draw's panel
+  ends; the unconditional forecast keeps its recursion, so its draws do not
+  move. Where the sample was not observed whole or `/data/test/constraints`
+  says what the horizon realised, the score is the completion step's log
+  density of the realised rows, period by period, from each draw's panel; a
+  file with neither keeps the old recursion. A horizon pinned whole scores the
+  same either way, to rounding. `validate_constraints()` takes the panel's
+  shape explicitly and checks pins against values only where there are some;
+  `require_supported_forecast_constraints()` refuses a scenario on the sixteen
+  other algorithms with forecast data. Still refused, by name: soft rows in any
+  of the three groups, a scenario beside a score — a score measures the
+  model's own forecast, which a scenario replaces — a scenario without `h` or
+  past it, a structural form and `n_iid`.
+
+  `unit.var_mixed_frequency` now also checks that a horizon pinned whole and a
+  sample pinned whole score as the recursion does (8e-16), that a horizon
+  realised in part never reads what it did not realise, that a scenario holds
+  in every draw and the forecast's mean is the conditioned one (largest |z|
+  1.0 over 4,000 draws), and the new refusals; `unit.constraints` that sixteen
+  algorithms refuse a scenario, `unit.constraints_io` that the reader refuses
+  one for a factor model. New fixtures `VarNormalWishart-mixed-score`,
+  `-score-partial` and `-scenario`, from `make_model_fixture --partial-test`
+  and `--scenario`; `check.constraints` covers all three groups. *Draws are
+  unchanged*: the fingerprints of the 127 fixtures from before this work and
+  the three from the entry below agree, with the same one line set aside.
+
 - **`VarNormalWishart` estimates from a panel not observed whole** — the first
   sampler to read `/data/train/constraints`, and with it mixed-frequency VARs:
   a quarterly series in a monthly model, observed as the average of its three
@@ -50,10 +86,10 @@ heading, and move down into a version section when one is cut.
   The `p` periods before the sample are conditioned on, as a VAR conditions on
   its first observations, from the first row of `/data/train/z`: a host fills
   them for a series it did not observe then. Refused for now, each by name
-  (`require_completion_spec()`): a soft row, whose variance is not drawn yet;
-  `/data/test/y` or `/data/test/constraints` beside training constraints, since
-  a score would have to start from each draw's panel; a structural form and
-  `n_iid`. Every other algorithm still refuses constraints outright.
+  (`require_completion_spec()`): a soft row, whose variance is not drawn yet; a
+  structural form and `n_iid`. (A score beside training constraints was refused
+  here too until the entry above lifted it.) Every other algorithm still
+  refuses constraints outright.
 
   `unit.var_mixed_frequency` checks that a panel pinned whole gives draws
   bit-identical to the same panel without constraints and the same log

@@ -95,46 +95,92 @@ inline VarPathPrior var_path_prior(const arma::mat &a_matrix, const arma::mat &x
     return prior;
 }
 
-/// The combinations a VAR sampler reading constraints refuses, beside the
-/// checks require_supported_constraints() has already made on the set itself.
-///
-/// Each is refused rather than approximated, and each is something later work
-/// may lift: soft rows need their variances drawn, which is a block of its own;
-/// a score, or constraints on the horizon, need the forecast to start from each
-/// draw's own completed panel, which the scoring code does not yet do; a
-/// structural form or an i.i.d. block rearranges the coefficients the lag block
-/// is read from.
-inline void require_completion_spec(const VarSpec &spec, const TrainData &train,
-                                    const TestData &test, const char *algorithm)
+/// The last p periods of a panel, k x p and oldest first: where a horizon
+/// starts. `panel` is k x tt.
+inline arma::mat horizon_presample(const arma::mat &panel, const arma::uword p)
 {
-    if (train.constraints.empty())
+    if (p == 0)
     {
-        if (!test.constraints.empty())
+        return arma::mat(panel.n_rows, 0);
+    }
+    return panel.cols(panel.n_cols - p, panel.n_cols - 1);
+}
+
+/// A constraint set pinning every entry of `realised`, one row per period and
+/// one column per variable: a horizon realised whole, in the form a horizon
+/// realised in part takes. Its log density under a path's prior is the
+/// pointwise log likelihood of those periods.
+inline Constraints pin_every_entry(const arma::mat &realised)
+{
+    const arma::uword periods = realised.n_rows;
+    const arma::uword k = realised.n_cols;
+    const arma::uword n = periods * k;
+    Constraints c;
+    c.value.set_size(n);
+    c.group.zeros(n);
+    c.row = arma::regspace<arma::uvec>(0, n - 1);
+    c.period.set_size(n);
+    c.variable.set_size(n);
+    c.weight.ones(n);
+    for (arma::uword t = 0; t < periods; t++)
+    {
+        for (arma::uword i = 0; i < k; i++)
         {
-            throw std::invalid_argument(std::string(algorithm) +
-                                        " does not score against /data/test/constraints yet");
+            const arma::uword r = t * k + i;
+            c.value(r) = realised(t, i);
+            c.period(r) = t;
+            c.variable(r) = i;
         }
+    }
+    return c;
+}
+
+/// The combinations a VAR sampler reading constraints refuses, beside the
+/// checks require_supported_constraints() has already made on the sets
+/// themselves. `forecast` carries the scenario, `test` what the horizon
+/// realised.
+///
+/// Each is refused rather than approximated. Soft rows need their variances
+/// drawn, which is a block of its own still to come. A score of a conditional
+/// forecast is refused for what it would mean: a score is the density of what
+/// the horizon realised under the model's own forecast, and a scenario replaces
+/// that forecast with another. A structural form or an i.i.d. block rearranges
+/// the coefficients the lag block is read from.
+inline void require_completion_spec(const VarSpec &spec, const TrainData &train,
+                                    const ForecastData &forecast, const TestData &test,
+                                    const char *algorithm)
+{
+    if (train.constraints.empty() && test.constraints.empty() && forecast.constraints.empty())
+    {
         return;
     }
 
     const std::string name(algorithm);
-    if (!test.constraints.empty() || test.y.n_elem > 0)
+    const auto require_hard = [&](const Constraints &c, const char *where) {
+        if (c.group.n_elem > 0 && c.group.max() > 0)
+        {
+            throw std::invalid_argument(
+                name + " reads hard constraints only so far: " + where +
+                "/group is above zero somewhere, and the variance of a soft row is not drawn yet");
+        }
+    };
+    require_hard(train.constraints, "/data/train/constraints");
+    require_hard(test.constraints, "/data/test/constraints");
+    require_hard(forecast.constraints, "/data/forecast/constraints");
+
+    if (!forecast.constraints.empty() && (test.y.n_elem > 0 || !test.constraints.empty()))
     {
         throw std::invalid_argument(
-            name + " does not score a forecast from a panel not observed whole yet: drop "
-                   "/data/test/y and /data/test/constraints, or score from a complete panel");
-    }
-    if (train.constraints.group.n_elem > 0 && train.constraints.group.max() > 0)
-    {
-        throw std::invalid_argument(
-            name + " reads hard constraints only so far: /data/train/constraints/group is "
-                   "above zero somewhere, and the variance of a soft row is not drawn yet");
+            name + " does not score a conditional forecast: a score is the density of what the "
+                   "horizon realised under the model's own forecast, and "
+                   "/data/forecast/constraints replaces that forecast with a scenario. Score "
+                   "without the scenario, or condition without /data/test");
     }
     if (spec.structural || spec.n_iid > 0)
     {
         throw std::invalid_argument(
-            name + " does not combine /data/train/constraints with a structural form or "
-                   "n_iid: both rearrange the coefficients the lags are read from");
+            name + " does not combine constraints with a structural form or n_iid: both "
+                   "rearrange the coefficients the lags are read from");
     }
 
     const arma::uword k = spec.k > 0 ? static_cast<arma::uword>(spec.k) : 0;

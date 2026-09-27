@@ -106,6 +106,12 @@ arma::uvec read_positions(const ModelFile &file, const std::string &dataset);
 /// sampler's validate(), which knows its shape.
 bool read_constraints(const ModelFile &file, const std::string &group, Constraints &out);
 
+/// Throws, naming `algorithm`, when `group` is in the file: for a constraint
+/// group a model has nowhere to put -- the factor models carry no forecast
+/// data, so a scenario in their file would otherwise be read by nobody and a
+/// forecast reported as if it had been conditioned.
+void refuse_constraints(const ModelFile &file, const std::string &group, const char *algorithm);
+
 void ensure_group(const ModelFile &file, const std::string &group);
 
 /// The /model attributes that describe the shape of the model, whichever model

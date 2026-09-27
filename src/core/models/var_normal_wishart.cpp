@@ -8,6 +8,7 @@
 #include "core/algorithms/ssvs.h"
 #include "core/algorithms/wishart.h"
 #include "core/models/completion_support.h"
+#include "core/models/constraint_support.h"
 #include "core/models/forecast_states.h"
 #include "core/models/model_support.h"
 #include "core/models/predictive_score.h"
@@ -35,6 +36,43 @@ using core::structural_inverse;
 using core::require_forecast_regressors;
 using core::update_forecast_lags;
 using core::report_flat_selection_prior;
+
+namespace
+{
+
+/// The panel a forecast from draw `draw` starts from, k x tt: the draw's own
+/// completion where the sample was not observed whole, the sample otherwise.
+arma::mat starting_panel(const VarNormalWishartInput &input,
+                         const VarNormalWishartDraws &coefficients, const arma::uword draw,
+                         const arma::uword k)
+{
+    const arma::vec y = stacked_response(input.train);
+    const arma::uword tt = y.n_elem / k;
+    return input.train.constraints.empty() ? arma::mat(arma::reshape(y, k, tt))
+                                           : arma::mat(arma::reshape(coefficients.y.col(draw), k, tt));
+}
+
+/// The draw's coefficients as k x n_x, or k x 0 for a model with none.
+arma::mat coefficient_matrix(const VarNormalWishartDraws &coefficients, const arma::uword draw,
+                             const arma::uword k, const arma::uword n_x)
+{
+    return n_x > 0 ? arma::mat(arma::reshape(coefficients.a.col(draw), k, n_x)) : arma::mat(k, 0);
+}
+
+arma::mat error_covariance(const VarNormalWishartDraws &coefficients, const arma::uword draw,
+                           const arma::uword k)
+{
+    arma::mat covariance;
+    if (!arma::inv_sympd(covariance,
+                         arma::mat(arma::reshape(coefficients.u_sigma_inv.col(draw), k, k))))
+    {
+        throw std::runtime_error("VarNormalWishart: a draw of the error precision is not "
+                                 "positive definite");
+    }
+    return covariance;
+}
+
+} // namespace
 
 VarNormalWishartDraws VarNormalWishartSampler::draw_coefficients(const VarNormalWishartInput &input,
                                                                  Reporter &reporter) const
@@ -326,11 +364,35 @@ ForecastDraws VarNormalWishartSampler::forecast(const VarNormalWishartInput &inp
     const arma::mat diag_k = arma::eye<arma::mat>(k, k);
     arma::mat error_root;
 
+    // A scenario: the horizon is drawn whole, as the path the draw's VAR puts
+    // on it conditioned on /data/forecast/constraints -- the completion step,
+    // over h periods that start where the draw's panel ends. Only where a
+    // scenario is given: an unconditional forecast keeps the recursion below,
+    // and with it every draw it made before.
+    const bool conditioned = !input.forecast.constraints.empty();
+    const arma::uword kk = static_cast<arma::uword>(k);
+    const arma::mat horizon_x =
+        use_a ? input.forecast.x : arma::mat(static_cast<arma::uword>(h), 0);
+
     // Calculate forecasts
     for (arma::uword draw = 0; draw < draws; draw++)
     {
         reporter.check_interrupt();
         reporter.progress(static_cast<long long>(draw) + 1, static_cast<long long>(draws));
+
+        if (conditioned)
+        {
+            const arma::mat path = core::draw_constrained_var_path(
+                core::var_path_prior(coefficient_matrix(coefficients, draw, kk, horizon_x.n_cols),
+                                     horizon_x,
+                                     core::horizon_presample(starting_panel(input, coefficients, draw, kk),
+                                                             static_cast<arma::uword>(p)),
+                                     error_covariance(coefficients, draw, kk),
+                                     static_cast<arma::uword>(p)),
+                input.forecast.constraints, arma::vec());
+            fcst.col(draw) = arma::vectorise(path);
+            continue;
+        }
 
         // Once per draw: nothing in either depends on the horizon.
         const arma::mat a0_inv =
@@ -434,17 +496,9 @@ arma::mat VarNormalWishartSampler::log_likelihood(const VarNormalWishartInput &i
         const arma::uword n_x = x.n_cols;
         for (arma::uword draw = 0; draw < draws; draw++)
         {
-            arma::mat covariance;
-            if (!arma::inv_sympd(covariance,
-                                 arma::mat(arma::reshape(coefficients.u_sigma_inv.col(draw), kk, kk))))
-            {
-                throw std::runtime_error("VarNormalWishart: a draw of the error precision is not "
-                                         "positive definite");
-            }
-            const arma::mat a_matrix = use_a ? arma::mat(arma::reshape(coefficients.a.col(draw), kk, n_x))
-                                             : arma::mat(kk, 0);
             loglik.row(draw) = arma::trans(core::constrained_var_path_log_density(
-                core::var_path_prior(a_matrix, x, presample, covariance, p),
+                core::var_path_prior(coefficient_matrix(coefficients, draw, kk, n_x), x, presample,
+                                     error_covariance(coefficients, draw, kk), p),
                 input.train.constraints, arma::vec()));
         }
         return loglik;
@@ -481,6 +535,57 @@ arma::mat VarNormalWishartSampler::predictive_log_density(const VarNormalWishart
     const arma::uword periods = core::scored_horizons(input.test.y, input.spec);
     const arma::mat x =
         core::realised_regressors(input.forecast.x, input.test.y, input.spec.k, input.spec.p);
+
+    // A sample not observed whole, or a horizon realised in part: the density
+    // of what the horizon realised under the path each draw puts on it, from
+    // where that draw's panel ends, period by period -- the completion step's
+    // log density. For a horizon realised whole it is the same pointwise log
+    // likelihood as below, computed another way; the recursion below stays for
+    // every file without constraints, so its scores do not move.
+    if (!input.train.constraints.empty() || !input.test.constraints.empty())
+    {
+        const arma::uword k = static_cast<arma::uword>(input.spec.k);
+        const arma::uword p = static_cast<arma::uword>(input.spec.p);
+        const arma::mat realised = input.test.y.head_rows(periods);
+
+        // Scoring runs from draws a previous stage wrote, without validate():
+        // the realised rows are checked against what the horizon holds here.
+        Constraints observed = core::pin_every_entry(realised);
+        if (!input.test.constraints.empty())
+        {
+            core::validate_constraints(input.test.constraints, arma::trans(realised),
+                                       "/data/test/constraints");
+            observed = input.test.constraints;
+        }
+
+        const bool use_a = input.train.z.n_cols > 0;
+        if (use_a && !coefficients.has_a())
+        {
+            throw std::invalid_argument(
+                "the model has regressors but posterior draws of a are missing");
+        }
+        if (!input.train.constraints.empty() && p > 0 && !coefficients.has_y())
+        {
+            throw std::invalid_argument(
+                "the sample was not observed whole, so a score starts from each draw's completed "
+                "panel, and /posterior/y/coeffs is missing");
+        }
+        const arma::mat horizon_x =
+            use_a ? arma::mat(input.forecast.x.head_rows(periods)) : arma::mat(periods, 0);
+
+        const arma::uword draws = coefficients.iterations();
+        arma::mat score(draws, periods);
+        for (arma::uword draw = 0; draw < draws; draw++)
+        {
+            score.row(draw) = arma::trans(core::constrained_var_path_log_density(
+                core::var_path_prior(coefficient_matrix(coefficients, draw, k, horizon_x.n_cols),
+                                     horizon_x,
+                                     core::horizon_presample(starting_panel(input, coefficients, draw, k), p),
+                                     error_covariance(coefficients, draw, k), p),
+                observed, arma::vec()));
+        }
+        return score;
+    }
 
     // The scored periods as a sample of their own. Nothing in this model moves
     // over the horizon, so a draw describes period T + i exactly as it

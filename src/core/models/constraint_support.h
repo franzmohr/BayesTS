@@ -26,9 +26,8 @@ namespace bayests::core
 /// are off by the size of the data.
 constexpr double kPinnedValueTolerance = 1e-10;
 
-/// Refuses a constraint set that does not describe a panel of `by_period`'s
-/// shape, one column per period and one row per variable, or that could not be
-/// conditioned on.
+/// Refuses a constraint set that does not describe a panel of k variables over
+/// tt periods, or that could not be conditioned on.
 ///
 /// `where` names the group in the file, for the messages. Positions in them are
 /// one-based, as the file counts them.
@@ -49,13 +48,15 @@ constexpr double kPinnedValueTolerance = 1e-10;
 ///     several entries has to reach at least one entry nothing pins: otherwise
 ///     it is either implied or contradicted by the others, and conditioning on
 ///     it exactly is a singular system.
-inline void validate_constraints(const Constraints &c, const arma::mat &by_period,
-                                 const std::string &where)
+///
+/// `held` is the panel the pins have to agree with, k x tt, or null where there
+/// is none -- a scenario for the horizon pins values nothing has observed -- and
+/// then only the shape k x tt is checked against.
+inline void validate_constraints(const Constraints &c, const arma::uword k, const arma::uword tt,
+                                 const arma::mat *held, const std::string &where)
 {
     const arma::uword n_rows = c.value.n_elem;
     const arma::uword n_entries = c.row.n_elem;
-    const arma::uword k = by_period.n_rows;
-    const arma::uword tt = by_period.n_cols;
 
     if (c.group.n_elem != n_rows)
     {
@@ -185,14 +186,18 @@ inline void validate_constraints(const Constraints &c, const arma::mat &by_perio
         }
         pinned[t * k + i] = true;
 
+        if (held == nullptr)
+        {
+            continue;
+        }
         const double observed = c.value(r) / c.weight(e);
-        const double held = by_period(i, t);
-        if (!(std::abs(observed - held) <= kPinnedValueTolerance * std::max(1.0, std::abs(held))))
+        const double value = (*held)(i, t);
+        if (!(std::abs(observed - value) <= kPinnedValueTolerance * std::max(1.0, std::abs(value))))
         {
             throw std::invalid_argument(
                 where + " row " + std::to_string(r + 1) + " observes " + std::to_string(observed) +
                 " at period " + std::to_string(t + 1) + ", variable " + std::to_string(i + 1) +
-                ", where the observations hold " + std::to_string(held) +
+                ", where the observations hold " + std::to_string(value) +
                 "; a row written against the wrong period or variable reads as this");
         }
     }
@@ -218,6 +223,15 @@ inline void validate_constraints(const Constraints &c, const arma::mat &by_perio
                 "either implied by them or contradicts them");
         }
     }
+}
+
+/// validate_constraints() against a panel that is there, `by_period` being
+/// k x tt, one column per period: its shape, and what the pins have to agree
+/// with.
+inline void validate_constraints(const Constraints &c, const arma::mat &by_period,
+                                 const std::string &where)
+{
+    validate_constraints(c, by_period.n_rows, by_period.n_cols, &by_period, where);
 }
 
 /// Refuses constraints on an algorithm that does not read them, and checks
@@ -261,6 +275,36 @@ inline void require_supported_constraints(const VarSpec &spec, const TrainData &
     {
         validate_constraints(test.constraints, arma::trans(test.y), "/data/test/constraints");
     }
+}
+
+/// The same for a scenario, /data/forecast/constraints: refused where the
+/// algorithm does not condition its forecast, and otherwise checked against a
+/// horizon of `h` periods. Nothing has been observed there, so the pins are
+/// checked for their shape and not against any value.
+inline void require_supported_forecast_constraints(const VarSpec &spec,
+                                                   const ForecastData &forecast,
+                                                   const bool supported, const char *algorithm)
+{
+    if (forecast.constraints.empty())
+    {
+        return;
+    }
+
+    if (!supported)
+    {
+        throw std::invalid_argument(
+            std::string(algorithm) +
+            " does not read /data/forecast/constraints: it does not condition a forecast on a "
+            "scenario. Drop the constraints for an unconditional forecast");
+    }
+    if (spec.h <= 0)
+    {
+        throw std::invalid_argument(
+            "/data/forecast/constraints conditions a forecast, and /model asks for none: set h");
+    }
+
+    validate_constraints(forecast.constraints, static_cast<arma::uword>(spec.k),
+                         static_cast<arma::uword>(spec.h), nullptr, "/data/forecast/constraints");
 }
 
 } // namespace bayests::core

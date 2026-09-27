@@ -31,7 +31,10 @@
 
 #include "bayests/reporter.h"
 #include "bayests/var_normal_wishart.h"
+#include "core/algorithms/constrained_var_path.h"
+#include "core/models/completion_support.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <stdexcept>
@@ -381,41 +384,204 @@ bool validate_refuses(const bayests::VarNormalWishartInput &input, const std::st
     return false;
 }
 
+/// A forecast input over a horizon of `h`: the intercept filled, the lag block
+/// of the first period the sample's last period, as a host writes one.
+void set_horizon(bayests::VarNormalWishartInput &input, const arma::mat &sample, const int h)
+{
+    input.spec.h = h;
+    input.forecast.x = arma::mat(static_cast<arma::uword>(h), kNx, arma::fill::zeros);
+    input.forecast.x.col(kK).ones();
+    input.forecast.x.submat(0, 0, 0, kK - 1) = sample.row(sample.n_rows - 1);
+}
+
+RowBuilder pin_all(const arma::mat &y)
+{
+    RowBuilder rows;
+    for (arma::uword t = 0; t < y.n_rows; t++)
+    {
+        for (arma::uword i = 0; i < kK; i++)
+        {
+            rows.add(y(t, i), {{t, i}}, 1.0);
+        }
+    }
+    return rows;
+}
+
+void test_scores()
+{
+    std::printf("scores\n");
+    const Sample s = simulate(64);
+    const arma::mat sample = s.y.rows(0, 59);
+    const arma::mat realised = s.y.rows(60, 63);
+    bayests::NullReporter reporter;
+    const bayests::VarNormalWishartSampler sampler;
+
+    bayests::VarNormalWishartInput plain = input_for(sample, s.lag0, 100, 20);
+    set_horizon(plain, sample, 4);
+    plain.test.y = realised;
+    arma::arma_rng::set_seed(5);
+    const auto draws = sampler.draw_coefficients(input_for(sample, s.lag0, 100, 20), reporter);
+    const arma::mat old_score = sampler.predictive_log_density(plain, draws);
+
+    // A horizon realised whole, written as constraints pinning every entry,
+    // goes through the completion step's filter instead of the recursion.
+    bayests::VarNormalWishartInput pinned_horizon = plain;
+    pinned_horizon.test.constraints = pin_all(realised).build();
+    const arma::mat new_score = sampler.predictive_log_density(pinned_horizon, draws);
+    check_below("a horizon pinned whole scores as the recursion does",
+                arma::abs(new_score - old_score).max() / arma::abs(old_score).max(), 1e-12);
+
+    // A sample pinned whole scores from each draw's completed panel, which is
+    // the sample: the same score again.
+    bayests::VarNormalWishartInput pinned_sample = plain;
+    pinned_sample.train.constraints = pin_all(sample).build();
+    bayests::VarNormalWishartInput estimate = input_for(sample, s.lag0, 100, 20);
+    estimate.train.constraints = pinned_sample.train.constraints;
+    arma::arma_rng::set_seed(5);
+    const auto completed = sampler.draw_coefficients(estimate, reporter);
+    const arma::mat from_panel = sampler.predictive_log_density(pinned_sample, completed);
+    check_below("a sample pinned whole scores from its completed panel as from the data",
+                arma::abs(from_panel - old_score).max() / arma::abs(old_score).max(), 1e-12);
+
+    // A horizon realised in part: the first series throughout, the third as the
+    // average of the first three periods, the second not at all. What the
+    // horizon holds where nothing was realised is never read.
+    RowBuilder part;
+    for (arma::uword t = 0; t < 4; t++)
+    {
+        part.add(realised(t, 0), {{t, 0}}, 1.0);
+    }
+    part.add(arma::mean(realised.col(2).head(3)), {{0, 2}, {1, 2}, {2, 2}}, 1.0 / 3.0);
+    bayests::VarNormalWishartInput partial = plain;
+    partial.test.constraints = part.build();
+    const arma::mat partial_score = sampler.predictive_log_density(partial, draws);
+    partial.test.y.col(1).fill(123.0);
+    partial.test.y.col(2).fill(-45.0);
+    check("a horizon realised in part never reads what was not realised",
+          arma::approx_equal(sampler.predictive_log_density(partial, draws), partial_score,
+                             "absdiff", 0.0));
+}
+
+void test_conditional_forecast()
+{
+    std::printf("a forecast conditioned on a scenario\n");
+    const Sample s = simulate(40);
+    bayests::VarNormalWishartInput input = input_for(s.y, s.lag0, 1, 0);
+    set_horizon(input, s.y, 3);
+
+    // The first series at its assumed path for two periods, and the third
+    // averaging 0.3 over the three.
+    RowBuilder scenario;
+    scenario.add(1.0, {{0, 0}}, 1.0);
+    scenario.add(-0.5, {{1, 0}}, 1.0);
+    scenario.add(0.3, {{0, 2}, {1, 2}, {2, 2}}, 1.0 / 3.0);
+    input.forecast.constraints = scenario.build();
+
+    // One set of parameters, many times: the forecast's distribution is then
+    // the conditioned path of those parameters, whose moments are known.
+    const arma::uword n = 4000;
+    bayests::VarNormalWishartDraws draws;
+    draws.a = arma::repmat(arma::vectorise(s.a), 1, n);
+    draws.u_sigma_inv = arma::repmat(arma::vectorise(arma::inv_sympd(s.sigma)), 1, n);
+
+    bayests::NullReporter reporter;
+    arma::arma_rng::set_seed(31);
+    const arma::mat fcst =
+        bayests::VarNormalWishartSampler{}.forecast(input, draws, reporter).values;
+
+    double worst = 0.0;
+    for (arma::uword d = 0; d < n; d++)
+    {
+        const arma::mat path = arma::reshape(fcst.col(d), kK, 3);
+        worst = std::max({worst, std::abs(path(0, 0) - 1.0), std::abs(path(0, 1) + 0.5),
+                          std::abs(arma::mean(path.row(2)) - 0.3)});
+    }
+    check_below("the scenario holds in every draw", worst, 1e-10);
+
+    const auto moments = bayests::core::constrained_var_path_moments(
+        bayests::core::var_path_prior(s.a, input.forecast.x,
+                                      bayests::core::horizon_presample(s.y.t(), 1), s.sigma, 1),
+        input.forecast.constraints, arma::vec());
+    const arma::vec mean = arma::vectorise(moments.mean);
+    const arma::vec sd = arma::sqrt(moments.covariance.diag());
+    const arma::vec sample_mean = arma::mean(fcst, 1);
+    double worst_z = 0.0;
+    for (arma::uword j = 0; j < mean.n_elem; j++)
+    {
+        if (sd(j) > 1e-8)
+        {
+            worst_z = std::max(worst_z, std::abs(sample_mean(j) - mean(j)) /
+                                            (sd(j) / std::sqrt(static_cast<double>(n))));
+        }
+    }
+    std::printf("    largest |z| of the forecast mean against the conditioned one: %.6f\n", worst_z);
+    check_below("the forecast mean is the conditioned mean, within five standard errors",
+                worst_z, 5.0);
+}
+
 void test_refusals()
 {
-    std::printf("what this phase refuses\n");
+    std::printf("what is refused\n");
     const Sample s = simulate(12);
     RowBuilder base;
     base.add(s.y(0, 0), {{0, 0}}, 1.0);
 
+    const auto passes = [](const bayests::VarNormalWishartInput &input) {
+        try
+        {
+            input.validate();
+        }
+        catch (const std::exception &e)
+        {
+            std::printf("    %s\n", e.what());
+            return false;
+        }
+        return true;
+    };
+
     bayests::VarNormalWishartInput input = input_for(s.y, s.lag0, 10, 0);
     input.train.constraints = base.build();
-    bool ok = true;
-    try
-    {
-        input.validate();
-    }
-    catch (const std::exception &e)
-    {
-        std::printf("    %s\n", e.what());
-        ok = false;
-    }
-    check("hard constraints are read", ok);
+    check("hard constraints are read", passes(input));
+
+    set_horizon(input, s.y, 2);
+    input.test.y = s.y.rows(0, 1);
+    check("and a score beside them", passes(input));
+
+    input.test.constraints = pin_all(s.y.rows(0, 1)).build();
+    check("and constraints on the horizon realised", passes(input));
 
     RowBuilder soft = base;
     soft.add(0.1, {{3, 2}}, 1.0, 1);
+    input = input_for(s.y, s.lag0, 10, 0);
     input.train.constraints = soft.build();
     check("a soft row is refused: its variance is not drawn yet",
           validate_refuses(input, "hard constraints only"));
 
-    input.train.constraints = base.build();
+    RowBuilder soft_scenario;
+    soft_scenario.add(0.1, {{0, 0}}, 1.0, 1);
+    input = input_for(s.y, s.lag0, 10, 0);
+    set_horizon(input, s.y, 2);
+    input.forecast.constraints = soft_scenario.build();
+    check("so is a soft row in a scenario", validate_refuses(input, "hard constraints only"));
+
+    RowBuilder scenario;
+    scenario.add(0.5, {{1, 0}}, 1.0);
+    input.forecast.constraints = scenario.build();
+    check("a hard scenario is read", passes(input));
+
     input.test.y = s.y.rows(0, 1);
-    input.spec.h = 2;
-    check("a score is refused", validate_refuses(input, "does not score"));
+    check("a scenario beside a score is refused", validate_refuses(input, "conditional forecast"));
 
     input = input_for(s.y, s.lag0, 10, 0);
-    input.test.constraints = base.build();
-    check("so are constraints on the horizon", validate_refuses(input, "does not score"));
+    input.forecast.constraints = scenario.build();
+    check("a scenario without a horizon is refused", validate_refuses(input, "set h"));
+
+    RowBuilder beyond;
+    beyond.add(0.5, {{2, 0}}, 1.0);
+    input = input_for(s.y, s.lag0, 10, 0);
+    set_horizon(input, s.y, 2);
+    input.forecast.constraints = beyond.build();
+    check("a scenario past the horizon is refused", validate_refuses(input, "periods"));
 
     input = input_for(s.y, s.lag0, 10, 0);
     input.train.constraints = base.build();
@@ -432,6 +598,8 @@ int main()
         test_pinned_whole_is_the_complete_panel();
         test_quarterly_series_is_recovered();
         test_forecast_starts_from_the_completed_panel();
+        test_scores();
+        test_conditional_forecast();
         test_refusals();
     }
     catch (const std::exception &e)
