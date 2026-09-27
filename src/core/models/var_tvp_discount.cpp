@@ -3,6 +3,7 @@
 
 #include "bayests/var_tvp_discount.h"
 
+#include "core/models/constraint_support.h"
 #include "core/models/discount_support.h"
 #include "core/models/predictive_score.h"
 
@@ -28,6 +29,7 @@ using core::run_discount_filter;
 void VarTvpDiscountInput::validate() const
 {
     core::require_supported_iid_block(spec, false, "VarTvpDiscount");
+    core::require_supported_constraints(spec, train, test, false, "VarTvpDiscount");
     // Before anything that would read a value: a NaN or an infinity here would
     // otherwise surface as a failed factorisation, or as NaN in the output.
     core::require_finite_observations(train, forecast, test);

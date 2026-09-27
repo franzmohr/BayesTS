@@ -9,6 +9,43 @@
 namespace bayests
 {
 
+/// What was observed of a panel that is not observed whole: the basis of
+/// mixed-frequency and missing-data estimation.
+///
+/// Every observation is one linear constraint on the panel,
+///
+///     value[r] = sum over entries e of row r:  weight[e] * y(period[e], variable[e])
+///
+/// holding exactly where `group[r]` is zero (a hard constraint) and up to a
+/// normal error whose variance is shared by every row of group g where it is
+/// g > 0 (a soft one). A single observed value is one entry of weight one; a
+/// quarterly figure of a monthly model is one row reaching over the months it
+/// aggregates; a national total is one row across the regions it sums. Which
+/// frequency a series has is nothing the samplers are told: it is only which
+/// rows the host wrote, so a varying number of weeks per month or days per
+/// month costs nothing extra.
+///
+/// Two parts of different lengths. `value` and `group` have one element per
+/// row. `row`, `period`, `variable` and `weight` have one element per entry, a
+/// sparse triplet form of the weight matrix; `row` says which row an entry
+/// belongs to. All indices are zero-based here and one-based in the file.
+///
+/// Empty in a panel observed whole, which is every file that does not carry
+/// them, and then nothing here changes what a sampler does.
+struct Constraints
+{
+    arma::vec value;
+    arma::uvec group;
+
+    arma::uvec row;
+    arma::uvec period;
+    arma::uvec variable;
+    arma::vec weight;
+
+    /// No rows: the panel is observed whole.
+    bool empty() const { return value.n_elem == 0 && row.n_elem == 0; }
+};
+
 /// The sample the model is estimated on.
 struct TrainData
 {
@@ -50,6 +87,13 @@ struct TrainData
     /// them. Handing them over as `x` would read as "a FAVAR is a regression
     /// with these on the right", which is the one thing it is not.
     arma::mat f_obs;
+
+    /// What was observed of `y`, where it was not observed whole: periods count
+    /// the rows of the sample, variables its columns. Empty for a complete
+    /// panel. No algorithm reads it yet, and every one refuses a file that
+    /// carries it rather than estimate a model from the placeholders standing
+    /// in for what was not observed.
+    Constraints constraints;
 
     /// Number of periods implied by `y` for a model with `k` variables.
     arma::uword periods(int k) const { return y.n_elem / static_cast<arma::uword>(k); }
@@ -95,6 +139,12 @@ struct ForecastData
 struct TestData
 {
     arma::mat y;
+
+    /// What was realised of `y` where the horizon was not observed whole, in
+    /// the same form as TrainData::constraints: periods count the rows of `y`,
+    /// the first period of the horizon being zero. Empty when `y` is realised
+    /// whole.
+    Constraints constraints;
 };
 
 } // namespace bayests

@@ -29,6 +29,41 @@ heading, and move down into a version section when one is cut.
 
 ### Added
 
+- **A model file can say what was observed of a panel not observed whole** —
+  the file format and validation for mixed-frequency and missing-data
+  estimation, which no algorithm reads yet. `/data/train/constraints` and
+  `/data/test/constraints` each hold six one-dimensional datasets (a single
+  row or column, how the other vectors here are stored, reads too): per row a
+  `value` and a `group` (0 hard, soft groups numbered from 1), per entry a
+  `row`, `period`, `variable` (all counted from one in the file) and `weight`.
+  Each row states `value = sum of weight * y(period, variable)`, exactly or up
+  to a normal error shared by its soft group, so a single observed value, a
+  quarterly figure over the months it aggregates and a national total over its
+  regions are all one row. They reach the core as `bayests::Constraints`, a
+  new member of `TrainData` and `TestData`, read by `read_constraints()` in
+  `io/hdf5/model_io_common.cpp` in all twenty-two readers.
+
+  **Every algorithm refuses a file that carries either group**, naming itself,
+  through `require_supported_constraints()` in the new
+  `core/models/constraint_support.h`, called from each `validate()` beside the
+  i.i.d. block's check. A sampler reading `y` whole would otherwise estimate from
+  the placeholders standing in for what was not observed and report a fit.
+  `validate_constraints()` beside it is what a sampler that does read them will
+  rely on: it refuses a set whose shapes disagree, a position past the panel, a
+  row that observes nothing, an entry named twice in a row, soft groups with a
+  gap, a hard single-entry row whose value disagrees with what `y` holds there
+  (the signature of a row written against the wrong period), an entry pinned by
+  two hard rows, and a hard row reaching only pinned entries, which conditioning
+  on exactly would make singular.
+
+  `unit.constraints` checks each of those refusals and that all twenty-two input
+  types refuse training and test constraints by name; `unit.constraints_io` the
+  reader, including the one-based positions and their refusal when not whole;
+  `check.constraints` that `bayests check` refuses them through every model's
+  own reader, from files h5py writes. *Draws are unchanged*: the fingerprints
+  of all 127 generated fixtures agree before and after, on the same Windows
+  build.
+
 - **An equation can be restricted to carry no coefficients at all.**
   `/model/n_iid` names endogenous variables, ordered first, whose equations have
   no lags, no deterministic terms and nothing else: white noise that reaches the

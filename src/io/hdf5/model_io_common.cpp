@@ -8,7 +8,9 @@
 #include <cmath>
 #include <set>
 #include <stdexcept>
+#include <string>
 #include <utility>
+#include <vector>
 
 namespace bayests::hdf5_io
 {
@@ -207,6 +209,92 @@ arma::uvec read_positions(const ModelFile &file, const std::string &dataset)
     }
 
     return arma::conv_to<arma::uvec>::from(one_based - 1);
+}
+
+namespace
+{
+
+/// A dataset holding one value per element of a list: one-dimensional, the way
+/// h5py and most writers store a vector, or a single row or column, the way
+/// every other vector in these files is stored. Anything else is refused rather
+/// than flattened, since which order a matrix was meant to be read in is not
+/// recoverable.
+arma::vec read_list(const ModelFile &file, const std::string &dataset)
+{
+    const HighFive::DataSet data = file.getDataSet(dataset);
+    const std::vector<size_t> dims = data.getDimensions();
+
+    if (dims.size() == 1)
+    {
+        std::vector<double> values;
+        data.read(values);
+        return arma::vec(values);
+    }
+    if (dims.size() == 2 && (dims[0] == 1 || dims[1] == 1))
+    {
+        return read_vec(file, dataset);
+    }
+
+    std::string shape;
+    for (const size_t d : dims)
+    {
+        shape += (shape.empty() ? "" : " x ") + std::to_string(d);
+    }
+    throw std::invalid_argument("'" + file.resolve(dataset) + "' must be one-dimensional, or a "
+                                "single row or column, got " +
+                                (shape.empty() ? std::string("a scalar") : shape));
+}
+
+/// Whole numbers no smaller than `minimum`, shifted down by it: read as
+/// doubles for the reason read_positions() gives, so that a NaN or a 2.5 is
+/// refused by name rather than converted.
+arma::uvec read_counted_from(const ModelFile &file, const std::string &dataset,
+                             const double minimum)
+{
+    const arma::vec values = read_list(file, dataset);
+
+    for (const double value : values)
+    {
+        if (!std::isfinite(value) || value != std::floor(value) || value < minimum)
+        {
+            throw std::invalid_argument(
+                "'" + dataset + "' holds " + std::to_string(value) +
+                ", which is not a whole number of at least " + std::to_string(int(minimum)));
+        }
+    }
+
+    return arma::conv_to<arma::uvec>::from(values - minimum);
+}
+
+} // namespace
+
+bool read_constraints(const ModelFile &file, const std::string &group, Constraints &out)
+{
+    if (!file.exist(group))
+    {
+        return false;
+    }
+
+    for (const char *member : {"value", "group", "row", "period", "variable", "weight"})
+    {
+        if (!file.exist(group + "/" + member))
+        {
+            throw std::invalid_argument("'" + group + "' has no '" + member +
+                                        "'; a constraint set is the six datasets value, group, "
+                                        "row, period, variable and weight together");
+        }
+    }
+
+    Constraints c;
+    c.value = read_list(file, group + "/value");
+    c.group = read_counted_from(file, group + "/group", 0.0);
+    c.row = read_counted_from(file, group + "/row", 1.0);
+    c.period = read_counted_from(file, group + "/period", 1.0);
+    c.variable = read_counted_from(file, group + "/variable", 1.0);
+    c.weight = read_list(file, group + "/weight");
+
+    out = std::move(c);
+    return true;
 }
 
 void ensure_group(const ModelFile &file, const std::string &group)

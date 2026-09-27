@@ -18,6 +18,8 @@ VarNormalGammaInput read_input(const ModelFile &file)
     read_mat_if_present(file, "/data/train/z", input.train.z);
     read_forecast_regressors(file, input.spec.k, input.forecast.x);
     read_test_observations(file, input.spec, input.test.y);
+    read_constraints(file, "/data/train/constraints", input.train.constraints);
+    read_constraints(file, "/data/test/constraints", input.test.constraints);
 
     if (input.use_a())
     {

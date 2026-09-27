@@ -93,6 +93,19 @@ arma::uword last_sample_period(arma::uword periods);
 /// count. The samplers index from zero.
 arma::uvec read_positions(const ModelFile &file, const std::string &dataset);
 
+/// What was observed of a panel not observed whole (see Constraints), read from
+/// the six one-dimensional datasets under `group` -- `value`, `group`, `row`,
+/// `period`, `variable` and `weight`. One-dimensional so that no orientation
+/// question arises: a row here is a constraint, not a dataspace row.
+///
+/// `row`, `period` and `variable` are counted from one in the file, as
+/// read_positions() counts, and `group` from zero, zero meaning hard. Returns
+/// false and leaves `out` alone when `group` is not in the file; throws when it
+/// is and any of the six is missing or holds something that is not a whole
+/// number where one is meant. Whether the rows describe the panel is the
+/// sampler's validate(), which knows its shape.
+bool read_constraints(const ModelFile &file, const std::string &group, Constraints &out);
+
 void ensure_group(const ModelFile &file, const std::string &group);
 
 /// The /model attributes that describe the shape of the model, whichever model

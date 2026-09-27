@@ -87,6 +87,9 @@ add_executable(bayests_unit_coint_prior_symmetry unit_coint_prior_symmetry.cpp)
 add_executable(bayests_unit_coint_klgs_prior unit_coint_klgs_prior.cpp)
 add_executable(bayests_unit_bvs unit_bvs.cpp)
 add_executable(bayests_unit_iid_block unit_iid_block.cpp)
+# That every algorithm refuses a constraint set -- what was observed of a panel
+# not observed whole -- and what one is refused for when it is read.
+add_executable(bayests_unit_constraints unit_constraints.cpp)
 add_executable(bayests_unit_input_values unit_input_values.cpp)
 add_executable(bayests_unit_var_normal_stochvol unit_var_normal_stochvol.cpp)
 # The one model that draws nothing, so unlike every sampler beside it the whole
@@ -142,7 +145,7 @@ foreach(_core_unit bayests_unit_identification bayests_unit_vec_klgs_2010 bayest
                    bayests_unit_dfm_tvp_gamma bayests_unit_dfm_tvp_stochvol
                    bayests_unit_var_ald bayests_unit_thin
                    bayests_unit_favar_normal_wishart bayests_unit_bvs bayests_unit_ssvs
-                   bayests_unit_iid_block
+                   bayests_unit_iid_block bayests_unit_constraints
                    bayests_unit_input_values bayests_unit_var_normal_stochvol
                    bayests_unit_var_tvp_discount bayests_unit_vec_tvp_discount
                    bayests_unit_predictive_score bayests_unit_factor_score
@@ -201,6 +204,17 @@ target_link_libraries(bayests_unit_test_observations_io PRIVATE bayests_warnings
 
 if(OpenMP_CXX_FOUND)
     target_link_libraries(bayests_unit_test_observations_io PRIVATE OpenMP::OpenMP_CXX)
+endif()
+
+# On the io layer too: how a constraint set is read, and that its positions are
+# counted from one in the file and refused by name when they are not whole.
+add_executable(bayests_unit_constraints_io unit_constraints_io.cpp)
+
+target_link_libraries(bayests_unit_constraints_io PRIVATE bayests_hdf5_helper)
+target_link_libraries(bayests_unit_constraints_io PRIVATE bayests_warnings)
+
+if(OpenMP_CXX_FOUND)
+    target_link_libraries(bayests_unit_constraints_io PRIVATE OpenMP::OpenMP_CXX)
 endif()
 
 # On the io layer as well: that a starting path is read at exactly the size the
@@ -315,7 +329,7 @@ foreach(_unit vec_to_var forecast_lags forecast_regressors_io forecast_group_io 
               vec_klgs_2010 vec_tvp_coint coint_prior_symmetry coint_klgs_prior coint_jacobian coint_dees_us dfm_normal_gamma dfm_normal_stochvol
               dfm_tvp_gamma dfm_tvp_stochvol favar_normal_wishart var_ald thin model_group bvs ssvs
               input_values var_normal_stochvol var_tvp_discount vec_tvp_discount read_path bool_attributes tvp_initial_state
-              forecast_states noncentred iid_block)
+              forecast_states noncentred iid_block constraints constraints_io)
     add_test(NAME "unit.${_unit}" COMMAND "bayests_unit_${_unit}")
     set_tests_properties("unit.${_unit}" PROPERTIES
         ENVIRONMENT_MODIFICATION "${_bayests_test_env_mod}")
@@ -813,7 +827,7 @@ endif()
 # cannot quietly stop running there. Point Python3_EXECUTABLE at the interpreter
 # to use when the first one found lacks the modules.
 set(BAYESTS_TEST_PYTHON "AUTO" CACHE STRING
-    "Run the tests written in Python (check.nonfinite, cli.interrupted): AUTO, ON or OFF")
+    "Run the tests written in Python (check.nonfinite, check.constraints, cli.interrupted): AUTO, ON or OFF")
 set_property(CACHE BAYESTS_TEST_PYTHON PROPERTY STRINGS AUTO ON OFF)
 
 if(NOT BAYESTS_TEST_PYTHON STREQUAL "OFF")
@@ -842,6 +856,18 @@ if(NOT BAYESTS_TEST_PYTHON STREQUAL "OFF")
                     "$<TARGET_FILE:bayests>" "${BAYESTS_FIXTURE_DIR}"
                     "${CMAKE_CURRENT_BINARY_DIR}/check_nonfinite")
         set_tests_properties(check.nonfinite PROPERTIES
+            FIXTURES_REQUIRED "${_bayests_all_fixtures}"
+            ENVIRONMENT "${_bayests_pin_threads}"
+            ENVIRONMENT_MODIFICATION "${_bayests_test_env_mod}")
+
+        # A constraint set -- what was observed of a panel not observed whole --
+        # is refused by `bayests check`, by name, for every algorithm: through each
+        # model's own reader, which the unit test building inputs in memory skips.
+        add_test(NAME check.constraints
+            COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/check_constraints.py"
+                    "$<TARGET_FILE:bayests>" "${BAYESTS_FIXTURE_DIR}"
+                    "${CMAKE_CURRENT_BINARY_DIR}/check_constraints")
+        set_tests_properties(check.constraints PROPERTIES
             FIXTURES_REQUIRED "${_bayests_all_fixtures}"
             ENVIRONMENT "${_bayests_pin_threads}"
             ENVIRONMENT_MODIFICATION "${_bayests_test_env_mod}")
