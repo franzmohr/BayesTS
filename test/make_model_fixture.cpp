@@ -53,6 +53,10 @@
 //                 observed exactly, the second series missing its last two
 //                 months, the first observed throughout. /data/train/y holds
 //                 zeros wherever nothing was observed. VarNormalWishart only.
+//     --soft
+//                 with --mixed: the quarterly averages observed up to an error,
+//                 one soft group whose precision is drawn, with its gamma prior
+//                 at /priors/constraints and its start at /initial/constraints_inv.
 //     --missing
 //                 the same, with every series monthly but the second missing its
 //                 last two months and the third missing a month in the middle:
@@ -462,15 +466,16 @@ arma::mat build_var_compact_regressors(const arma::mat &series, const Layout &la
 /// with zeros where nothing was observed: the panel as a host writes one it did
 /// not observe whole. Positions are one-based, as the file counts them; each
 /// dataset is one row, how every other vector here is stored.
-void write_incomplete_panel(const ModelFile &file, const arma::mat &series, const bool mixed)
+void write_incomplete_panel(const ModelFile &file, const arma::mat &series, const bool mixed,
+                            const bool soft)
 {
     const arma::mat sample = series.cols(kP, kTT + kP - 1); // k x tt
     arma::mat held = sample;
     std::vector<double> value, group, row, period, variable, weight;
     const auto add = [&](const double v, const std::vector<std::pair<int, int>> &entries,
-                         const double w) {
+                         const double w, const double g = 0.0) {
         value.push_back(v);
-        group.push_back(0.0);
+        group.push_back(g);
         for (const auto &e : entries)
         {
             row.push_back(static_cast<double>(value.size()));
@@ -503,7 +508,8 @@ void write_incomplete_panel(const ModelFile &file, const arma::mat &series, cons
         {
             const double average =
                 (sample(2, 3 * q) + sample(2, 3 * q + 1) + sample(2, 3 * q + 2)) / 3.0;
-            add(average, {{3 * q, 2}, {3 * q + 1, 2}, {3 * q + 2, 2}}, 1.0 / 3.0);
+            add(average, {{3 * q, 2}, {3 * q + 1, 2}, {3 * q + 2, 2}}, 1.0 / 3.0,
+                soft ? 1.0 : 0.0);
         }
     }
     else
@@ -519,6 +525,16 @@ void write_incomplete_panel(const ModelFile &file, const arma::mat &series, cons
     write_row(file, "/data/train/constraints/period", arma::vec(period));
     write_row(file, "/data/train/constraints/variable", arma::vec(variable));
     write_row(file, "/data/train/constraints/weight", arma::vec(weight));
+
+    if (soft)
+    {
+        // A gamma prior on the one soft group's precision, centred on a
+        // standard deviation of about a third, and a start at its mean.
+        ensure_group(file, "/priors/constraints");
+        write_row(file, "/priors/constraints/shape", arma::vec{2.0});
+        write_row(file, "/priors/constraints/rate", arma::vec{0.2});
+        write_row(file, "/initial/constraints_inv", arma::vec{10.0});
+    }
 }
 
 void write_common(const ModelFile &file, const std::string &model, const std::string &varsel,
@@ -2103,6 +2119,7 @@ int main(int argc, char *argv[])
     bool mixed = false;
     bool missing = false;
     bool partial_test = false;
+    bool soft = false;
     bool scenario = false;
     bool bare_group_seen = false;
 
@@ -2136,6 +2153,11 @@ int main(int argc, char *argv[])
         {
             // A quarterly series among monthly ones: /data/train/constraints.
             mixed = true;
+        }
+        else if (token == "--soft")
+        {
+            // With --mixed: the quarterly averages soft, their variance drawn.
+            soft = true;
         }
         else if (token == "--partial-test")
         {
@@ -2270,6 +2292,11 @@ int main(int argc, char *argv[])
         std::cerr << "--mixed and --missing are written on VarNormalWishart only, one at a time, "
                      "and without --iid, a structural form or a covariance block: the "
                      "combinations require_completion_spec() refuses\n";
+        return 2;
+    }
+    if (soft && !mixed)
+    {
+        std::cerr << "--soft makes the quarterly averages of --mixed soft, so it needs --mixed\n";
         return 2;
     }
     if ((partial_test || scenario) &&
@@ -2504,7 +2531,7 @@ int main(int argc, char *argv[])
 
         if (mixed || missing)
         {
-            write_incomplete_panel(file, series, mixed);
+            write_incomplete_panel(file, series, mixed, soft);
         }
 
         if (model == "VarTvpDiscount")
@@ -2551,6 +2578,7 @@ int main(int argc, char *argv[])
                   << (score ? ", score=1" : "") << (noncentred ? ", noncentred=1" : "")
                   << (mixed ? ", mixed=1" : "") << (missing ? ", missing=1" : "")
                   << (partial_test ? ", partial_test=1" : "") << (scenario ? ", scenario=1" : "")
+                  << (soft ? ", soft=1" : "")
                   << ")\n";
     }
     catch (const std::exception &e)

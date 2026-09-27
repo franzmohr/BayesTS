@@ -40,12 +40,18 @@ struct VarNormalWishartDraws
     /// it is what a forecast starts from.
     arma::mat y;
 
+    /// G x iterations: the error precision of each soft group of the training
+    /// constraints, group g in row g - 1. Empty unless some row is soft. The
+    /// log likelihood of a panel with soft rows depends on it.
+    arma::mat constraints_inv;
+
     /// Length of the chain these draws came from.
     arma::uword iterations() const { return u_sigma_inv.n_cols; }
 
     bool has_a() const { return a.n_elem > 0; }
     bool has_lambda() const { return a_lambda.n_elem > 0; }
     bool has_y() const { return y.n_elem > 0; }
+    bool has_constraints_inv() const { return constraints_inv.n_elem > 0; }
 };
 
 /// Posterior draws of a VAR with independent gamma priors on the error

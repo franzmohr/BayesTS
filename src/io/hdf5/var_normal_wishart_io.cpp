@@ -46,6 +46,14 @@ VarNormalWishartInput read_input(const ModelFile &file)
     read_mat_if_present(file, "/priors/u_sigma/scale", input.u_sigma_prior.scale);
     read_mat_if_present(file, "/initial/u_sigma_inv", input.initial.u_sigma_inv);
 
+    // The soft groups of /data/train/constraints, where there are any: a gamma
+    // prior and a start for each group's error precision.
+    if (file.exist("/priors/constraints"))
+    {
+        input.constraints_prior = read_gamma_prior(file, "/priors/constraints");
+    }
+    read_vec_if_present(file, "/initial/constraints_inv", input.initial.constraints_inv);
+
     return input;
 }
 
@@ -69,6 +77,10 @@ VarNormalWishartDraws read_coefficients(const ModelFile &file)
     {
         draws.y = read_draws(file, "/posterior/y/coeffs");
     }
+    if (dataset_has_data(file, "/posterior/constraints_inv/coeffs"))
+    {
+        draws.constraints_inv = read_draws(file, "/posterior/constraints_inv/coeffs");
+    }
 
     return draws;
 }
@@ -89,6 +101,10 @@ void write_coefficients(const ModelFile &file, const VarNormalWishartDraws &draw
     if (draws.has_y())
     {
         write_draws(file, "/posterior/y/coeffs", draws.y);
+    }
+    if (draws.has_constraints_inv())
+    {
+        write_draws(file, "/posterior/constraints_inv/coeffs", draws.constraints_inv);
     }
 }
 

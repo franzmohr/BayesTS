@@ -508,6 +508,10 @@ bayests_add_model_fixture(VarNormalWishart-missing   VarNormalWishart none 0 0 4
 bayests_add_model_fixture(VarNormalWishart-mixed-score   VarNormalWishart none 0 0 4 --mixed --score)
 bayests_add_model_fixture(VarNormalWishart-score-partial VarNormalWishart none 0 0 4 --score --partial-test)
 bayests_add_model_fixture(VarNormalWishart-scenario      VarNormalWishart none 0 0 4 --scenario)
+
+# The quarterly averages observed up to an error: one soft group, its precision
+# drawn in every sweep and written beside the rest of the posterior.
+bayests_add_model_fixture(VarNormalWishart-mixed-soft VarNormalWishart none 0 0 4 --mixed --soft)
 bayests_add_model_fixture(VarNormalGamma-nofcst     VarNormalGamma     none 0 0 0)
 bayests_add_model_fixture(VarNormalGamma-ssvs-covar VarNormalGamma     ssvs 1 0 4)
 bayests_add_model_fixture(VarNormalGamma-bvs-covar  VarNormalGamma     bvs  1 0 4)

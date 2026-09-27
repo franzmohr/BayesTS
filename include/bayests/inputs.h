@@ -17,6 +17,9 @@ struct VarNormalWishartInitial
     arma::vec a;            ///< Coefficients. Ignored when there are no regressors.
     arma::vec a_lambda;     ///< Inclusion indicators. Ignored without variable selection.
     arma::mat u_sigma_inv;  ///< k x k error precision.
+    /// The error precision of each soft group of TrainData::constraints, group g
+    /// at position g - 1. Empty when no row is soft.
+    arma::vec constraints_inv;
 };
 
 /// The complete argument of the VarNormalWishart sampler.
@@ -35,6 +38,10 @@ struct VarNormalWishartInput
     NormalPrior a_prior;          ///< Unused when there are no regressors.
     WishartPrior u_sigma_prior;
     VarSelPrior varsel_prior;     ///< Unused when spec.varsel is none.
+    /// A gamma prior on the error precision of each soft group of
+    /// TrainData::constraints, one shape and one rate per group. Unused when
+    /// no row is soft.
+    GammaPrior constraints_prior;
 
     VarNormalWishartInitial initial;
 

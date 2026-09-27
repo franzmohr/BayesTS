@@ -27,7 +27,13 @@
 ///
 /// The forecast starts from each draw's own completed panel, not from what the
 /// host wrote into /data/forecast/x, which for an entry nothing observed is a
-/// placeholder. And the combinations this phase refuses are refused.
+/// placeholder.
+///
+/// Beyond those: a score from a completed panel or against a horizon realised
+/// in part agrees with the recursion where the two describe the same thing; a
+/// scenario holds in every draw of a conditional forecast, whose mean is the
+/// conditioned one; a series read with an error has that error's variance
+/// recovered and is smoothed by the model. And what is refused is refused.
 
 #include "bayests/reporter.h"
 #include "bayests/var_normal_wishart.h"
@@ -519,6 +525,77 @@ void test_conditional_forecast()
                 worst_z, 5.0);
 }
 
+/// A series observed every month with a measurement error: soft rows, one per
+/// month, of a common group whose variance is drawn. The chain has to recover
+/// that variance and put the posterior mean of the series closer to the truth
+/// than the noisy readings are -- the smoothing a measurement error model
+/// exists for.
+void test_soft_rows()
+{
+    std::printf("a series read with an error\n");
+    const arma::uword tt = 240;
+    const Sample s = simulate(tt);
+    const double noise_variance = 0.2;
+
+    arma::arma_rng::set_seed(77);
+    const arma::vec readings = s.y.col(2) + std::sqrt(noise_variance) * arma::randn<arma::vec>(tt);
+
+    arma::mat y_file = s.y;
+    y_file.col(2).zeros();
+    RowBuilder rows;
+    for (arma::uword t = 0; t < tt; t++)
+    {
+        rows.add(s.y(t, 0), {{t, 0}}, 1.0);
+        rows.add(s.y(t, 1), {{t, 1}}, 1.0);
+        rows.add(readings(t), {{t, 2}}, 1.0, 1);
+    }
+
+    bayests::VarNormalWishartInput input = input_for(y_file, s.lag0, 3000, 1000);
+    input.train.constraints = rows.build();
+    input.constraints_prior.shape = {1.0};
+    input.constraints_prior.rate = {0.1};
+    input.initial.constraints_inv = {1.0};
+
+    bayests::NullReporter reporter;
+    arma::arma_rng::set_seed(2027);
+    const auto draws = bayests::VarNormalWishartSampler{}.draw_coefficients(input, reporter);
+
+    check("a precision is drawn for the one soft group in every kept draw",
+          draws.constraints_inv.n_rows == 1 && draws.constraints_inv.n_cols == 3000);
+    const arma::rowvec variance = 1.0 / draws.constraints_inv.row(0);
+    const double mean = arma::mean(variance);
+    const double sd = arma::stddev(variance);
+    std::printf("    measurement error variance: posterior mean %.3f (sd %.3f), truth %.3f\n", mean,
+                sd, noise_variance);
+    check_below("the variance is recovered, within four posterior sds",
+                std::abs(mean - noise_variance) / sd, 4.0);
+
+    const arma::mat path_mean = arma::reshape(arma::mean(draws.y, 1), kK, tt);
+    const double rmse_model = std::sqrt(arma::mean(arma::square(path_mean.row(2).t() - s.y.col(2))));
+    const double rmse_readings = std::sqrt(arma::mean(arma::square(readings - s.y.col(2))));
+    std::printf("    series read with an error, RMSE: posterior mean %.3f, readings %.3f\n",
+                rmse_model, rmse_readings);
+    check_below("the posterior mean of the series beats the readings", rmse_model / rmse_readings,
+                0.9);
+
+    const arma::mat loglik = bayests::VarNormalWishartSampler{}.log_likelihood(input, draws);
+    check("the log likelihood, which needs the drawn precisions, is finite",
+          loglik.is_finite() && loglik.n_rows == 3000 && loglik.n_cols == tt);
+
+    bayests::VarNormalWishartDraws without = draws;
+    without.constraints_inv.reset();
+    bool refused = false;
+    try
+    {
+        bayests::VarNormalWishartSampler{}.log_likelihood(input, without);
+    }
+    catch (const std::invalid_argument &)
+    {
+        refused = true;
+    }
+    check("and is refused without them", refused);
+}
+
 void test_refusals()
 {
     std::printf("what is refused\n");
@@ -554,8 +631,23 @@ void test_refusals()
     soft.add(0.1, {{3, 2}}, 1.0, 1);
     input = input_for(s.y, s.lag0, 10, 0);
     input.train.constraints = soft.build();
-    check("a soft row is refused: its variance is not drawn yet",
-          validate_refuses(input, "hard constraints only"));
+    check("a soft row without a prior on its precision is refused",
+          validate_refuses(input, "one value per group"));
+    input.constraints_prior.shape = {2.0};
+    input.constraints_prior.rate = {0.5};
+    input.initial.constraints_inv = {1.0};
+    check("and with one it is read", passes(input));
+    input.constraints_prior.rate = {0.0};
+    check("a rate of zero is refused", validate_refuses(input, "positive"));
+
+    input = input_for(s.y, s.lag0, 10, 0);
+    set_horizon(input, s.y, 2);
+    input.test.y = s.y.rows(0, 1);
+    RowBuilder soft_test;
+    soft_test.add(0.1, {{0, 0}}, 1.0, 1);
+    input.test.constraints = soft_test.build();
+    check("a soft row in what the horizon realised is refused",
+          validate_refuses(input, "hard constraints only in /data/test"));
 
     RowBuilder soft_scenario;
     soft_scenario.add(0.1, {{0, 0}}, 1.0, 1);
@@ -600,6 +692,7 @@ int main()
         test_forecast_starts_from_the_completed_panel();
         test_scores();
         test_conditional_forecast();
+        test_soft_rows();
         test_refusals();
     }
     catch (const std::exception &e)

@@ -740,6 +740,8 @@ void VarNormalWishartInput::validate() const
     core::require_completion_spec(spec, train, forecast, test, "VarNormalWishart");
     core::require_supported_constraints(spec, train, test, true, "VarNormalWishart");
     core::require_supported_forecast_constraints(spec, forecast, true, "VarNormalWishart");
+    core::require_soft_prior(train.constraints, constraints_prior, initial.constraints_inv,
+                             "VarNormalWishart");
     // Before anything that would read a value: a NaN or an infinity here would
     // otherwise surface as a failed factorisation, or as NaN in the output.
     core::require_finite_observations(train, forecast, test);

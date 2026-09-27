@@ -5,8 +5,10 @@
 #define BAYESTS_CORE_MODELS_COMPLETION_SUPPORT_H
 
 #include "bayests/data.h"
+#include "bayests/priors.h"
 #include "bayests/spec.h"
 #include "core/algorithms/constrained_var_path.h"
+#include "core/models/model_support.h"
 
 #include <stdexcept>
 #include <string>
@@ -135,13 +137,97 @@ inline Constraints pin_every_entry(const arma::mat &realised)
     return c;
 }
 
+/// How many soft groups a constraint set has: its largest group, soft groups
+/// being numbered 1..G with none left out.
+inline arma::uword soft_groups(const Constraints &c)
+{
+    return c.group.n_elem > 0 ? c.group.max() : 0;
+}
+
+/// The error variances the completion step is handed, one per soft group, from
+/// their precisions.
+inline arma::vec soft_variances(const arma::vec &precision)
+{
+    return precision.n_elem > 0 ? arma::vec(1.0 / precision) : arma::vec();
+}
+
+/// One Gibbs draw of each soft group's error precision given the completed
+/// panel, k x tt: a gamma prior is conjugate, so group g's posterior has shape
+/// shape_g + n_g / 2 and rate rate_g + (sum of its rows' squared errors) / 2,
+/// the error of a row being its value less what the panel says of it. Hard rows
+/// hold exactly and contribute nothing.
+///
+/// Consumes one gamma draw per group and none where no row is soft, so a set of
+/// hard rows moves no random number.
+inline void draw_soft_precisions(arma::vec &precision, const Constraints &c, const arma::mat &path,
+                                 const GammaPrior &prior)
+{
+    const arma::uword groups = soft_groups(c);
+    if (groups == 0)
+    {
+        return;
+    }
+
+    arma::vec fitted(c.value.n_elem, arma::fill::zeros);
+    for (arma::uword e = 0; e < c.row.n_elem; e++)
+    {
+        fitted(c.row(e)) += c.weight(e) * path(c.variable(e), c.period(e));
+    }
+    arma::vec sse(groups, arma::fill::zeros);
+    arma::vec count(groups, arma::fill::zeros);
+    for (arma::uword r = 0; r < c.value.n_elem; r++)
+    {
+        if (c.group(r) > 0)
+        {
+            const double error = c.value(r) - fitted(r);
+            sse(c.group(r) - 1) += error * error;
+            count(c.group(r) - 1) += 1.0;
+        }
+    }
+    for (arma::uword g = 0; g < groups; g++)
+    {
+        precision(g) = arma::randg<double>(arma::distr_param(
+            prior.shape(g) + 0.5 * count(g), 1.0 / (prior.rate(g) + 0.5 * sse(g))));
+    }
+}
+
+/// Refuses soft rows in the training set without a prior and a start for their
+/// precisions: one shape, one rate and one initial precision per group, each
+/// positive and finite. Nothing is asked of a set without soft rows.
+inline void require_soft_prior(const Constraints &c, const GammaPrior &prior,
+                               const arma::vec &initial, const char *algorithm)
+{
+    const arma::uword groups = soft_groups(c);
+    if (groups == 0)
+    {
+        return;
+    }
+    const auto positive = [&](const arma::vec &v, const std::string &what) {
+        if (v.n_elem != groups)
+        {
+            throw std::invalid_argument(
+                std::string(algorithm) + ": /data/train/constraints has " + std::to_string(groups) +
+                " soft groups, so " + what + " needs one value per group, got " +
+                std::to_string(v.n_elem));
+        }
+        require_finite(v, what);
+        if (!(v.min() > 0.0))
+        {
+            throw std::invalid_argument(what + " must be positive in every group");
+        }
+    };
+    positive(prior.shape, "/priors/constraints/shape");
+    positive(prior.rate, "/priors/constraints/rate");
+    positive(initial, "/initial/constraints_inv");
+}
+
 /// The combinations a VAR sampler reading constraints refuses, beside the
 /// checks require_supported_constraints() has already made on the sets
 /// themselves. `forecast` carries the scenario, `test` what the horizon
 /// realised.
 ///
-/// Each is refused rather than approximated. Soft rows need their variances
-/// drawn, which is a block of its own still to come. A score of a conditional
+/// Each is refused rather than approximated. Soft rows on the horizon would
+/// need a variance nothing draws or gives. A score of a conditional
 /// forecast is refused for what it would mean: a score is the density of what
 /// the horizon realised under the model's own forecast, and a scenario replaces
 /// that forecast with another. A structural form or an i.i.d. block rearranges
@@ -155,16 +241,18 @@ inline void require_completion_spec(const VarSpec &spec, const TrainData &train,
         return;
     }
 
+    // Soft rows in the sample have their variances drawn. On the horizon nothing
+    // would inform one: a realised value or a scenario with an error would need
+    // the error's variance given, which the file has no place for yet.
     const std::string name(algorithm);
     const auto require_hard = [&](const Constraints &c, const char *where) {
-        if (c.group.n_elem > 0 && c.group.max() > 0)
+        if (soft_groups(c) > 0)
         {
             throw std::invalid_argument(
-                name + " reads hard constraints only so far: " + where +
-                "/group is above zero somewhere, and the variance of a soft row is not drawn yet");
+                name + " reads hard constraints only in " + where + ": its group is above zero "
+                "somewhere, and nothing draws or gives the variance of a soft row there");
         }
     };
-    require_hard(train.constraints, "/data/train/constraints");
     require_hard(test.constraints, "/data/test/constraints");
     require_hard(forecast.constraints, "/data/forecast/constraints");
 

@@ -175,6 +175,16 @@ VarNormalWishartDraws VarNormalWishartSampler::draw_coefficients(const VarNormal
         out.y = arma::mat(k * tt, iterations);
     }
 
+    // The error precision of each soft group, drawn after every completion from
+    // what the completed panel leaves its rows to explain. None where every row
+    // is hard, and then nothing here consumes a random number.
+    const arma::uword soft = complete ? core::soft_groups(input.train.constraints) : 0;
+    arma::vec constraints_inv = soft > 0 ? input.initial.constraints_inv : arma::vec();
+    if (soft > 0)
+    {
+        out.constraints_inv = arma::mat(soft, iterations);
+    }
+
     // Start simulation
     for (int draw = 0; draw < draws; draw++)
     {
@@ -193,7 +203,9 @@ VarNormalWishartDraws VarNormalWishartSampler::draw_coefficients(const VarNormal
                 use_a ? arma::mat(arma::reshape(a, k, n_x)) : arma::mat(k, 0);
             const arma::mat path = core::draw_constrained_var_path(
                 core::var_path_prior(a_matrix, x_completion, presample, covariance, p),
-                input.train.constraints, arma::vec());
+                input.train.constraints, core::soft_variances(constraints_inv));
+            core::draw_soft_precisions(constraints_inv, input.train.constraints, path,
+                                       input.constraints_prior);
             y = arma::vectorise(path);
             if (use_a)
             {
@@ -273,6 +285,10 @@ VarNormalWishartDraws VarNormalWishartSampler::draw_coefficients(const VarNormal
             if (complete)
             {
                 out.y.col(draw_pos) = y;
+            }
+            if (soft > 0)
+            {
+                out.constraints_inv.col(draw_pos) = constraints_inv;
             }
         }
     }
@@ -494,12 +510,22 @@ arma::mat VarNormalWishartSampler::log_likelihood(const VarNormalWishartInput &i
                                   : arma::mat(static_cast<arma::uword>(tt), 0);
         const arma::mat presample = core::lag_presample(x, kk, p);
         const arma::uword n_x = x.n_cols;
+        const arma::uword soft = core::soft_groups(input.train.constraints);
+        if (soft > 0 && (!coefficients.has_constraints_inv() ||
+                         coefficients.constraints_inv.n_rows != soft))
+        {
+            throw std::invalid_argument(
+                "/data/train/constraints has " + std::to_string(soft) + " soft groups, and the "
+                "density of what they observed needs their precisions: "
+                "/posterior/constraints_inv/coeffs is missing or not one row per group");
+        }
         for (arma::uword draw = 0; draw < draws; draw++)
         {
             loglik.row(draw) = arma::trans(core::constrained_var_path_log_density(
                 core::var_path_prior(coefficient_matrix(coefficients, draw, kk, n_x), x, presample,
                                      error_covariance(coefficients, draw, kk), p),
-                input.train.constraints, arma::vec()));
+                input.train.constraints,
+                soft > 0 ? core::soft_variances(coefficients.constraints_inv.col(draw)) : arma::vec()));
         }
         return loglik;
     }

@@ -29,6 +29,31 @@ heading, and move down into a version section when one is cut.
 
 ### Added
 
+- **`VarNormalWishart` reads soft rows in `/data/train/constraints`** — an
+  observation with an error: a series read with measurement noise, a quarterly
+  figure that almost holds (Barbaglia et al. 2025's inter-temporal
+  restriction), a revised vintage. Each soft group's error precision has a
+  gamma prior, `/priors/constraints/shape` and `rate`, one element per group,
+  and starts at `/initial/constraints_inv`; after every completion of the panel
+  it is drawn from what the completed panel leaves its rows to explain
+  (`draw_soft_precisions()` in `completion_support.h`, conjugate: shape
+  `+ n_g/2`, rate `+ SSE_g/2`). The draws are written as
+  `/posterior/constraints_inv/coeffs`, one row per group, and the log
+  likelihood reads them: the density of what a soft row observed depends on
+  its error. `require_soft_prior()` refuses soft rows without a prior and a
+  start of one positive value per group; soft rows in `/data/test` or
+  `/data/forecast` stay refused, nothing drawing or giving their variance.
+
+  `unit.var_mixed_frequency` checks, on a simulated monthly VAR one of whose
+  series is read with an error of variance 0.2 every month, that the variance
+  is recovered (posterior mean 0.206, 0.06 posterior sds off) and the posterior
+  mean of the series beats the readings (RMSE 0.330 against 0.440), that the
+  log likelihood refuses draws without the precisions, and the new refusals.
+  New fixture `VarNormalWishart-mixed-soft` from `make_model_fixture --mixed
+  --soft`. *Draws are unchanged* for every file without soft rows: the
+  fingerprints of the 127 original and 133 earlier fixtures agree, with
+  `/posterior/constraints_inv/coeffs absent` set aside like the line before it.
+
 - **`VarNormalWishart` scores from a panel not observed whole, scores against a
   horizon realised in part, and forecasts under a scenario.** A new
   `/data/forecast/constraints`, in the six-dataset form of the other two
@@ -48,8 +73,9 @@ heading, and move down into a version section when one is cut.
   same either way, to rounding. `validate_constraints()` takes the panel's
   shape explicitly and checks pins against values only where there are some;
   `require_supported_forecast_constraints()` refuses a scenario on the sixteen
-  other algorithms with forecast data. Still refused, by name: soft rows in any
-  of the three groups, a scenario beside a score — a score measures the
+  other algorithms with forecast data. Still refused, by name: soft rows in
+  `/data/test` and `/data/forecast` (in the sample the entry above lifts it),
+  a scenario beside a score — a score measures the
   model's own forecast, which a scenario replaces — a scenario without `h` or
   past it, a structural form and `n_iid`.
 
@@ -86,9 +112,9 @@ heading, and move down into a version section when one is cut.
   The `p` periods before the sample are conditioned on, as a VAR conditions on
   its first observations, from the first row of `/data/train/z`: a host fills
   them for a series it did not observe then. Refused for now, each by name
-  (`require_completion_spec()`): a soft row, whose variance is not drawn yet; a
-  structural form and `n_iid`. (A score beside training constraints was refused
-  here too until the entry above lifted it.) Every other algorithm still
+  (`require_completion_spec()`): a structural form and `n_iid`. (A soft row and a
+  score beside training constraints were refused here too, until the entries
+  above lifted them.) Every other algorithm still
   refuses constraints outright.
 
   `unit.var_mixed_frequency` checks that a panel pinned whole gives draws

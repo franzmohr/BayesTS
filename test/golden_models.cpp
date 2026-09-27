@@ -96,6 +96,8 @@ constexpr const char *kOutputs[] = {
     // The panel as each draw completed it, where it was not observed whole:
     // part of the posterior, and what a forecast from such a panel starts from.
     "/posterior/y/coeffs",
+    // The error precision of each soft group of /data/train/constraints.
+    "/posterior/constraints_inv/coeffs",
     "/posterior/v_sigma_inv/coeffs",
     "/posterior/psi/coeffs",
     "/posterior/psi/lambda",
