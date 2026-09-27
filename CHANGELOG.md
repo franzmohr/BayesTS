@@ -29,6 +29,43 @@ heading, and move down into a version section when one is cut.
 
 ### Added
 
+- **All six Gaussian VARs estimate from a panel not observed whole.**
+  `VarNormalGamma` reads the three constraint groups as `VarNormalWishart` does
+  — estimation, soft rows, scores from a completed panel or against a horizon
+  realised in part, scenarios — conditioning on the whole error precision,
+  covariance block included. `VarNormalStochvol`, `VarTvpWishart`,
+  `VarTvpGamma` and `VarTvpStochvol` read `/data/train/constraints`, soft rows
+  included: each sweep completes the panel under the error covariance of every
+  period and, for the TVP models, the coefficient path, and the log likelihood
+  is the density of what was observed under both. Their forecasts start from
+  each draw's completed panel. A score beside training constraints, a horizon
+  realised in part and a scenario stay refused for these four, by name — their
+  forecasts carry states forward, which the completion step over the horizon
+  does not yet; `require_completion_spec()` takes a flag for it.
+
+  The sampler side of the completion step moves into `completion_support.h`:
+  `PanelCompletion` keeps the regressors, presample and soft precisions between
+  sweeps; `var_path_prior_from()` takes a coefficient path as well as one set,
+  and a covariance per period; templates serve the log likelihood, the
+  forecast's start, a scenario and a score from the draws. `VarNormalWishart`
+  uses them with its draws unchanged. `read_constraint_prior()`,
+  `read_completion_draws()` and `write_completion_draws()` in
+  `model_io_common.cpp` do the same for the readers. Fixed on the way, before
+  it reached a sampler: `var_path_prior()` read `k` off the covariance, which is
+  `tt k` rows when it moves.
+
+  The new `check.pinned_panel` runs `bayests coefficients` and `loglik` on a
+  fixture of each of the six and on the same fixture pinned whole: every draw
+  has to match bit for bit, the log likelihood to 1e-9, and the completed panel
+  has to be the data. `unit.var_mixed_frequency` does the same for
+  `VarNormalGamma` in memory, with a quarterly series whose averages hold in
+  every draw. New fixtures `VarNormalGamma-mixed-covar`, `-mixed-soft-score`,
+  `-scenario-covar`, `VarNormalStochvol-mixed-covar`, `VarTvpWishart-mixed`,
+  `VarTvpGamma-mixed-soft-covar` and `VarTvpStochvol-missing-covar`.
+  *Draws are unchanged* for every file without constraints, and for the
+  `VarNormalWishart` fixtures with them through the refactor: the fingerprints
+  of all 137 earlier fixtures agree.
+
 - **`VarNormalWishart` reads soft rows in `/data/train/constraints`** — an
   observation with an error: a series read with measurement noise, a quarterly
   figure that almost holds (Barbaglia et al. 2025's inter-temporal

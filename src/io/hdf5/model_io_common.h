@@ -112,6 +112,18 @@ bool read_constraints(const ModelFile &file, const std::string &group, Constrain
 /// forecast reported as if it had been conditioned.
 void refuse_constraints(const ModelFile &file, const std::string &group, const char *algorithm);
 
+/// The gamma prior on each soft group's error precision, /priors/constraints,
+/// and its start, /initial/constraints_inv, each where the file has it.
+void read_constraint_prior(const ModelFile &file, GammaPrior &prior, arma::vec &initial);
+
+/// What a chain from a panel not observed whole keeps beside its draws: the
+/// completed panels, /posterior/y/coeffs, and the soft precisions,
+/// /posterior/constraints_inv/coeffs -- read where present, written where not
+/// empty.
+void read_completion_draws(const ModelFile &file, arma::mat &y, arma::mat &constraints_inv);
+void write_completion_draws(const ModelFile &file, const arma::mat &y,
+                            const arma::mat &constraints_inv);
+
 void ensure_group(const ModelFile &file, const std::string &group);
 
 /// The /model attributes that describe the shape of the model, whichever model

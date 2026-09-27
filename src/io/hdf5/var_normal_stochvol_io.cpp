@@ -96,6 +96,7 @@ VarNormalStochvolInput read_input(const ModelFile &file)
     read_mat_if_present(file, "/initial/h", input.initial.h);
     read_vec_if_present(file, "/initial/h_init", input.initial.h_init);
 
+    read_constraint_prior(file, input.constraints_prior, input.initial.constraints_inv);
     return input;
 }
 
@@ -109,6 +110,7 @@ VarNormalStochvolDraws read_coefficients(const ModelFile &file)
         draws.u_sigma_inv = read_draws(file, "/posterior/u_sigma_inv/coeffs");
     }
 
+    read_completion_draws(file, draws.y, draws.constraints_inv);
     return draws;
 }
 
@@ -140,6 +142,7 @@ VarNormalStochvolDraws read_forecast_coefficients(const ModelFile &file,
         read_draws_if_present(file, "/posterior/u_sigma_inv/sigma", draws.h_sigma);
     }
 
+    read_completion_draws(file, draws.y, draws.constraints_inv);
     return draws;
 }
 
@@ -165,6 +168,7 @@ void write_coefficients(const ModelFile &file, const VarNormalStochvolDraws &dra
     }
     write_draws(file, "/posterior/u_omega_inv/coeffs", draws.u_omega_inv);
     write_draws(file, "/posterior/u_sigma_inv/coeffs", draws.u_sigma_inv);
+    write_completion_draws(file, draws.y, draws.constraints_inv);
     write_draws(file, "/posterior/u_sigma_inv/sigma", draws.h_sigma);
 }
 

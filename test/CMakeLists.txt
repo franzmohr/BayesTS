@@ -518,6 +518,15 @@ bayests_add_model_fixture(VarNormalWishart-mixed-soft VarNormalWishart none 0 0 
 bayests_add_model_fixture(VarNormalGamma-mixed-covar      VarNormalGamma none 1 0 4 --mixed)
 bayests_add_model_fixture(VarNormalGamma-mixed-soft-score VarNormalGamma none 1 0 4 --mixed --soft --score)
 bayests_add_model_fixture(VarNormalGamma-scenario-covar   VarNormalGamma none 1 0 4 --scenario)
+
+# The stochastic volatility VAR and the three time-varying ones: the same
+# completion step, handed a covariance per period and, for the TVP models, a
+# coefficient path. They estimate and forecast from an incomplete panel; a score
+# and a scenario are refused for them for now.
+bayests_add_model_fixture(VarNormalStochvol-mixed-covar VarNormalStochvol none 1 0 4 --mixed)
+bayests_add_model_fixture(VarTvpWishart-mixed           VarTvpWishart     none 0 0 4 --mixed)
+bayests_add_model_fixture(VarTvpGamma-mixed-soft-covar  VarTvpGamma       none 1 0 4 --mixed --soft)
+bayests_add_model_fixture(VarTvpStochvol-missing-covar  VarTvpStochvol    none 1 0 4 --missing)
 bayests_add_model_fixture(VarNormalGamma-nofcst     VarNormalGamma     none 0 0 0)
 bayests_add_model_fixture(VarNormalGamma-ssvs-covar VarNormalGamma     ssvs 1 0 4)
 bayests_add_model_fixture(VarNormalGamma-bvs-covar  VarNormalGamma     bvs  1 0 4)
@@ -902,6 +911,17 @@ if(NOT BAYESTS_TEST_PYTHON STREQUAL "OFF")
                     "$<TARGET_FILE:bayests>" "${BAYESTS_FIXTURE_DIR}"
                     "${CMAKE_CURRENT_BINARY_DIR}/check_constraints")
         set_tests_properties(check.constraints PROPERTIES
+            FIXTURES_REQUIRED "${_bayests_all_fixtures}"
+            ENVIRONMENT "${_bayests_pin_threads}"
+            ENVIRONMENT_MODIFICATION "${_bayests_test_env_mod}")
+
+        # A panel pinned whole is estimated as the complete panel, bit for bit, by
+        # every algorithm that completes one -- through its own reader and writer.
+        add_test(NAME check.pinned_panel
+            COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/check_pinned_panel.py"
+                    "$<TARGET_FILE:bayests>" "${BAYESTS_FIXTURE_DIR}"
+                    "${CMAKE_CURRENT_BINARY_DIR}/check_pinned_panel")
+        set_tests_properties(check.pinned_panel PROPERTIES
             FIXTURES_REQUIRED "${_bayests_all_fixtures}"
             ENVIRONMENT "${_bayests_pin_threads}"
             ENVIRONMENT_MODIFICATION "${_bayests_test_env_mod}")

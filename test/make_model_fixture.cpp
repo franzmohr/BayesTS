@@ -2286,12 +2286,17 @@ int main(int argc, char *argv[])
         std::cerr << "Unknown variable selection scheme: " << varsel << '\n';
         return 2;
     }
-    const bool completes = model == "VarNormalWishart" || model == "VarNormalGamma";
-    if ((mixed || missing) && (!completes || mixed == missing || iid || structural))
+    const bool scores_panels = model == "VarNormalWishart" || model == "VarNormalGamma";
+    const bool completes = scores_panels || model == "VarNormalStochvol" ||
+                           model == "VarTvpWishart" || model == "VarTvpGamma" ||
+                           model == "VarTvpStochvol";
+    if ((mixed || missing) && (!completes || mixed == missing || iid || structural ||
+                               (score && !scores_panels)))
     {
-        std::cerr << "--mixed and --missing are written on VarNormalWishart and VarNormalGamma "
-                     "only, one at a time, and without --iid or a structural form: the "
-                     "combinations require_completion_spec() refuses\n";
+        std::cerr << "--mixed and --missing are written on the six Gaussian VARs only, one at a "
+                     "time, without --iid or a structural form, and with --score only on "
+                     "VarNormalWishart and VarNormalGamma: the combinations "
+                     "require_completion_spec() refuses\n";
         return 2;
     }
     if (soft && !mixed)
@@ -2300,7 +2305,7 @@ int main(int argc, char *argv[])
         return 2;
     }
     if ((partial_test || scenario) &&
-        (!completes || iid || structural || h < 3 || (partial_test && !score) ||
+        (!scores_panels || iid || structural || h < 3 || (partial_test && !score) ||
          (scenario && score)))
     {
         std::cerr << "--partial-test and --scenario are written on VarNormalWishart and "

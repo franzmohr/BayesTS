@@ -80,6 +80,7 @@ VarTvpGammaInput read_input(const ModelFile &file)
     input.u_sigma_prior = read_gamma_prior(file, "/priors/u_sigma");
     read_mat_if_present(file, "/initial/u_omega_inv", input.initial.u_omega_inv);
 
+    read_constraint_prior(file, input.constraints_prior, input.initial.constraints_inv);
     return input;
 }
 
@@ -96,6 +97,7 @@ VarTvpGammaDraws read_loglik_coefficients(const ModelFile &file,
     // the log likelihood scores every period under its own.
     draws.u_sigma_inv = read_precision(file, input.spec, input.train.periods(input.spec.k), false);
 
+    read_completion_draws(file, draws.y, draws.constraints_inv);
     return draws;
 }
 
@@ -134,6 +136,7 @@ VarTvpGammaDraws read_forecast_coefficients(const ModelFile &file,
         }
     }
 
+    read_completion_draws(file, draws.y, draws.constraints_inv);
     return draws;
 }
 
@@ -165,6 +168,7 @@ void write_coefficients(const ModelFile &file, const VarTvpGammaDraws &draws)
 
     write_draws(file, "/posterior/u_omega_inv/coeffs", draws.u_omega_inv);
     write_draws(file, "/posterior/u_sigma_inv/coeffs", draws.u_sigma_inv);
+    write_completion_draws(file, draws.y, draws.constraints_inv);
 }
 
 } // namespace bayests::hdf5_io::var_tvp_gamma

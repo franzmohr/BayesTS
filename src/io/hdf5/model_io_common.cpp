@@ -297,6 +297,40 @@ bool read_constraints(const ModelFile &file, const std::string &group, Constrain
     return true;
 }
 
+void read_constraint_prior(const ModelFile &file, GammaPrior &prior, arma::vec &initial)
+{
+    if (file.exist("/priors/constraints"))
+    {
+        prior = read_gamma_prior(file, "/priors/constraints");
+    }
+    read_vec_if_present(file, "/initial/constraints_inv", initial);
+}
+
+void read_completion_draws(const ModelFile &file, arma::mat &y, arma::mat &constraints_inv)
+{
+    if (dataset_has_data(file, "/posterior/y/coeffs"))
+    {
+        y = read_draws(file, "/posterior/y/coeffs");
+    }
+    if (dataset_has_data(file, "/posterior/constraints_inv/coeffs"))
+    {
+        constraints_inv = read_draws(file, "/posterior/constraints_inv/coeffs");
+    }
+}
+
+void write_completion_draws(const ModelFile &file, const arma::mat &y,
+                            const arma::mat &constraints_inv)
+{
+    if (y.n_elem > 0)
+    {
+        write_draws(file, "/posterior/y/coeffs", y);
+    }
+    if (constraints_inv.n_elem > 0)
+    {
+        write_draws(file, "/posterior/constraints_inv/coeffs", constraints_inv);
+    }
+}
+
 void refuse_constraints(const ModelFile &file, const std::string &group, const char *algorithm)
 {
     if (file.exist(group))

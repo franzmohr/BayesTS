@@ -114,9 +114,19 @@ struct VarNormalStochvolDraws
     /// it is drawn under.
     arma::mat h_sigma;
 
+    /// (k * tt) x iterations, the panel as each draw completed it, where it was
+    /// not observed whole; see VarNormalWishartDraws::y.
+    arma::mat y;
+
+    /// G x iterations, the error precision of each soft group of the training
+    /// constraints; see VarNormalWishartDraws::constraints_inv.
+    arma::mat constraints_inv;
+
     arma::uword iterations() const { return u_sigma_inv.n_cols; }
     bool has_a() const { return a.n_elem > 0; }
     bool has_psi() const { return psi.n_elem > 0; }
+    bool has_y() const { return y.n_elem > 0; }
+    bool has_constraints_inv() const { return constraints_inv.n_elem > 0; }
 };
 
 /// Posterior draws of a VAR estimated at a conditional quantile.
@@ -196,9 +206,19 @@ struct VarTvpGammaDraws
     arma::mat u_omega_inv;
     arma::mat u_sigma_inv;
 
+    /// (k * tt) x iterations, the panel as each draw completed it, where it was
+    /// not observed whole; see VarNormalWishartDraws::y.
+    arma::mat y;
+
+    /// G x iterations, the error precision of each soft group of the training
+    /// constraints; see VarNormalWishartDraws::constraints_inv.
+    arma::mat constraints_inv;
+
     arma::uword iterations() const { return u_sigma_inv.n_cols; }
     bool has_a() const { return a.n_elem > 0; }
     bool has_psi() const { return psi.n_elem > 0; }
+    bool has_y() const { return y.n_elem > 0; }
+    bool has_constraints_inv() const { return constraints_inv.n_elem > 0; }
 };
 
 /// Posterior draws of a VAR whose coefficients follow a random walk.
@@ -213,8 +233,18 @@ struct VarTvpWishartDraws
     NoncentredStateDraws a_noncentred;
     arma::mat u_sigma_inv;
 
+    /// (k * tt) x iterations, the panel as each draw completed it, where it was
+    /// not observed whole; see VarNormalWishartDraws::y.
+    arma::mat y;
+
+    /// G x iterations, the error precision of each soft group of the training
+    /// constraints; see VarNormalWishartDraws::constraints_inv.
+    arma::mat constraints_inv;
+
     arma::uword iterations() const { return u_sigma_inv.n_cols; }
     bool has_a() const { return a.n_elem > 0; }
+    bool has_y() const { return y.n_elem > 0; }
+    bool has_constraints_inv() const { return constraints_inv.n_elem > 0; }
 };
 
 /// Posterior draws of a VAR whose coefficients follow a random walk and whose
@@ -247,9 +277,19 @@ struct VarTvpStochvolDraws
     arma::mat h_sigma;
     NoncentredStateDraws h_noncentred;
 
+    /// (k * tt) x iterations, the panel as each draw completed it, where it was
+    /// not observed whole; see VarNormalWishartDraws::y.
+    arma::mat y;
+
+    /// G x iterations, the error precision of each soft group of the training
+    /// constraints; see VarNormalWishartDraws::constraints_inv.
+    arma::mat constraints_inv;
+
     arma::uword iterations() const { return u_sigma_inv.n_cols; }
     bool has_a() const { return a.n_elem > 0; }
     bool has_psi() const { return psi.n_elem > 0; }
+    bool has_y() const { return y.n_elem > 0; }
+    bool has_constraints_inv() const { return constraints_inv.n_elem > 0; }
 };
 
 

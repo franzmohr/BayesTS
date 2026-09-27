@@ -834,8 +834,14 @@ void VarNormalGammaInput::validate() const
 void VarNormalStochvolInput::validate() const
 {
     core::require_supported_iid_block(spec, true, "VarNormalStochvol");
-    core::require_supported_constraints(spec, train, test, false, "VarNormalStochvol");
+    // A panel not observed whole is estimated; a score from one, a horizon
+    // realised in part and a scenario are refused, the forecast carrying
+    // states forward that the completion step over the horizon does not yet.
     core::require_supported_forecast_constraints(spec, forecast, false, "VarNormalStochvol");
+    core::require_completion_spec(spec, train, forecast, test, "VarNormalStochvol", false);
+    core::require_supported_constraints(spec, train, test, true, "VarNormalStochvol");
+    core::require_soft_prior(train.constraints, constraints_prior, initial.constraints_inv,
+                             "VarNormalStochvol");
     // Before anything that would read a value: a NaN or an infinity here would
     // otherwise surface as a failed factorisation, or as NaN in the output.
     core::require_finite_observations(train, forecast, test);
@@ -973,8 +979,14 @@ void VarTvpAldInput::validate() const
 void VarTvpGammaInput::validate() const
 {
     core::require_supported_iid_block(spec, false, "VarTvpGamma");
-    core::require_supported_constraints(spec, train, test, false, "VarTvpGamma");
+    // A panel not observed whole is estimated; a score from one, a horizon
+    // realised in part and a scenario are refused, the forecast carrying
+    // states forward that the completion step over the horizon does not yet.
     core::require_supported_forecast_constraints(spec, forecast, false, "VarTvpGamma");
+    core::require_completion_spec(spec, train, forecast, test, "VarTvpGamma", false);
+    core::require_supported_constraints(spec, train, test, true, "VarTvpGamma");
+    core::require_soft_prior(train.constraints, constraints_prior, initial.constraints_inv,
+                             "VarTvpGamma");
     // Before anything that would read a value: a NaN or an infinity here would
     // otherwise surface as a failed factorisation, or as NaN in the output.
     core::require_finite_observations(train, forecast, test);
@@ -1032,8 +1044,14 @@ void VarTvpGammaInput::validate() const
 void VarTvpWishartInput::validate() const
 {
     core::require_supported_iid_block(spec, false, "VarTvpWishart");
-    core::require_supported_constraints(spec, train, test, false, "VarTvpWishart");
+    // A panel not observed whole is estimated; a score from one, a horizon
+    // realised in part and a scenario are refused, the forecast carrying
+    // states forward that the completion step over the horizon does not yet.
     core::require_supported_forecast_constraints(spec, forecast, false, "VarTvpWishart");
+    core::require_completion_spec(spec, train, forecast, test, "VarTvpWishart", false);
+    core::require_supported_constraints(spec, train, test, true, "VarTvpWishart");
+    core::require_soft_prior(train.constraints, constraints_prior, initial.constraints_inv,
+                             "VarTvpWishart");
     // Before anything that would read a value: a NaN or an infinity here would
     // otherwise surface as a failed factorisation, or as NaN in the output.
     core::require_finite_observations(train, forecast, test);
@@ -1085,8 +1103,14 @@ void VarTvpWishartInput::validate() const
 void VarTvpStochvolInput::validate() const
 {
     core::require_supported_iid_block(spec, false, "VarTvpStochvol");
-    core::require_supported_constraints(spec, train, test, false, "VarTvpStochvol");
+    // A panel not observed whole is estimated; a score from one, a horizon
+    // realised in part and a scenario are refused, the forecast carrying
+    // states forward that the completion step over the horizon does not yet.
     core::require_supported_forecast_constraints(spec, forecast, false, "VarTvpStochvol");
+    core::require_completion_spec(spec, train, forecast, test, "VarTvpStochvol", false);
+    core::require_supported_constraints(spec, train, test, true, "VarTvpStochvol");
+    core::require_soft_prior(train.constraints, constraints_prior, initial.constraints_inv,
+                             "VarTvpStochvol");
     // Before anything that would read a value: a NaN or an infinity here would
     // otherwise surface as a failed factorisation, or as NaN in the output.
     core::require_finite_observations(train, forecast, test);

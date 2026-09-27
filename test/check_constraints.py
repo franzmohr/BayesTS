@@ -36,6 +36,11 @@ import numpy as np
 # The algorithms that read /data/train/constraints.
 READS = {"VarNormalWishart", "VarNormalGamma"}
 
+# The algorithms that read a training set but not yet a test set or a scenario:
+# their forecasts carry states forward. A training pin passes; the other two are
+# refused, by a message naming the algorithm and the group.
+READS_TRAIN = {"VarNormalStochvol", "VarTvpWishart", "VarTvpGamma", "VarTvpStochvol"}
+
 # The one row: a noisy reading of the first variable in the first period. Soft,
 # so that nothing about it depends on what the fixture's y holds.
 ROW = {
@@ -84,7 +89,7 @@ def main():
     failures = []
     for algorithm, plain in sorted(first.items()):
         for section in ("train", "test", "forecast"):
-            reads = algorithm in READS
+            reads = algorithm in READS or (algorithm in READS_TRAIN and section == "train")
             source = scored.get(algorithm, plain) if reads and section == "test" else plain
             target = os.path.join(scratch, "constraints.h5")
             shutil.copyfile(source, target)
@@ -118,8 +123,9 @@ def main():
                                     f"(from {os.path.basename(source)}): refused, exit "
                                     f"{run.returncode}; {line.strip()[:160]}")
                 continue
-            named = (f"{algorithm} does not read" in said
-                     and f"/data/{section}/constraints" in said)
+            named = ((f"{algorithm} does not read" in said
+                      or f"{algorithm} does not score or condition" in said)
+                     and f"/data/{section}" in said)
             if run.returncode != 1 or not named:
                 line = next((l for l in said.splitlines() if "rror" in l), "")
                 failures.append(f"{algorithm} /data/{section}/constraints "

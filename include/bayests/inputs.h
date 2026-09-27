@@ -113,6 +113,9 @@ struct VarNormalStochvolInitial
     /// prior -- the sampler redraws it every iteration -- even though the
     /// files keep it next to the prior it is drawn under.
     arma::vec h_sigma;
+    /// The error precision of each soft group of TrainData::constraints, group g
+    /// at position g - 1. Empty when no row is soft.
+    arma::vec constraints_inv;
 };
 
 /// VAR with a normal prior on the coefficients and stochastic volatility in
@@ -133,6 +136,11 @@ struct VarNormalStochvolInput
     VarSelPrior psi_varsel_prior;
 
     StochvolPrior u_sigma_prior;
+
+    /// A gamma prior on the error precision of each soft group of
+    /// TrainData::constraints, one shape and one rate per group. Unused when
+    /// no row is soft.
+    GammaPrior constraints_prior;
 
     VarNormalStochvolInitial initial;
 
@@ -223,6 +231,9 @@ struct VarTvpGammaInitial
     arma::vec psi_lambda;
 
     arma::mat u_omega_inv; ///< k x k.
+    /// The error precision of each soft group of TrainData::constraints, group g
+    /// at position g - 1. Empty when no row is soft.
+    arma::vec constraints_inv;
 };
 
 /// VAR whose coefficients follow a random walk, with independent gamma priors
@@ -247,6 +258,11 @@ struct VarTvpGammaInput
     /// the only place where one half of a model selects and the other does not.
     VarSelection psi_varsel = VarSelection::none;
 
+    /// A gamma prior on the error precision of each soft group of
+    /// TrainData::constraints, one shape and one rate per group. Unused when
+    /// no row is soft.
+    GammaPrior constraints_prior;
+
     VarTvpGammaInitial initial;
 
     bool use_a() const { return train.nparams() > 0; }
@@ -268,6 +284,9 @@ struct VarTvpWishartInitial
     arma::vec a_lambda;
 
     arma::mat u_sigma_inv;  ///< k x k error precision.
+    /// The error precision of each soft group of TrainData::constraints, group g
+    /// at position g - 1. Empty when no row is soft.
+    arma::vec constraints_inv;
 };
 
 /// VAR whose coefficients follow a random walk, with a Wishart prior on the
@@ -283,6 +302,11 @@ struct VarTvpWishartInput
     RandomWalkPrior a_prior;
     VarSelPrior a_varsel_prior;
     WishartPrior u_sigma_prior; 
+
+    /// A gamma prior on the error precision of each soft group of
+    /// TrainData::constraints, one shape and one rate per group. Unused when
+    /// no row is soft.
+    GammaPrior constraints_prior;
 
     VarTvpWishartInitial initial;
 
@@ -315,6 +339,9 @@ struct VarTvpStochvolInitial
     /// prior -- the sampler redraws it every iteration -- even though the
     /// files keep it next to the prior it is drawn under.
     arma::vec h_sigma;
+    /// The error precision of each soft group of TrainData::constraints, group g
+    /// at position g - 1. Empty when no row is soft.
+    arma::vec constraints_inv;
 };
 
 /// VAR whose coefficients follow a random walk, with stochastic volatility in
@@ -340,6 +367,11 @@ struct VarTvpStochvolInput
     /// from the model's, so it can differ from spec.varsel, exactly as in
     /// VarTvpGamma.
     VarSelection psi_varsel = VarSelection::none;
+
+    /// A gamma prior on the error precision of each soft group of
+    /// TrainData::constraints, one shape and one rate per group. Unused when
+    /// no row is soft.
+    GammaPrior constraints_prior;
 
     VarTvpStochvolInitial initial;
 

@@ -65,6 +65,7 @@ VarTvpWishartInput read_input(const ModelFile &file)
     read_mat_if_present(file, "/priors/u_sigma/scale", input.u_sigma_prior.scale);
     read_mat_if_present(file, "/initial/u_sigma_inv", input.initial.u_sigma_inv);
 
+    read_constraint_prior(file, input.constraints_prior, input.initial.constraints_inv);
     return input;
 }
 
@@ -86,6 +87,7 @@ VarTvpWishartDraws read_loglik_coefficients(const ModelFile &file,
         draws.u_sigma_inv = read_draws(file, "/posterior/u_sigma_inv/coeffs");
     }
 
+    read_completion_draws(file, draws.y, draws.constraints_inv);
     return draws;
 }
 
@@ -120,6 +122,7 @@ VarTvpWishartDraws read_forecast_coefficients(const ModelFile &file,
         read_draws_if_present(file, "/posterior/a/lambda", draws.a_lambda);
     }
 
+    read_completion_draws(file, draws.y, draws.constraints_inv);
     return draws;
 }
 
@@ -139,6 +142,7 @@ void write_coefficients(const ModelFile &file, const VarTvpWishartDraws &draws)
     }
 
     write_draws(file, "/posterior/u_sigma_inv/coeffs", draws.u_sigma_inv);
+    write_completion_draws(file, draws.y, draws.constraints_inv);
 }
 
 } // namespace bayests::hdf5_io::var_tvp_wishart

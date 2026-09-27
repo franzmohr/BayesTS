@@ -87,7 +87,9 @@ inline VarPathPrior var_path_prior(const arma::mat &a_matrix, const arma::mat &x
                                    const arma::mat &presample, const arma::mat &covariance,
                                    const arma::uword p)
 {
-    const arma::uword k = covariance.n_rows;
+    // Off the coefficients, not the covariance: a covariance that moves comes as
+    // one block per period, tt k rows of them.
+    const arma::uword k = a_matrix.n_rows;
     const arma::uword lag = k * p;
     const arma::uword n_x = a_matrix.n_cols;
 
@@ -445,19 +447,91 @@ arma::mat starting_panel(const Input &input, const Draws &draws, const arma::uwo
                                            : arma::mat(arma::reshape(draws.y.col(draw), k, tt));
 }
 
-/// Draw `draw`'s error covariance, from the precision the draws carry.
-template <typename Draws>
-arma::mat draw_covariance(const Draws &draws, const arma::uword draw, const arma::uword k,
-                          const char *algorithm)
+/// The error covariance of every period from a stack of k x k precision
+/// blocks, one per period: the stack the time-varying samplers carry.
+inline arma::mat stacked_covariance(const arma::mat &blocks, const arma::uword k,
+                                    const char *algorithm)
 {
-    return covariance_of(arma::reshape(draws.u_sigma_inv.col(draw), k, k), algorithm);
+    const arma::uword tt = blocks.n_rows / k;
+    arma::mat out(tt * k, k);
+    for (arma::uword t = 0; t < tt; t++)
+    {
+        out.rows(t * k, t * k + k - 1) =
+            covariance_of(arma::mat(blocks.rows(t * k, t * k + k - 1)), algorithm);
+    }
+    return out;
 }
 
-/// Draw `draw`'s coefficients as var_path_prior_from() takes them, or none.
-template <typename Draws>
-arma::mat draw_coefficients_column(const Draws &draws, const arma::uword draw, const bool use_a)
+/// The same from a block-diagonal precision, (tt k) x (tt k), the form the
+/// stochastic volatility sampler carries it in.
+inline arma::mat stacked_covariance(const arma::sp_mat &block_diagonal, const arma::uword k,
+                                    const char *algorithm)
 {
-    return use_a ? arma::mat(draws.a.col(draw)) : arma::mat();
+    const arma::uword tt = block_diagonal.n_rows / k;
+    arma::mat blocks(tt * k, k);
+    for (arma::uword t = 0; t < tt; t++)
+    {
+        blocks.rows(t * k, t * k + k - 1) =
+            arma::mat(block_diagonal.submat(t * k, t * k, t * k + k - 1, t * k + k - 1));
+    }
+    return stacked_covariance(blocks, k, algorithm);
+}
+
+/// Draw `draw`'s error covariance, from the precision the draws carry: one
+/// k x k block, or one per period, which is what precision_stride() tells
+/// apart.
+template <typename Draws>
+arma::mat draw_covariance(const Draws &draws, const arma::uword draw, const arma::uword k,
+                          const char *algorithm, const arma::uword tt = 1)
+{
+    const arma::uword stride =
+        precision_stride(draws.u_sigma_inv, static_cast<int>(k), static_cast<int>(tt));
+    if (stride == 0)
+    {
+        return covariance_of(arma::reshape(draws.u_sigma_inv.col(draw), k, k), algorithm);
+    }
+    arma::mat blocks(tt * k, k);
+    for (arma::uword t = 0; t < tt; t++)
+    {
+        blocks.rows(t * k, t * k + k - 1) =
+            arma::reshape(draws.u_sigma_inv.submat(t * stride, draw, t * stride + k * k - 1, draw),
+                          k, k);
+    }
+    return stacked_covariance(blocks, k, algorithm);
+}
+
+/// Draw `draw`'s coefficients as var_path_prior_from() takes them, or none: one
+/// column for a constant VAR, and a path, nparams x tt, where the column holds
+/// one set per period.
+template <typename Draws>
+arma::mat draw_coefficients_column(const Draws &draws, const arma::uword draw, const bool use_a,
+                                   const arma::uword nparams = 0, const arma::uword tt = 1)
+{
+    if (!use_a)
+    {
+        return arma::mat();
+    }
+    if (tt > 1 && nparams > 0 && draws.a.n_rows == nparams * tt)
+    {
+        return arma::reshape(draws.a.col(draw), nparams, tt);
+    }
+    return arma::mat(draws.a.col(draw));
+}
+
+/// Refuses a score where the sample was not observed whole, or the horizon was
+/// realised in part, for a model that does not score from a completed panel
+/// yet. A score runs without validate() in between, so this is where it is
+/// refused rather than computed from the placeholders.
+template <typename Input>
+void require_no_panel_score(const Input &input, const char *algorithm)
+{
+    if (!input.train.constraints.empty() || !input.test.constraints.empty())
+    {
+        throw std::invalid_argument(
+            std::string(algorithm) +
+            " does not score a forecast from a panel not observed whole, or against a horizon "
+            "realised in part, yet");
+    }
 }
 
 /// The pointwise log likelihood of a panel not observed whole, every draw: the
@@ -475,12 +549,14 @@ arma::mat observed_log_likelihood(const Input &input, const Draws &draws, const 
     require_soft_draws(input.train.constraints, draws.constraints_inv, n_draws);
     const bool soft = soft_groups(input.train.constraints) > 0;
 
+    const arma::uword nparams = input.train.z.n_cols;
     arma::mat loglik(n_draws, tt);
     for (arma::uword draw = 0; draw < n_draws; draw++)
     {
         loglik.row(draw) = observed_log_likelihood(
-            input.train.constraints, x, presample, draw_coefficients_column(draws, draw, use_a),
-            draw_covariance(draws, draw, k, algorithm),
+            input.train.constraints, x, presample,
+            draw_coefficients_column(draws, draw, use_a, nparams, tt),
+            draw_covariance(draws, draw, k, algorithm, tt),
             soft ? arma::vec(draws.constraints_inv.col(draw)) : arma::vec(), k, p);
     }
     return loglik;

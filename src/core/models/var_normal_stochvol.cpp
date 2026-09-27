@@ -6,6 +6,7 @@
 #include "core/algorithms/bvs.h"
 #include "core/algorithms/stochvol_ocsn_2007.h"
 #include "core/models/forecast_states.h"
+#include "core/models/completion_support.h"
 #include "core/models/model_support.h"
 #include "core/models/predictive_score.h"
 
@@ -47,7 +48,8 @@ VarNormalStochvolDraws VarNormalStochvolSampler::draw_coefficients(
     const int iterations = input.spec.iterations;
     const int draws = input.spec.draws();
 
-    const arma::vec y = stacked_response(input.train);
+    // Not const: where the panel is not observed whole, every sweep completes it.
+    arma::vec y = stacked_response(input.train);
     arma::mat z = input.train.z;
 
     const int nparams = static_cast<int>(z.n_cols);
@@ -166,10 +168,31 @@ VarNormalStochvolDraws VarNormalStochvolSampler::draw_coefficients(
     out.h_sigma = arma::mat(k, iterations);
 
     // Start simulation
+    // A panel not observed whole: each sweep starts by completing it given the
+    // current coefficients and error covariance -- one per period where they
+    // move -- and runs on the completed panel unchanged. See VarNormalWishart.
+    core::PanelCompletion completion(input.spec, input.train, use_a, input.constraints_prior,
+                                     input.initial.constraints_inv);
+    completion.allocate(out.y, out.constraints_inv, static_cast<arma::uword>(iterations),
+                        static_cast<arma::uword>(tt));
+
     for (int draw = 0; draw < draws; draw++)
     {
         reporter.check_interrupt();
         reporter.progress(draw + 1, draws);
+
+        if (completion.active())
+        {
+            y = arma::vectorise(completion.complete(a, core::stacked_covariance(u_sigma_inv_diag, static_cast<arma::uword>(k), "VarNormalStochvol")));
+            if (use_a)
+            {
+                z = completion.regressors();
+                if (a_bvs)
+                {
+                    z_bvs = z;
+                }
+            }
+        }
 
         if (use_a)
         {
@@ -280,6 +303,7 @@ VarNormalStochvolDraws VarNormalStochvolSampler::draw_coefficients(
         if (input.spec.keeps(draw))
         {
             const int draw_pos = input.spec.kept_index(draw);
+            completion.store(out.y, out.constraints_inv, static_cast<arma::uword>(draw_pos), y);
 
             if (use_a)
             {
@@ -396,6 +420,13 @@ ForecastDraws VarNormalStochvolSampler::forecast(const VarNormalStochvolInput &i
     }
 
     arma::mat fcst = arma::zeros<arma::mat>(h * k, draws);
+
+    // A panel not observed whole: each draw's forecast starts from its own
+    // completed panel.
+    const bool complete = !input.train.constraints.empty();
+    const arma::uword tt_sample =
+        complete ? stacked_response(input.train).n_elem / static_cast<arma::uword>(k) : 0;
+    core::require_completed_panels(input, coefficients, x.n_elem > 0);
     const arma::mat diag_k = arma::eye<arma::mat>(k, k);
 
     // What a simulated forecast carries from one horizon to the next.
@@ -428,6 +459,12 @@ ForecastDraws VarNormalStochvolSampler::forecast(const VarNormalStochvolInput &i
             // horizon: the precision is the same at every horizon, and the
             // factorisation draws nothing, so where it sits does not move a draw.
             error_root = covariance_root(arma::reshape(coefficients.u_sigma_inv.col(draw), k, k));
+        }
+
+        if (complete && x.n_elem > 0 && p > 0)
+        {
+            core::start_from_panel(x, arma::reshape(coefficients.y.col(draw), k, tt_sample),
+                                   static_cast<arma::uword>(p));
         }
 
         for (int i = 0; i < h; i++)
@@ -498,6 +535,13 @@ arma::mat VarNormalStochvolSampler::log_likelihood(const VarNormalStochvolInput 
     const int tt = static_cast<int>(y.n_elem) / k;
     arma::mat loglik = arma::mat(draws, tt);
 
+    // A panel not observed whole: the density of what was observed, with the
+    // rest integrated out, under each period's coefficients and covariance.
+    if (!input.train.constraints.empty())
+    {
+        return core::observed_log_likelihood(input, coefficients, "VarNormalStochvol");
+    }
+
     // Calculate errors
     arma::mat u = arma::repmat(y, 1, draws);
     if (use_a)
@@ -531,6 +575,7 @@ arma::mat VarNormalStochvolSampler::predictive_log_density(
     const arma::uword periods = core::scored_horizons(input.test.y, input.spec);
     const arma::mat x =
         core::realised_regressors(input.forecast.x, input.test.y, input.spec.k, input.spec.p);
+    core::require_no_panel_score(input, "VarNormalStochvol");
 
     VarNormalStochvolInput scored;
     scored.spec = input.spec;
