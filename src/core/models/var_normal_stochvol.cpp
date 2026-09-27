@@ -9,6 +9,7 @@
 #include "core/models/completion_support.h"
 #include "core/models/model_support.h"
 #include "core/models/shrinkage_support.h"
+#include "core/models/steady_state_support.h"
 #include "core/models/predictive_score.h"
 
 #include <cmath>
@@ -192,6 +193,13 @@ VarNormalStochvolDraws VarNormalStochvolSampler::draw_coefficients(
     }
     int unstationary_sweeps = 0;
 
+    // The unconditional mean under the steady-state prior.
+    arma::vec mu = input.initial.mu;
+    if (input.spec.steady_state)
+    {
+        out.mu = arma::mat(static_cast<arma::uword>(k), iterations);
+    }
+
     for (int draw = 0; draw < draws; draw++)
     {
         reporter.check_interrupt();
@@ -218,30 +226,45 @@ VarNormalStochvolDraws VarNormalStochvolSampler::draw_coefficients(
             }
 
             // Update a
-            // An adaptive prior: the precision this draw is made under, rescaled
-            // by the scales of the last sweep.
-            if (shrinkage.active())
+            if (input.spec.steady_state)
             {
-                a_prior_vinv = shrinkage.precision();
-                a_prior_rhs = shrinkage.rhs();
-            }
-            a_post_v = a_prior_vinv + arma::trans(z) * u_sigma_inv_diag * z;
-            if (input.spec.stationary)
-            {
-                const arma::vec a_rhs = a_prior_rhs + arma::trans(z) * u_sigma_inv_diag * y;
-                if (!core::draw_stationary(
-                        a, [&]() { return draw_normal_precision(a_post_v, a_rhs); },
-                        static_cast<arma::uword>(k), static_cast<arma::uword>(input.spec.p)))
+                // The prior on the unconditional mean: the lags given mu, then mu
+                // given the lags, the intercept they imply written into `a`.
+                if (!core::draw_steady_state(a, mu, y, z, u_sigma_inv_diag, input.a_prior,
+                                             input.mu_prior, static_cast<arma::uword>(k),
+                                             static_cast<arma::uword>(input.spec.p),
+                                             input.spec.stationary))
                 {
                     unstationary_sweeps++;
                 }
             }
             else
             {
-                a = draw_normal_precision(a_post_v,
-                                          a_prior_rhs + arma::trans(z) * u_sigma_inv_diag * y);
+                // An adaptive prior: the precision this draw is made under, rescaled
+                // by the scales of the last sweep.
+                if (shrinkage.active())
+                {
+                    a_prior_vinv = shrinkage.precision();
+                    a_prior_rhs = shrinkage.rhs();
+                }
+                a_post_v = a_prior_vinv + arma::trans(z) * u_sigma_inv_diag * z;
+                if (input.spec.stationary)
+                {
+                    const arma::vec a_rhs = a_prior_rhs + arma::trans(z) * u_sigma_inv_diag * y;
+                    if (!core::draw_stationary(
+                            a, [&]() { return draw_normal_precision(a_post_v, a_rhs); },
+                            static_cast<arma::uword>(k), static_cast<arma::uword>(input.spec.p)))
+                    {
+                        unstationary_sweeps++;
+                    }
+                }
+                else
+                {
+                    a = draw_normal_precision(a_post_v,
+                                              a_prior_rhs + arma::trans(z) * u_sigma_inv_diag * y);
+                }
+                shrinkage.update(a);
             }
-            shrinkage.update(a);
 
             if (a_bvs)
             {
@@ -340,6 +363,10 @@ VarNormalStochvolDraws VarNormalStochvolSampler::draw_coefficients(
         if (input.spec.keeps(draw))
         {
             const int draw_pos = input.spec.kept_index(draw);
+            if (input.spec.steady_state)
+            {
+                out.mu.col(draw_pos) = mu;
+            }
             if (shrinkage.active())
             {
                 out.a_shrinkage.col(draw_pos) = shrinkage.scale();

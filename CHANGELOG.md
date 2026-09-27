@@ -29,6 +29,34 @@ heading, and move down into a version section when one is cut.
 
 ### Added
 
+- **The steady-state prior** of Villani (2009), for the same three
+  constant-coefficient Gaussian VARs: `/model/steady_state = true` puts the
+  prior on the unconditional mean `mu` — `/priors/mu/mu` and `v_inv`, starting
+  at `/initial/mu` — rather than on the intercept, whose meaning moves with every
+  lag coefficient. Two Gibbs blocks replace the coefficient draw
+  (`draw_steady_state()` in the new `core/models/steady_state_support.h`): the
+  lags given `mu`, from the demeaned series under the lag block of
+  `/priors/a`, and `mu` given the lags, a regression of `y_t - sum_j A_j y_{t-j}`
+  on `I - sum_j A_j` under each period's error precision. The intercept
+  `(I - sum_j A_j) mu` goes into `a`, so forecasts, log likelihoods, scores and
+  the completion step read a draw as before, and `mu` is written as
+  `/posterior/mu/coeffs`. It combines with `/model/stationary` and with an
+  incomplete panel. Refused: by every other algorithm; beside shrinkage,
+  variable selection, a structural form or `n_iid`; for a model with anything
+  but p lags and an intercept; a base prior coupling the lags with the
+  intercept; a prior precision on `mu` that is not positive definite.
+
+  `unit.steady_state` checks that every draw's intercept is exactly
+  `(I - sum_j A_j) mu`, that a loose prior recovers a simulated VAR's mean
+  (within 1.2 posterior sds), that a tight prior at a wrong mean holds `mu` there
+  — the prior acts on the mean — that the stationarity condition holds beside
+  it, and the refusals, on `VarNormalWishart` and `VarNormalGamma`. New
+  fixtures `VarNormalWishart-steady-state`, `VarNormalGamma-steady-state-mixed`
+  and `VarNormalStochvol-steady-state-stationary`, from
+  `make_model_fixture --steady-state`. *Draws are unchanged* for every file
+  without it: all 145 earlier fixtures agree, `/posterior/mu/coeffs absent` set
+  aside.
+
 - **Adaptive priors on the coefficients, and a stationarity condition**, for
   the three constant-coefficient Gaussian VARs — `VarNormalWishart`,
   `VarNormalGamma` and `VarNormalStochvol`. `/model/shrinkage` names the scheme

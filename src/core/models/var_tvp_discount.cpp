@@ -5,6 +5,7 @@
 
 #include "core/models/constraint_support.h"
 #include "core/models/shrinkage_support.h"
+#include "core/models/steady_state_support.h"
 #include "core/models/discount_support.h"
 #include "core/models/predictive_score.h"
 
@@ -31,6 +32,7 @@ void VarTvpDiscountInput::validate() const
 {
     core::require_supported_iid_block(spec, false, "VarTvpDiscount");
     core::require_supported_shrinkage(spec, false, "VarTvpDiscount");
+    core::require_supported_steady_state(spec, false, "VarTvpDiscount");
     core::require_supported_constraints(spec, train, test, false, "VarTvpDiscount");
     core::require_supported_forecast_constraints(spec, forecast, false, "VarTvpDiscount");
     // Before anything that would read a value: a NaN or an infinity here would

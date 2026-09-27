@@ -24,6 +24,8 @@ struct VarNormalWishartInitial
     /// adaptive prior on `a` (VarSpec::shrinkage). Empty starts them at one.
     arma::vec a_shrinkage;
     arma::vec a_local;
+    /// The unconditional mean the chain starts from under VarSpec::steady_state.
+    arma::vec mu;
 };
 
 /// The complete argument of the VarNormalWishart sampler.
@@ -50,6 +52,10 @@ struct VarNormalWishartInput
     /// The groups and hyperparameters of VarSpec::shrinkage on `a`. Unused
     /// without it.
     ShrinkagePrior a_shrinkage_prior;
+
+    /// The normal prior on the unconditional mean under VarSpec::steady_state:
+    /// a mean of k and a k x k precision. Unused without it.
+    NormalPrior mu_prior;
 
     VarNormalWishartInitial initial;
 
@@ -79,6 +85,8 @@ struct VarNormalGammaInitial
     /// adaptive prior on `a` (VarSpec::shrinkage). Empty starts them at one.
     arma::vec a_shrinkage;
     arma::vec a_local;
+    /// The unconditional mean the chain starts from under VarSpec::steady_state.
+    arma::vec mu;
 };
 
 /// VAR with a normal prior on the coefficients and independent gamma priors on
@@ -105,6 +113,10 @@ struct VarNormalGammaInput
     /// The groups and hyperparameters of VarSpec::shrinkage on `a`. Unused
     /// without it.
     ShrinkagePrior a_shrinkage_prior;
+
+    /// The normal prior on the unconditional mean under VarSpec::steady_state:
+    /// a mean of k and a k x k precision. Unused without it.
+    NormalPrior mu_prior;
 
     VarNormalGammaInitial initial;
 
@@ -136,6 +148,8 @@ struct VarNormalStochvolInitial
     /// adaptive prior on `a` (VarSpec::shrinkage). Empty starts them at one.
     arma::vec a_shrinkage;
     arma::vec a_local;
+    /// The unconditional mean the chain starts from under VarSpec::steady_state.
+    arma::vec mu;
 };
 
 /// VAR with a normal prior on the coefficients and stochastic volatility in
@@ -165,6 +179,10 @@ struct VarNormalStochvolInput
     /// The groups and hyperparameters of VarSpec::shrinkage on `a`. Unused
     /// without it.
     ShrinkagePrior a_shrinkage_prior;
+
+    /// The normal prior on the unconditional mean under VarSpec::steady_state:
+    /// a mean of k and a k x k precision. Unused without it.
+    NormalPrior mu_prior;
 
     VarNormalStochvolInitial initial;
 

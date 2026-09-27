@@ -78,6 +78,10 @@
 //                 constant-coefficient Gaussian VARs only, without varsel.
 //     --stationary
 //                 writes /model/stationary = true. The same three only.
+//     --steady-state
+//                 writes /model/steady_state = true, a normal prior on the
+//                 unconditional mean at /priors/mu and its start at /initial/mu.
+//                 The same three only, without --shrinkage.
 //     --hold-states
 //                 writes /model/forecast_states = "hold", so the forecast keeps
 //                 the last in-sample states rather than simulating them forward.
@@ -2152,6 +2156,7 @@ int main(int argc, char *argv[])
     bool partial_test = false;
     std::string shrinkage;
     bool stationary = false;
+    bool steady_state = false;
     bool soft = false;
     bool scenario = false;
     bool bare_group_seen = false;
@@ -2191,6 +2196,11 @@ int main(int argc, char *argv[])
         {
             // An adaptive prior on `a`: /model/shrinkage and /priors/a/shrinkage.
             shrinkage = token.substr(12);
+        }
+        else if (token == "--steady-state")
+        {
+            // The prior on the unconditional mean: /model/steady_state.
+            steady_state = true;
         }
         else if (token == "--stationary")
         {
@@ -2344,7 +2354,8 @@ int main(int argc, char *argv[])
     }
     const bool adapts = model == "VarNormalWishart" || model == "VarNormalGamma" ||
                         model == "VarNormalStochvol";
-    if ((!shrinkage.empty() || stationary) && (!adapts || varsel != "none" || iid || structural ||
+    if ((!shrinkage.empty() || stationary || steady_state) &&
+        (!adapts || varsel != "none" || iid || structural || (steady_state && !shrinkage.empty()) ||
                                                (!shrinkage.empty() && shrinkage != "minnesota" &&
                                                 shrinkage != "horseshoe")))
     {
@@ -2601,6 +2612,16 @@ int main(int argc, char *argv[])
         {
             write_attribute<bool>(file, "/model", "stationary", true);
         }
+        if (steady_state)
+        {
+            // A prior centred on zero with a standard deviation of one per
+            // series, the chain starting at zero.
+            write_attribute<bool>(file, "/model", "steady_state", true);
+            ensure_group(file, "/priors/mu");
+            write_row(file, "/priors/mu/mu", arma::vec(kK, arma::fill::zeros));
+            write_mat(file, "/priors/mu/v_inv", arma::eye<arma::mat>(kK, kK));
+            write_row(file, "/initial/mu", arma::vec(kK, arma::fill::zeros));
+        }
 
         if (model == "VarTvpDiscount")
         {
@@ -2649,6 +2670,7 @@ int main(int argc, char *argv[])
                   << (soft ? ", soft=1" : "")
                   << (shrinkage.empty() ? "" : ", shrinkage=" + shrinkage)
                   << (stationary ? ", stationary=1" : "")
+                  << (steady_state ? ", steady_state=1" : "")
                   << ")\n";
     }
     catch (const std::exception &e)

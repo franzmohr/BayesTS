@@ -139,6 +139,13 @@ struct VarSpec
     /// drawn again. Read by the same three algorithms and refused by the rest.
     bool stationary = false;
 
+    /// Whether the prior is on the unconditional mean rather than the intercept
+    /// -- the steady-state prior of Villani (2009): /priors/mu holds a normal
+    /// prior on mu, and the intercept (I - sum_j A_j) mu it implies is written
+    /// into `a`. Read by the same three algorithms, for a model of p lags and an
+    /// intercept only, and refused by the rest.
+    bool steady_state = false;
+
     /// Whether the error specification asks for a covariance block -- the
     /// "+covar" suffix the files carry. Which prefix it had, "gamma" or "sv",
     /// identifies the model and so is the reader's business, not the sampler's:

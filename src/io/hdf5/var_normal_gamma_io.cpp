@@ -61,6 +61,12 @@ VarNormalGammaInput read_input(const ModelFile &file)
 
     read_shrinkage_prior(file, "a", input.a_shrinkage_prior, input.initial.a_shrinkage,
                          input.initial.a_local);
+    // The steady-state prior on the unconditional mean, where the file has it.
+    if (file.exist("/priors/mu"))
+    {
+        input.mu_prior = read_normal_prior(file, "/priors/mu");
+    }
+    read_vec_if_present(file, "/initial/mu", input.initial.mu);
     return input;
 }
 
@@ -102,6 +108,10 @@ VarNormalGammaDraws read_coefficients(const ModelFile &file)
     }
 
     read_shrinkage_draws(file, "a", draws.a_shrinkage, draws.a_local);
+    if (dataset_has_data(file, "/posterior/mu/coeffs"))
+    {
+        draws.mu = read_draws(file, "/posterior/mu/coeffs");
+    }
     return draws;
 }
 
@@ -128,6 +138,10 @@ void write_coefficients(const ModelFile &file, const VarNormalGammaDraws &draws)
     write_draws(file, "/posterior/u_omega_inv/coeffs", draws.u_omega_inv);
     write_draws(file, "/posterior/u_sigma_inv/coeffs", draws.u_sigma_inv);
     write_shrinkage_draws(file, "a", draws.a_shrinkage, draws.a_local);
+    if (draws.mu.n_elem > 0)
+    {
+        write_draws(file, "/posterior/mu/coeffs", draws.mu);
+    }
     if (draws.has_y())
     {
         write_draws(file, "/posterior/y/coeffs", draws.y);

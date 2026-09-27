@@ -455,6 +455,7 @@ VarSpec read_spec(const ModelFile &file, const char *covar_error)
     spec.shrinkage = shrinkage_from_string(
         optional_attribute_string(file, "/model", "shrinkage", "none"));
     spec.stationary = optional_attribute_bool(file, "/model", "stationary", false);
+    spec.steady_state = optional_attribute_bool(file, "/model", "steady_state", false);
     spec.structural = optional_attribute_bool(file, "/model", "structural", false);
 
     // Absent from every file written before the choice existed. Those files
@@ -714,7 +715,7 @@ bool is_model_attribute(const std::string &name)
         "m",         "s",         "h",          "quantile",     "n",          "n_iid",
         "rank",      "k_beta",    "n_restricted", "n_factors",  "n_obs_factors",
         "varsel",    "structural", "error",     "seed",       "forecast_states",
-        "delta_beta", "delta_sigma", "shrinkage", "stationary",
+        "delta_beta", "delta_sigma", "shrinkage", "stationary", "steady_state",
     };
     return names.count(name) > 0;
 }

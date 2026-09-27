@@ -47,6 +47,10 @@ struct VarNormalWishartDraws
 
     /// G x iterations: the group scales of the adaptive prior on `a`, and
     /// nparams x iterations: its local scales under a horseshoe. Empty without
+    /// k x iterations: the unconditional mean under VarSpec::steady_state,
+    /// whose intercept is in `a`. Empty without it.
+    arma::mat mu;
+
     /// one (VarSpec::shrinkage).
     arma::mat a_shrinkage;
     arma::mat a_local;
@@ -90,6 +94,10 @@ struct VarNormalGammaDraws
 
     /// G x iterations: the group scales of the adaptive prior on `a`, and
     /// nparams x iterations: its local scales under a horseshoe. Empty without
+    /// k x iterations: the unconditional mean under VarSpec::steady_state,
+    /// whose intercept is in `a`. Empty without it.
+    arma::mat mu;
+
     /// one (VarSpec::shrinkage).
     arma::mat a_shrinkage;
     arma::mat a_local;
@@ -136,6 +144,10 @@ struct VarNormalStochvolDraws
 
     /// G x iterations: the group scales of the adaptive prior on `a`, and
     /// nparams x iterations: its local scales under a horseshoe. Empty without
+    /// k x iterations: the unconditional mean under VarSpec::steady_state,
+    /// whose intercept is in `a`. Empty without it.
+    arma::mat mu;
+
     /// one (VarSpec::shrinkage).
     arma::mat a_shrinkage;
     arma::mat a_local;
