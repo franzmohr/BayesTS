@@ -54,12 +54,15 @@ add_executable(bayests_unit_chan_jeliazkov unit_chan_jeliazkov.cpp)
 # the Gaussian it conditions written out densely: an identity, to rounding.
 add_executable(bayests_unit_constrained_var_path unit_constrained_var_path.cpp)
 add_executable(bayests_unit_inverse_gaussian unit_inverse_gaussian.cpp)
+# The generalised inverse Gaussian draw of the normal-gamma prior, against its
+# moments on every branch of the sampler: statistical, at five standard errors.
+add_executable(bayests_unit_gig unit_gig.cpp)
 add_executable(bayests_unit_truncated_normal unit_truncated_normal.cpp)
 add_executable(bayests_unit_ssvs unit_ssvs.cpp)
 
 foreach(_unit bayests_unit_vec_to_var bayests_unit_forecast_lags bayests_unit_stochvol bayests_unit_kalman bayests_unit_chan_jeliazkov
               bayests_unit_constrained_var_path
-              bayests_unit_inverse_gaussian bayests_unit_truncated_normal)
+              bayests_unit_inverse_gaussian bayests_unit_gig bayests_unit_truncated_normal)
     target_link_libraries(${_unit} PRIVATE bayests_algorithms)
     target_link_libraries(${_unit} PRIVATE bayests_warnings)
 
@@ -341,7 +344,7 @@ endif()
 # to set up, and no thread pinning, since an exact identity does not care how
 # many threads computed it.
 foreach(_unit vec_to_var forecast_lags forecast_regressors_io forecast_group_io test_observations_io predictive_score factor_score stochvol kalman chan_jeliazkov constrained_var_path
-              inverse_gaussian truncated_normal identification
+              inverse_gaussian gig truncated_normal identification
               vec_klgs_2010 vec_tvp_coint coint_prior_symmetry coint_klgs_prior coint_jacobian coint_dees_us dfm_normal_gamma dfm_normal_stochvol
               dfm_tvp_gamma dfm_tvp_stochvol favar_normal_wishart var_ald thin model_group bvs ssvs
               input_values var_normal_stochvol var_tvp_discount vec_tvp_discount read_path bool_attributes tvp_initial_state

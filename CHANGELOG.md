@@ -29,6 +29,20 @@ heading, and move down into a version section when one is cut.
 
 ### Added
 
+- **A generalised inverse Gaussian draw**, `gig_hormann_leydold_2014()` in the
+  new `core/algorithms/gig_hormann_leydold_2014.{h,cpp}`: the three samplers of
+  Hoermann and Leydold (2014) -- ratio of uniforms around the mode, ratio of
+  uniforms without the shift, and their rejection method for the density that
+  is not T-concave -- each where its rejection constant is bounded, with the
+  gamma and inverse gamma limits at chi = 0 and psi = 0. The bounds of the
+  shifted method are found by bisection rather than the cubic's closed form.
+  It is the conditional of the local scales of a normal-gamma prior; nothing
+  calls it yet, so *draws are unchanged*. `unit.gig` checks E[X] and E[1/X]
+  of the standardised variable against Bessel-function ratios, computed by
+  quadrature, at five standard errors over 200,000 draws on every branch, from
+  w = 3e-101 to w = 1e4 and lambda from -25 to 3, plus the two limits and the
+  refusals.
+
 - **The steady-state prior** of Villani (2009), for the same three
   constant-coefficient Gaussian VARs: `/model/steady_state = true` puts the
   prior on the unconditional mean `mu` — `/priors/mu/mu` and `v_inv`, starting
