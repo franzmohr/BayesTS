@@ -29,6 +29,53 @@ heading, and move down into a version section when one is cut.
 
 ### Added
 
+- **The structural quantile VAR** of Chavleishvili and Manganelli (2019), as a
+  grid of quantiles on `VarNormalAld`. `/model/quantiles`, a vector attribute of
+  levels strictly increasing in (0, 1), makes the model estimate every level
+  of the grid -- each as the single-quantile model it is, one after the other,
+  its draws stacked level by level in `/posterior/a/coeffs` (nparams x Q rows)
+  and `/posterior/u_scale/coeffs` (k x Q rows); the two precision paths, one
+  per level, are not kept. With `/model/structural` each equation conditions on
+  the variables ordered before it, and together the levels describe every
+  equation's whole conditional distribution, in the new
+  `core/models/quantile_grid.h`: the quantiles rearranged into order
+  (Chernozhukov, Fernandez-Val and Galichon 2010), linear between the levels,
+  and exponential beyond them, each tail at the heavier of the one continuous
+  with the grid and the asymmetric Laplace one of the outermost level -- the
+  second bounds the first where two outermost quantiles land close together.
+  That distribution is what the grid adds:
+  - **A forecast**, which a single quantile still refuses: each variable of each
+    period drawn from its conditional distribution given the ones before it,
+    path by path. `/model/forecast_quantile` fixes the level every draw is
+    taken at instead, which gives the quantile paths the impulse responses of
+    Chavleishvili and Manganelli are differences of. A grid forecasts only
+    from a recursive system (`structural`, or `k = 1`).
+  - **Scenarios and counterfactuals** through `/data/forecast/constraints`,
+    read as pins: a row of one entry holds that variable in that period at the
+    value, what follows responds, and the level is drawn regardless, so a
+    scenario and the same forecast without it share their random numbers.
+  - **The log likelihood** of the implied density, in place of the asymmetric
+    Laplace one.
+
+  `validate()` refuses a grid of fewer than two levels, one out of order or
+  outside (0, 1), a forecast from a grid without a recursive system, a fixed
+  level without a grid, and a scenario row that is not a single pin;
+  `VarTvpAld` refuses the grid. The front-end probes and checks `u_scale`, which
+  a single quantile and a grid both write, and the reader now reads
+  `/data/forecast/x`.
+
+  `unit.var_quantile_grid` checks the grid's distribution -- it integrates to
+  one, passes through every grid point, and its density and inverse are
+  inverses of each other -- and on a simulated recursive system with normal
+  errors recovers the contemporaneous coefficient (-0.8) at every one of 19
+  levels, the intercept moving with the normal quantile, the one-step spreads
+  of both variables (0.98 against 1.00, 1.21 against 1.28) and the three-step
+  spread of the first, the response of the second to a pin, a fixed-level path
+  independent of the seed, and a log likelihood within 0.02 per period of the
+  normal one at the true quantiles. One fixture, `VarNormalAld-grid-structural`
+  (`make_model_fixture --quantile-grid`). *Draws are unchanged* for every file
+  without `/model/quantiles`: 154 of 154 fixtures fingerprint identically.
+
 - **`n_iid` beside constraints.** `VarNormalWishart`, `VarNormalGamma` and
   `VarNormalStochvol` now complete a panel not observed whole in a model whose
   first `n_iid` equations are white noise, where `require_completion_spec()`

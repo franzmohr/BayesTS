@@ -312,6 +312,28 @@ double get_attribute_double(const ModelFile &file, const std::string &group_name
 	}
 }
 
+std::vector<double> get_attribute_double_vector(const ModelFile &file, const std::string &group_name,
+                                                const std::string &attr_name)
+{
+	try {
+		HighFive::Group group = file.getGroup(group_name);
+		HighFive::Attribute attr = group.getAttribute(attr_name);
+		const std::vector<size_t> dims = attr.getSpace().getDimensions();
+		if (dims.empty()) {
+			double value;
+			attr.read(value);
+			return {value};
+		}
+		std::vector<double> values;
+		attr.read(values);
+		return values;
+	}
+	catch (const HighFive::Exception &e) {
+		throw std::runtime_error("Failed to read double vector attribute '" + attr_name +
+		                         "' from group '" + file.resolve(group_name) + "': " + std::string(e.what()));
+	}
+}
+
 // Get double attribute from group
 std::string get_attribute_string(const ModelFile &file, const std::string &group_name, const std::string &attr_name)
 {

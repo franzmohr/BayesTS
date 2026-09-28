@@ -172,6 +172,11 @@ int get_attribute_int(const ModelFile &file, const std::string &group_name, cons
 // Get double attribute from group
 double get_attribute_double(const ModelFile &file, const std::string &group_name, const std::string &attr_name);
 
+// Get an attribute holding a vector of doubles from group; a scalar attribute
+// is read as a vector of one.
+std::vector<double> get_attribute_double_vector(const ModelFile &file, const std::string &group_name,
+                                                const std::string &attr_name);
+
 // Get string attribute from group
 std::string get_attribute_string(const ModelFile &file, const std::string &group_name, const std::string &attr_name);
 

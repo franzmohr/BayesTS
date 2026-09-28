@@ -19,6 +19,7 @@ add_library(bayests_core
             models/completion_support.h
             models/shrinkage_support.h
             models/steady_state_support.h
+            models/quantile_grid.h
             models/noncentred_support.h
             models/dfm_support.h
             models/discount_support.h

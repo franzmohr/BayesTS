@@ -77,6 +77,11 @@
 //                 under minnesota an inverse gamma per group, under
 //                 normal_gamma theta = 0.1 and a gamma on each global rate. The three
 //                 constant-coefficient Gaussian VARs only, without varsel.
+//     --quantile-grid
+//                 VarNormalAld only: writes /model/quantiles, a grid of five
+//                 levels from 0.1 to 0.9, which makes the model a structural
+//                 quantile VAR. With a structural form it takes a horizon, and
+//                 its forecast is simulated through the grid.
 //     --draw-theta
 //                 with --shrinkage=normal_gamma: theta drawn under an
 //                 exponential prior, /priors/a/shrinkage/theta_rate in place of
@@ -266,6 +271,19 @@ void write_attribute(const ModelFile &file, const std::string &group_name,
         group.deleteAttribute(name);
     }
     group.createAttribute<T>(name, HighFive::DataSpace::From(value)).write(value);
+}
+
+/// A vector of doubles as one attribute, as h5py and R write one.
+void write_vector_attribute(const ModelFile &file, const std::string &group_name,
+                            const std::string &name, const std::vector<double> &value)
+{
+    ensure_group(file, group_name);
+    HighFive::Group group = file.getGroup(group_name);
+    if (group.hasAttribute(name))
+    {
+        group.deleteAttribute(name);
+    }
+    group.createAttribute<double>(name, HighFive::DataSpace::From(value)).write(value);
 }
 
 /// Positions are stored one-based, matching R and the rest of the format.
@@ -2177,6 +2195,7 @@ int main(int argc, char *argv[])
     std::string shrinkage;
     bool stationary = false;
     bool draw_theta = false;
+    bool quantile_grid = false;
     bool steady_state = false;
     bool soft = false;
     bool scenario = false;
@@ -2222,6 +2241,11 @@ int main(int argc, char *argv[])
         {
             // The prior on the unconditional mean: /model/steady_state.
             steady_state = true;
+        }
+        else if (token == "--quantile-grid")
+        {
+            // A grid of quantiles: /model/quantiles.
+            quantile_grid = true;
         }
         else if (token == "--draw-theta")
         {
@@ -2351,7 +2375,14 @@ int main(int argc, char *argv[])
                      "are" << '\n';
         return 2;
     }
-    if (is_ald && (covar || h != 0))
+    if (quantile_grid && (model != "VarNormalAld" || (h != 0 && !structural)))
+    {
+        std::cerr << "--quantile-grid is written on VarNormalAld only, and forecasts only with a "
+                     "structural form: the simulation draws each variable given the ones before "
+                     "it\n";
+        return 2;
+    }
+    if (is_ald && (covar || (h != 0 && !quantile_grid)))
     {
         std::cerr << "A quantile regression model takes no covariance block -- rotating the "
                      "equations into each other leaves a residual whose quantile is not the one "
@@ -2673,6 +2704,11 @@ int main(int argc, char *argv[])
         else if (model == "VarNormalAld")
         {
             write_var_normal_ald(file, varsel, layout);
+            if (quantile_grid)
+            {
+                write_vector_attribute(file, "/model", "quantiles",
+                                       std::vector<double>{0.1, 0.25, 0.5, 0.75, 0.9});
+            }
         }
         else if (model == "VarTvpAld")
         {

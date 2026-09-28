@@ -43,8 +43,9 @@ void VarNormalAld::draw_coefficients(const ModelLocation &location_arg)
     const ModelFile file(h5, location.group);
 
     // Skipped if already estimated; estimated again if a run was stopped while
-    // writing -- see coefficients_needed().
-    if (!coefficients_needed(file, "/posterior/u_sigma_inv/coeffs"))
+    // writing -- see coefficients_needed(). Probed at the scale, which a single
+    // quantile and a grid of them both write; a grid keeps no precision path.
+    if (!coefficients_needed(file, "/posterior/u_scale/coeffs"))
     {
         return;
     }
@@ -65,20 +66,33 @@ void VarNormalAld::forecast(const ModelLocation &location_arg)
     // Store the location for later use
     this->location = location_arg;
 
-    // A quantile regression model has no forecast, and says so rather than
-    // leaving the subcommand to do nothing quietly.
-    //
-    // Not an error, and it does not throw: validate() refuses a non-zero horizon,
-    // so a valid file here asks for nothing, exactly as a file written with h = 0
-    // does for every other model. `bayests forecasts` over a directory should not
-    // fail because some of the models in it are quantile models. What would be an
-    // error is a horizon reaching a sampler, and VarNormalAldSampler::forecast()
-    // throws on that.
-    std::cerr << location.describe()
-              << ": a quantile regression model does not forecast. The h step ahead quantile is "
-                 "not the quantile of the iterated one step ahead quantiles, so there is no path "
-                 "to simulate that could be read as one."
-              << std::endl;
+    HighFive::File h5 = open_hdf5_file_readwrite(location.file);
+    const ModelFile file(h5, location.group);
+
+    // A single quantile has no forecast: validate() refuses a horizon for it, so
+    // a valid file of one asks for none, exactly as a file written with h = 0
+    // does for every other model, and `bayests forecasts` over a directory of
+    // them does nothing rather than failing. A grid of quantiles describes the
+    // whole distribution and does forecast, by simulation.
+    if (bayests::hdf5_io::optional_attribute_int(file, "/model", "h", 0) <= 0)
+    {
+        return;
+    }
+    if (dataset_has_data(file, "/posterior/forecast/forecasts"))
+    {
+        return;
+    }
+    if (!dataset_has_data(file, "/posterior/u_scale/coeffs"))
+    {
+        throw std::runtime_error("Posterior draws of u_scale are missing.");
+    }
+
+    const bayests::VarNormalAldInput input = io::read_input(file);
+    const bayests::VarNormalAldDraws draws = io::read_coefficients(file);
+    bayests::NullReporter reporter;
+    const bayests::ForecastDraws fcst =
+        bayests::VarNormalAldSampler{}.forecast(input, draws, reporter);
+    bayests::hdf5_io::write_forecast(file, fcst);
 }
 
 void VarNormalAld::log_likelihood(const ModelLocation &location_arg)
@@ -96,9 +110,9 @@ void VarNormalAld::log_likelihood(const ModelLocation &location_arg)
         return;
     }
 
-    if (!dataset_has_data(file, "/posterior/u_sigma_inv/coeffs"))
+    if (!dataset_has_data(file, "/posterior/u_scale/coeffs"))
     {
-        throw std::runtime_error("Posterior draws of u_sigma_inv are missing.");
+        throw std::runtime_error("Posterior draws of u_scale are missing.");
     }
 
     const bayests::VarNormalAldInput input = io::read_input(file);
@@ -111,5 +125,7 @@ void VarNormalAld::log_likelihood(const ModelLocation &location_arg)
 
 ModelCheck VarNormalAld::check(const ModelLocation &location_arg)
 {
-    return check_quantile_model(location_arg, [](const ModelFile &file) { return io::read_input(file); });
+    return check_quantile_model(
+        location_arg, [](const ModelFile &file) { return io::read_input(file); },
+        "/posterior/u_scale/coeffs");
 }
