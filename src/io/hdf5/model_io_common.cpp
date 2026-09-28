@@ -326,6 +326,7 @@ void read_shrinkage_prior(const ModelFile &file, const std::string &block, Shrin
     }
     read_vec_if_present(file, group + "/shape", prior.shape);
     read_vec_if_present(file, group + "/rate", prior.rate);
+    read_vec_if_present(file, group + "/theta", prior.theta);
     read_vec_if_present(file, "/initial/" + block + "_shrinkage", initial_scale);
     read_vec_if_present(file, "/initial/" + block + "_local", initial_local);
 }

@@ -29,6 +29,53 @@ heading, and move down into a version section when one is cut.
 
 ### Added
 
+- **The normal-gamma prior** of Griffin and Brown (2010), as Huber and
+  Feldkircher (2019) put it on a VAR, as a third adaptive prior for the three
+  constant-coefficient Gaussian VARs: `/model/shrinkage = normal_gamma` gives
+  coefficient `j` of group `g` the prior variance `psi_j / v_inv(j, j)`, with
+  `psi_j ~ G(theta_g, rate theta_g lambda_g / 2)` and
+  `lambda_g ~ G(shape_g, rate_g)`. `theta` is new in `ShrinkagePrior` and at
+  `/priors/a/shrinkage/theta`, one per group and fixed; `shape` and `rate` keep
+  their datasets and become the gamma on the global rate. `CoefficientShrinkage`
+  draws each `psi_j` from its generalised inverse Gaussian conditional,
+  `GIG(theta_g - 1/2, dev_j, theta_g lambda_g)`, through
+  `gig_hormann_leydold_2014()`, then `lambda_g` from its gamma. The squared
+  deviation is floored at `1e-300`, which keeps the GIG proper when `theta < 1/2`
+  and a coefficient sits on its prior mean, and `psi_j` at `1e-12`, which keeps
+  the prior precision finite. The draws go where the horseshoe's do:
+  `lambda_g` to `/posterior/a/shrinkage`, `psi_j` to `/posterior/a/local`, so no
+  reader changes; `shrinkage_has_local()` replaces the three samplers'
+  horseshoe test for whether to keep them. Refused: a missing or non-positive
+  `theta`, `shape` or `rate`, and `theta` beside another scheme. Everything
+  `/model/shrinkage` already refused, it refuses here too.
+
+  `unit.shrinkage` gains three cases: at fixed coefficients the chain averages
+  `lambda_g` to its marginal posterior mean, whose density integrates the
+  local variances out as one Bessel function each and is computed by
+  quadrature (0.21 batch-means standard errors off over 200,000 updates); the
+  precision is the base over `psi_j`; and on the sparse VAR the zero
+  coefficients' squared error falls to 7% of the diffuse prior's while the own
+  lags keep 86% of their size. And the refusals. Three fixtures:
+  `VarNormalWishart-normal-gamma`, `VarNormalGamma-normal-gamma-covar-mixed` and
+  `VarNormalStochvol-normal-gamma-stationary`, written by
+  `make_model_fixture --shrinkage=normal_gamma`. *Draws are unchanged* for every
+  file without it: 148 of 148 fixtures fingerprint identically before and after,
+  on the same build.
+
+- **A generalised inverse Gaussian draw**, `gig_hormann_leydold_2014()` in the
+  new `core/algorithms/gig_hormann_leydold_2014.{h,cpp}`: the three samplers of
+  Hoermann and Leydold (2014) -- ratio of uniforms around the mode, ratio of
+  uniforms without the shift, and their rejection method for the density that
+  is not T-concave -- each where its rejection constant is bounded, with the
+  gamma and inverse gamma limits at chi = 0 and psi = 0. The bounds of the
+  shifted method are found by bisection rather than the cubic's closed form.
+  It is the conditional of the local scales of a normal-gamma prior; nothing
+  calls it yet, so *draws are unchanged*. `unit.gig` checks E[X] and E[1/X]
+  of the standardised variable against Bessel-function ratios, computed by
+  quadrature, at five standard errors over 200,000 draws on every branch, from
+  w = 3e-101 to w = 1e4 and lambda from -25 to 3, plus the two limits and the
+  refusals.
+
 - **The steady-state prior** of Villani (2009), for the same three
   constant-coefficient Gaussian VARs: `/model/steady_state = true` puts the
   prior on the unconditional mean `mu` — `/priors/mu/mu` and `v_inv`, starting
