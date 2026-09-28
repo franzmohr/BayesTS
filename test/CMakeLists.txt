@@ -538,6 +538,8 @@ bayests_add_model_fixture(VarNormalStochvol-mixed-covar VarNormalStochvol none 1
 bayests_add_model_fixture(VarTvpWishart-mixed           VarTvpWishart     none 0 0 4 --mixed)
 bayests_add_model_fixture(VarTvpGamma-mixed-soft-covar  VarTvpGamma       none 1 0 4 --mixed --soft)
 bayests_add_model_fixture(VarTvpStochvol-missing-covar  VarTvpStochvol    none 1 0 4 --missing)
+# An equation restricted to white noise beside a panel not observed whole.
+bayests_add_model_fixture(VarNormalWishart-iid-missing   VarNormalWishart  none 0 0 4 --iid --missing)
 
 # The adaptive priors and the stationarity condition, on the three
 # constant-coefficient Gaussian VARs that read them.
