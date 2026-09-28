@@ -14,6 +14,14 @@
 /// than a diffuse prior does, which is what it is for. A VAR near a unit root
 /// estimated under the stationarity condition has to keep only stationary
 /// draws. And what is refused is refused.
+///
+/// The normal-gamma prior draws each local variance from a generalised inverse
+/// Gaussian and the global rate from a gamma, so neither conditional can be
+/// checked alone -- but their fixed point can: at fixed coefficients the chain
+/// has to average the global rate to its marginal posterior mean, whose density
+/// integrates the local variances out in closed form, a Bessel function per
+/// coefficient, and is computed here by quadrature. On the sparse VAR it has to
+/// do what the horseshoe does.
 
 #include "bayests/reporter.h"
 #include "bayests/var_normal_gamma.h"
@@ -21,6 +29,7 @@
 #include "bayests/var_tvp_gamma.h"
 #include "core/models/shrinkage_support.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <stdexcept>
@@ -92,6 +101,105 @@ void test_minnesota_update()
     check("the precision is the base over the group's scale, and as given unshrunk",
           std::abs(precision(0, 0) - 4.0 / s(0)) < 1e-12 &&
               std::abs(precision(3, 3) - 1.0 / s(1)) < 1e-12 && precision(5, 5) == 0.5);
+}
+
+/// log of int exp(nu t - w cosh t) dt = log(2 K_nu(w)), by the trapezoid rule:
+/// the integrand is analytic in a strip of half-width pi/2, so a step of 0.05
+/// is exact to far below double precision.
+double log_bessel_integral(const double nu, const double w)
+{
+    const double span = std::log(2.0 * (std::fabs(nu) + 60.0) / w) + 5.0;
+    const double h = 0.05;
+    const long n = static_cast<long>(2.0 * span / h);
+    double top = -INFINITY;
+    for (long i = 0; i <= n; i++)
+    {
+        const double t = -span + h * static_cast<double>(i);
+        top = std::max(top, nu * t - w * std::cosh(t));
+    }
+    double sum = 0.0;
+    for (long i = 0; i <= n; i++)
+    {
+        const double t = -span + h * static_cast<double>(i);
+        sum += std::exp(nu * t - w * std::cosh(t) - top);
+    }
+    return top + std::log(sum * h);
+}
+
+void test_normal_gamma_update()
+{
+    std::printf("the normal-gamma update\n");
+    NormalPrior base;
+    base.mu = arma::zeros<arma::vec>(4);
+    base.v_inv = arma::diagmat(arma::vec{1.0, 4.0, 0.5, 2.0});
+    ShrinkagePrior prior;
+    prior.group = {1, 1, 1, 0};
+    prior.theta = {0.3};
+    prior.shape = {2.0};
+    prior.rate = {1.0};
+    const arma::vec a = {0.3, -0.05, 1.2, 7.0};
+    const double theta = 0.3;
+
+    // p(lambda | a) up to a constant: the gamma prior times, per coefficient,
+    // (theta lambda / 2)^theta int psi^(theta - 3/2) exp(-(dev / psi +
+    // theta lambda psi) / 2) dpsi, the integral being
+    // 2 (dev / (theta lambda))^((theta - 1/2) / 2) K_(theta - 1/2)(sqrt(dev theta lambda)).
+    // Integrated over log lambda.
+    const arma::vec dev = arma::square(a.head(3)) % arma::vec(base.v_inv.diag()).head(3);
+    const auto log_density = [&](const double lambda) {
+        double out = (2.0 - 1.0) * std::log(lambda) - 1.0 * lambda;
+        for (const double d : dev)
+        {
+            out += theta * std::log(0.5 * theta * lambda) +
+                   0.5 * (theta - 0.5) * std::log(d / (theta * lambda)) +
+                   log_bessel_integral(theta - 0.5, std::sqrt(d * theta * lambda));
+        }
+        return out;
+    };
+    const int grid = 6000;
+    arma::vec log_w(grid), lambdas(grid);
+    for (int i = 0; i < grid; i++)
+    {
+        lambdas(i) = std::exp(-14.0 + 20.0 * (i + 0.5) / grid);
+        // d lambda = lambda d log lambda
+        log_w(i) = log_density(lambdas(i)) + std::log(lambdas(i));
+    }
+    const arma::vec w = arma::exp(log_w - log_w.max());
+    const double expected = arma::accu(w % lambdas) / arma::accu(w);
+
+    CoefficientShrinkage shrinkage(Shrinkage::normal_gamma, prior, base, arma::vec(), arma::vec());
+    arma::arma_rng::set_seed(6);
+    const int burn = 2000, n = 200000, batch = 1000;
+    arma::vec draws(n);
+    for (int i = -burn; i < n; i++)
+    {
+        shrinkage.update(a);
+        if (i >= 0)
+        {
+            draws(i) = shrinkage.scale()(0);
+        }
+    }
+    // Batch means: the chain is autocorrelated, the means of long batches of it
+    // are not.
+    arma::vec means(n / batch);
+    for (int b = 0; b < n / batch; b++)
+    {
+        means(b) = arma::mean(draws.subvec(b * batch, (b + 1) * batch - 1));
+    }
+    const double se = arma::stddev(means) / std::sqrt(static_cast<double>(means.n_elem));
+    const double z = std::fabs(arma::mean(draws) - expected) / se;
+    std::printf("    E[lambda | a] = %.5f by quadrature, %.5f drawn, %.2f standard errors\n", expected,
+                arma::mean(draws), z);
+    check_below("the global rate averages its marginal posterior mean, in standard errors", z, 5.0);
+
+    const arma::mat precision = shrinkage.precision();
+    const arma::vec local = shrinkage.local();
+    check("the precision is the base over psi_j, and as given unshrunk",
+          std::abs(precision(0, 0) - 1.0 / local(0)) < 1e-12 * precision(0, 0) &&
+              std::abs(precision(1, 1) - 4.0 / local(1)) < 1e-12 * precision(1, 1) &&
+              precision(3, 3) == 2.0 && local(3) == 1.0);
+    check("every local variance is positive and finite",
+          local.is_finite() && local.min() >= bayests::core::kNormalGammaMinLocal);
 }
 
 void test_horseshoe_precision()
@@ -223,6 +331,51 @@ void test_horseshoe_shrinks_zeros()
     check("and nothing of the kind without one", d.a_shrinkage.is_empty() && d.a_local.is_empty());
 }
 
+void test_normal_gamma_shrinks_zeros()
+{
+    std::printf("a sparse VAR under a normal-gamma prior\n");
+    const Sample s = sparse_sample(80, 0.5);
+    bayests::NullReporter reporter;
+
+    bayests::VarNormalWishartInput diffuse = input_for(s, 2000, 500);
+    bayests::VarNormalWishartInput ng = diffuse;
+    ng.spec.shrinkage = Shrinkage::normal_gamma;
+    ng.a_prior.v_inv = arma::eye<arma::mat>(kK * kNx, kK * kNx);
+    ng.a_shrinkage_prior.group = arma::ones<arma::uvec>(kK * kNx);
+    ng.a_shrinkage_prior.group.tail(kK).zeros(); // the intercepts as given
+    ng.a_shrinkage_prior.theta = {0.1};
+    ng.a_shrinkage_prior.shape = {0.01};
+    ng.a_shrinkage_prior.rate = {0.01};
+
+    arma::arma_rng::set_seed(3);
+    const auto d = bayests::VarNormalWishartSampler{}.draw_coefficients(diffuse, reporter);
+    arma::arma_rng::set_seed(3);
+    const auto g = bayests::VarNormalWishartSampler{}.draw_coefficients(ng, reporter);
+
+    const arma::vec truth = arma::vectorise(s.a);
+    const arma::vec lags = truth.head(kK * kK * kP);
+    const arma::uvec zeros = arma::find(lags == 0.0);
+    const arma::uvec own = arma::find(lags != 0.0);
+    const arma::vec mean_diffuse = arma::mean(d.a, 1);
+    const arma::vec mean_ng = arma::mean(g.a, 1);
+    const double error_diffuse = arma::accu(arma::square(mean_diffuse.elem(zeros)));
+    const double error_ng = arma::accu(arma::square(mean_ng.elem(zeros)));
+    std::printf("    squared error over the %u zero coefficients: diffuse %.4f, normal-gamma %.4f\n",
+                static_cast<unsigned>(zeros.n_elem), error_diffuse, error_ng);
+    check_below("the normal-gamma prior puts the zeros closer to zero", error_ng / error_diffuse, 0.5);
+    // The sample puts one of the four own lags at 0.17 under the diffuse prior,
+    // and the normal-gamma prior shrinks that one further, as it should; what
+    // it must not do is take the signal with the noise.
+    const double own_diffuse = arma::mean(arma::vec(mean_diffuse.elem(own)));
+    const double own_ng = arma::mean(arma::vec(mean_ng.elem(own)));
+    std::printf("    mean of the own lags, truly 0.5: diffuse %.3f, normal-gamma %.3f\n", own_diffuse,
+                own_ng);
+    check("and keeps most of the own lags", own_ng > 0.75 * own_diffuse);
+    check("its scales are drawn and kept",
+          g.a_shrinkage.n_rows == 1 && g.a_local.n_rows == kK * kNx && g.a_local.is_finite() &&
+              g.a_shrinkage.min() > 0.0 && g.a_local.min() > 0.0);
+}
+
 void test_stationarity()
 {
     std::printf("a VAR near a unit root, estimated stationary\n");
@@ -313,6 +466,19 @@ void test_refusals()
     input.spec.shrinkage = Shrinkage::none;
     check("a group without a scheme is refused", refuses(input, "is none"));
 
+    input = base;
+    input.a_shrinkage_prior.theta = {0.1};
+    check("theta beside a Minnesota prior is refused", refuses(input, "normal_gamma only"));
+
+    input = base;
+    input.spec.shrinkage = Shrinkage::normal_gamma;
+    check("a normal-gamma prior without theta is refused", refuses(input, "/theta"));
+    input.a_shrinkage_prior.theta = {-0.1};
+    check("and one with a negative theta", refuses(input, "must be positive"));
+    input.a_shrinkage_prior.theta = {0.1};
+    input.a_shrinkage_prior.rate.reset();
+    check("and one without a rate on the global scale", refuses(input, "/rate"));
+
     bayests::VarTvpGammaInput tvp;
     tvp.spec.k = static_cast<int>(kK);
     tvp.spec.stationary = true;
@@ -329,6 +495,8 @@ int main()
         test_minnesota_update();
         test_horseshoe_precision();
         test_horseshoe_shrinks_zeros();
+        test_normal_gamma_update();
+        test_normal_gamma_shrinks_zeros();
         test_stationarity();
         test_refusals();
     }

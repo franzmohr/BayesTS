@@ -71,10 +71,11 @@
 //                 /data/forecast/constraints, a forecast conditioned on the first
 //                 series' path over two periods and the third series' average
 //                 over three. Needs h >= 3 and no --score. VarNormalWishart only.
-//     --shrinkage=minnesota | --shrinkage=horseshoe
+//     --shrinkage=minnesota | --shrinkage=horseshoe | --shrinkage=normal_gamma
 //                 writes /model/shrinkage and /priors/a/shrinkage: own lags in
 //                 group 1, other lags in group 2, the intercepts as given, and
-//                 under minnesota an inverse gamma per group. The three
+//                 under minnesota an inverse gamma per group, under
+//                 normal_gamma theta = 0.1 and a gamma on each global rate. The three
 //                 constant-coefficient Gaussian VARs only, without varsel.
 //     --stationary
 //                 writes /model/stationary = true. The same three only.
@@ -569,6 +570,12 @@ void write_shrinkage(const ModelFile &file, const std::string &scheme, const Lay
     {
         write_row(file, "/priors/a/shrinkage/shape", arma::vec{3.0, 3.0});
         write_row(file, "/priors/a/shrinkage/rate", arma::vec{1.0, 0.25});
+    }
+    if (scheme == "normal_gamma")
+    {
+        write_row(file, "/priors/a/shrinkage/theta", arma::vec{0.1, 0.1});
+        write_row(file, "/priors/a/shrinkage/shape", arma::vec{0.01, 0.01});
+        write_row(file, "/priors/a/shrinkage/rate", arma::vec{0.01, 0.01});
     }
 }
 
@@ -2357,9 +2364,9 @@ int main(int argc, char *argv[])
     if ((!shrinkage.empty() || stationary || steady_state) &&
         (!adapts || varsel != "none" || iid || structural || (steady_state && !shrinkage.empty()) ||
                                                (!shrinkage.empty() && shrinkage != "minnesota" &&
-                                                shrinkage != "horseshoe")))
+                                                shrinkage != "horseshoe" && shrinkage != "normal_gamma")))
     {
-        std::cerr << "--shrinkage=minnesota|horseshoe and --stationary are written on "
+        std::cerr << "--shrinkage=minnesota|horseshoe|normal_gamma and --stationary are written on "
                      "VarNormalWishart, VarNormalGamma and VarNormalStochvol only, without "
                      "variable selection, --iid or a structural form\n";
         return 2;

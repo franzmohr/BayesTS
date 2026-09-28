@@ -545,6 +545,11 @@ bayests_add_model_fixture(VarNormalWishart-minnesota        VarNormalWishart  no
 bayests_add_model_fixture(VarNormalGamma-horseshoe-covar    VarNormalGamma    none 1 0 4 --shrinkage=horseshoe)
 bayests_add_model_fixture(VarNormalStochvol-stationary      VarNormalStochvol none 0 0 4 --stationary)
 bayests_add_model_fixture(VarNormalWishart-minnesota-mixed  VarNormalWishart  none 0 0 4 --shrinkage=minnesota --stationary --mixed)
+# The normal-gamma prior, on each of the three, beside a covariance block, an
+# incomplete panel and the stationarity condition.
+bayests_add_model_fixture(VarNormalWishart-normal-gamma       VarNormalWishart  none 0 0 4 --shrinkage=normal_gamma)
+bayests_add_model_fixture(VarNormalGamma-normal-gamma-covar-mixed VarNormalGamma    none 1 0 4 --shrinkage=normal_gamma --mixed)
+bayests_add_model_fixture(VarNormalStochvol-normal-gamma-stationary VarNormalStochvol none 0 0 4 --shrinkage=normal_gamma --stationary)
 
 # The steady-state prior, on each of the three, with the stationarity condition
 # and with a panel not observed whole beside it.
