@@ -626,6 +626,114 @@ bayests::VarNormalGammaInput gamma_input_for(const arma::mat &y_file, const arma
     return input;
 }
 
+/// An i.i.d. variable not observed at the start of the sample: the
+/// high-frequency surprise of Jarocinski and Karadi (2020), missing before its
+/// series begins. The first variable is white noise whose error moves with the
+/// second's at a correlation of 0.9, and the other two a VAR(1) that reads it
+/// as a regressor. Pinned whole, the chain is the complete panel's bit for bit;
+/// with its first 30 periods missing, its equation stays exactly zero, every
+/// observation holds, and what was missing is recovered from the second
+/// variable's errors far better than by its unconditional mean.
+void test_iid_variable_not_observed()
+{
+    std::printf("an i.i.d. variable not observed at the start of the sample\n");
+    bayests::NullReporter reporter;
+    const bayests::VarNormalWishartSampler sampler;
+
+    const arma::uword tt = 150;
+    arma::mat a_true = {{0.0, 0.0, 0.0, 0.0}, {0.3, 0.5, 0.1, 0.1}, {0.1, 0.2, 0.4, -0.1}};
+    const arma::mat sigma = {{1.0, 0.9, 0.0}, {0.9, 1.0, 0.2}, {0.0, 0.2, 1.0}};
+    const arma::mat root = arma::chol(sigma, "lower");
+    arma::arma_rng::set_seed(515);
+    arma::vec previous(kK, arma::fill::zeros);
+    for (int burn = 0; burn < 50; burn++)
+    {
+        previous = a_true.cols(0, kK - 1) * previous + a_true.col(kK) + root * arma::randn<arma::vec>(kK);
+    }
+    const arma::vec lag0 = previous;
+    arma::mat y(tt, kK);
+    for (arma::uword t = 0; t < tt; t++)
+    {
+        previous = a_true.cols(0, kK - 1) * previous + a_true.col(kK) + root * arma::randn<arma::vec>(kK);
+        y.row(t) = previous.t();
+    }
+
+    bayests::VarNormalWishartInput plain = input_for(y, lag0, 400, 100);
+    plain.spec.n_iid = 1;
+    bayests::VarNormalWishartInput pinned = plain;
+    RowBuilder all;
+    for (arma::uword t = 0; t < tt; t++)
+    {
+        for (arma::uword i = 0; i < kK; i++)
+        {
+            all.add(y(t, i), {{t, i}}, 1.0);
+        }
+    }
+    pinned.train.constraints = all.build();
+    arma::arma_rng::set_seed(21);
+    const auto a = sampler.draw_coefficients(plain, reporter);
+    arma::arma_rng::set_seed(21);
+    const auto b = sampler.draw_coefficients(pinned, reporter);
+    check("pinned whole with n_iid: coefficient draws agree bit for bit",
+          arma::approx_equal(a.a, b.a, "absdiff", 0.0) &&
+              arma::approx_equal(a.u_sigma_inv, b.u_sigma_inv, "absdiff", 0.0));
+
+    const arma::uword missing = 30;
+    arma::mat y_file = y;
+    y_file.col(0).head(missing).zeros();
+    RowBuilder rows;
+    for (arma::uword t = 0; t < tt; t++)
+    {
+        for (arma::uword i = 0; i < kK; i++)
+        {
+            if (i > 0 || t >= missing)
+            {
+                rows.add(y(t, i), {{t, i}}, 1.0);
+            }
+        }
+    }
+    bayests::VarNormalWishartInput gappy = input_for(y_file, lag0, 2000, 500);
+    gappy.spec.n_iid = 1;
+    gappy.train.constraints = rows.build();
+    arma::arma_rng::set_seed(22);
+    const auto d = sampler.draw_coefficients(gappy, reporter);
+
+    // The restricted equation is every k-th coefficient from the first.
+    double restricted = 0.0;
+    for (arma::uword j = 0; j < d.a.n_rows; j += kK)
+    {
+        restricted = std::max(restricted, arma::abs(d.a.row(j)).max());
+    }
+    check("the i.i.d. equation carries exact zeros in every draw", restricted == 0.0);
+
+    double worst = 0.0;
+    for (arma::uword t = 0; t < tt; t++)
+    {
+        for (arma::uword i = 0; i < kK; i++)
+        {
+            if (i > 0 || t >= missing)
+            {
+                worst = std::max(worst, arma::abs(d.y.row(t * kK + i) - y(t, i)).max());
+            }
+        }
+    }
+    check_below("every observation holds in every draw", worst, 1e-10);
+
+    arma::vec completed(missing);
+    for (arma::uword t = 0; t < missing; t++)
+    {
+        completed(t) = arma::mean(d.y.row(t * kK));
+    }
+    const arma::vec truth = y.col(0).head(missing);
+    const double rmse = std::sqrt(arma::mean(arma::square(completed - truth)));
+    const double rms = std::sqrt(arma::mean(arma::square(truth)));
+    std::printf("    missing surprises: error of the posterior mean %.3f, of zero %.3f\n", rmse, rms);
+    check_below("the missing surprises are recovered from the correlated errors", rmse / rms, 0.7);
+
+    const arma::mat ll = sampler.log_likelihood(gappy, d);
+    check("and the log likelihood of what was observed is finite", ll.is_finite());
+}
+
 void test_var_normal_gamma()
 {
     std::printf("VarNormalGamma with a covariance block\n");
@@ -774,7 +882,17 @@ void test_refusals()
     input = input_for(s.y, s.lag0, 10, 0);
     input.train.constraints = base.build();
     input.spec.n_iid = 1;
-    check("and an i.i.d. block", validate_refuses(input, "n_iid"));
+    bool iid_read = true;
+    try
+    {
+        input.validate();
+    }
+    catch (const std::exception &e)
+    {
+        std::printf("    %s\n", e.what());
+        iid_read = false;
+    }
+    check("an i.i.d. block beside constraints is read, not refused", iid_read);
 }
 
 } // namespace
@@ -789,6 +907,7 @@ int main()
         test_scores();
         test_conditional_forecast();
         test_soft_rows();
+        test_iid_variable_not_observed();
         test_var_normal_gamma();
         test_refusals();
     }

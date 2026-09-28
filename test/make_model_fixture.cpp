@@ -2369,11 +2369,11 @@ int main(int argc, char *argv[])
     const bool completes = scores_panels || model == "VarNormalStochvol" ||
                            model == "VarTvpWishart" || model == "VarTvpGamma" ||
                            model == "VarTvpStochvol";
-    if ((mixed || missing) && (!completes || mixed == missing || iid || structural ||
+    if ((mixed || missing) && (!completes || mixed == missing || structural ||
                                (score && !scores_panels)))
     {
         std::cerr << "--mixed and --missing are written on the six Gaussian VARs only, one at a "
-                     "time, without --iid or a structural form, and with --score only on "
+                     "time, without a structural form, and with --score only on "
                      "VarNormalWishart and VarNormalGamma: the combinations "
                      "require_completion_spec() refuses\n";
         return 2;

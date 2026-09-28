@@ -29,6 +29,29 @@ heading, and move down into a version section when one is cut.
 
 ### Added
 
+- **`n_iid` beside constraints.** `VarNormalWishart`, `VarNormalGamma` and
+  `VarNormalStochvol` now complete a panel not observed whole in a model whose
+  first `n_iid` equations are white noise, where `require_completion_spec()`
+  used to refuse the pair. The i.i.d. block is rows of zeros in the
+  coefficient matrix the completion step reads, so each sampler hands
+  `PanelCompletion::complete()` the full vector (`IidBlock::scatter()`) and
+  reduces the regressors it rebuilds (`IidBlock::columns()`); nothing else
+  changes. An i.i.d. variable not observed in a period is then drawn from its
+  white noise given the other errors -- what Jarocinski and Karadi (2020) do with
+  a Kalman filter for surprises that start after the sample. A structural form
+  is still refused.
+
+  `unit.var_mixed_frequency` gains the case: pinned whole, a chain with
+  `n_iid = 1` agrees bit for bit with the complete panel's; with the white
+  noise series missing for its first 30 of 150 periods, its equation stays
+  exactly zero in every draw, every observation holds, and the posterior mean
+  of the missing values errs by 0.436 against 0.945 for zero -- the conditional
+  standard deviation at an error correlation of 0.9 is 0.436. The refusal test
+  it replaces now checks that the pair validates. One fixture,
+  `VarNormalWishart-iid-missing` (`make_model_fixture` takes `--iid` with
+  `--missing` now). *Draws are unchanged* for every file that is not both: 153
+  of 153 fixtures fingerprint identically.
+
 - **theta of the normal-gamma prior drawn**, as Huber and Feldkircher (2019)
   do: `/priors/a/shrinkage/theta_rate` in place of `theta` puts an exponential
   prior on each group's theta, and every sweep makes one random walk
