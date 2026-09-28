@@ -93,6 +93,17 @@ constexpr const char *kOutputs[] = {
     "/posterior/lambda/coeffs",
     "/posterior/lambda/sigma",
     "/posterior/factors/coeffs",
+    // The panel as each draw completed it, where it was not observed whole:
+    // part of the posterior, and what a forecast from such a panel starts from.
+    "/posterior/y/coeffs",
+    // The error precision of each soft group of /data/train/constraints.
+    "/posterior/constraints_inv/coeffs",
+    // The adaptive prior on `a`: its group scales, and its local scales under a
+    // horseshoe.
+    "/posterior/a/shrinkage",
+    "/posterior/a/local",
+    // The unconditional mean under the steady-state prior.
+    "/posterior/mu/coeffs",
     "/posterior/v_sigma_inv/coeffs",
     "/posterior/psi/coeffs",
     "/posterior/psi/lambda",

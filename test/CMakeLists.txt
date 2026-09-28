@@ -50,11 +50,15 @@ add_executable(bayests_unit_forecast_lags unit_forecast_lags.cpp)
 add_executable(bayests_unit_stochvol unit_stochvol.cpp)
 add_executable(bayests_unit_kalman unit_kalman.cpp)
 add_executable(bayests_unit_chan_jeliazkov unit_chan_jeliazkov.cpp)
+# The data-completion step of a VAR whose panel is not observed whole, against
+# the Gaussian it conditions written out densely: an identity, to rounding.
+add_executable(bayests_unit_constrained_var_path unit_constrained_var_path.cpp)
 add_executable(bayests_unit_inverse_gaussian unit_inverse_gaussian.cpp)
 add_executable(bayests_unit_truncated_normal unit_truncated_normal.cpp)
 add_executable(bayests_unit_ssvs unit_ssvs.cpp)
 
 foreach(_unit bayests_unit_vec_to_var bayests_unit_forecast_lags bayests_unit_stochvol bayests_unit_kalman bayests_unit_chan_jeliazkov
+              bayests_unit_constrained_var_path
               bayests_unit_inverse_gaussian bayests_unit_truncated_normal)
     target_link_libraries(${_unit} PRIVATE bayests_algorithms)
     target_link_libraries(${_unit} PRIVATE bayests_warnings)
@@ -87,6 +91,20 @@ add_executable(bayests_unit_coint_prior_symmetry unit_coint_prior_symmetry.cpp)
 add_executable(bayests_unit_coint_klgs_prior unit_coint_klgs_prior.cpp)
 add_executable(bayests_unit_bvs unit_bvs.cpp)
 add_executable(bayests_unit_iid_block unit_iid_block.cpp)
+# That every algorithm refuses a constraint set -- what was observed of a panel
+# not observed whole -- and what one is refused for when it is read.
+add_executable(bayests_unit_constraints unit_constraints.cpp)
+# VarNormalWishart on a panel not observed whole: bit for bit the complete
+# panel when everything is pinned, and a quarterly series recovered inside a
+# monthly VAR -- statistical, with margins read off the run.
+add_executable(bayests_unit_var_mixed_frequency unit_var_mixed_frequency.cpp)
+# The adaptive priors on the coefficients -- hierarchical Minnesota and the
+# horseshoe -- and the stationarity condition: a conditional checked against
+# its mean, and the horseshoe and the condition doing what they are for.
+add_executable(bayests_unit_shrinkage unit_shrinkage.cpp)
+# The steady-state prior: the intercept every draw implies, and the prior
+# acting on the mean rather than the intercept.
+add_executable(bayests_unit_steady_state unit_steady_state.cpp)
 add_executable(bayests_unit_input_values unit_input_values.cpp)
 add_executable(bayests_unit_var_normal_stochvol unit_var_normal_stochvol.cpp)
 # The one model that draws nothing, so unlike every sampler beside it the whole
@@ -142,7 +160,8 @@ foreach(_core_unit bayests_unit_identification bayests_unit_vec_klgs_2010 bayest
                    bayests_unit_dfm_tvp_gamma bayests_unit_dfm_tvp_stochvol
                    bayests_unit_var_ald bayests_unit_thin
                    bayests_unit_favar_normal_wishart bayests_unit_bvs bayests_unit_ssvs
-                   bayests_unit_iid_block
+                   bayests_unit_iid_block bayests_unit_constraints bayests_unit_var_mixed_frequency
+                   bayests_unit_shrinkage bayests_unit_steady_state
                    bayests_unit_input_values bayests_unit_var_normal_stochvol
                    bayests_unit_var_tvp_discount bayests_unit_vec_tvp_discount
                    bayests_unit_predictive_score bayests_unit_factor_score
@@ -201,6 +220,17 @@ target_link_libraries(bayests_unit_test_observations_io PRIVATE bayests_warnings
 
 if(OpenMP_CXX_FOUND)
     target_link_libraries(bayests_unit_test_observations_io PRIVATE OpenMP::OpenMP_CXX)
+endif()
+
+# On the io layer too: how a constraint set is read, and that its positions are
+# counted from one in the file and refused by name when they are not whole.
+add_executable(bayests_unit_constraints_io unit_constraints_io.cpp)
+
+target_link_libraries(bayests_unit_constraints_io PRIVATE bayests_hdf5_helper)
+target_link_libraries(bayests_unit_constraints_io PRIVATE bayests_warnings)
+
+if(OpenMP_CXX_FOUND)
+    target_link_libraries(bayests_unit_constraints_io PRIVATE OpenMP::OpenMP_CXX)
 endif()
 
 # On the io layer as well: that a starting path is read at exactly the size the
@@ -310,12 +340,12 @@ endif()
 # The unit tests, which need only the shared libraries on the path: no fixture
 # to set up, and no thread pinning, since an exact identity does not care how
 # many threads computed it.
-foreach(_unit vec_to_var forecast_lags forecast_regressors_io forecast_group_io test_observations_io predictive_score factor_score stochvol kalman chan_jeliazkov
+foreach(_unit vec_to_var forecast_lags forecast_regressors_io forecast_group_io test_observations_io predictive_score factor_score stochvol kalman chan_jeliazkov constrained_var_path
               inverse_gaussian truncated_normal identification
               vec_klgs_2010 vec_tvp_coint coint_prior_symmetry coint_klgs_prior coint_jacobian coint_dees_us dfm_normal_gamma dfm_normal_stochvol
               dfm_tvp_gamma dfm_tvp_stochvol favar_normal_wishart var_ald thin model_group bvs ssvs
               input_values var_normal_stochvol var_tvp_discount vec_tvp_discount read_path bool_attributes tvp_initial_state
-              forecast_states noncentred iid_block)
+              forecast_states noncentred iid_block constraints constraints_io var_mixed_frequency shrinkage steady_state)
     add_test(NAME "unit.${_unit}" COMMAND "bayests_unit_${_unit}")
     set_tests_properties("unit.${_unit}" PROPERTIES
         ENVIRONMENT_MODIFICATION "${_bayests_test_env_mod}")
@@ -470,6 +500,54 @@ bayests_add_model_fixture(VarNormalGamma-structural VarNormalGamma     none 0 1 
 # this adds is the file, so that reading the attribute, refusing it where it is
 # not supported and estimating under it are covered end to end.
 bayests_add_model_fixture(VarNormalWishart-iid VarNormalWishart none 0 0 4 --iid)
+
+# A panel not observed whole: a quarterly series among monthly ones, each
+# quarter's average observed exactly, with a ragged edge; then missing values
+# and a ragged edge alone. The completion step runs in every sweep, and the
+# forecast starts from each draw's completed panel. With bvs as well, whose
+# regressors are rebuilt with the rest.
+bayests_add_model_fixture(VarNormalWishart-mixed     VarNormalWishart none 0 0 4 --mixed)
+bayests_add_model_fixture(VarNormalWishart-mixed-bvs VarNormalWishart bvs  0 0 4 --mixed)
+bayests_add_model_fixture(VarNormalWishart-missing   VarNormalWishart none 0 0 4 --missing)
+
+# Scored where the sample was not observed whole, scored against a horizon
+# realised in part, and forecast under a scenario: the completion step over the
+# horizon, from where each draw's panel ends.
+bayests_add_model_fixture(VarNormalWishart-mixed-score   VarNormalWishart none 0 0 4 --mixed --score)
+bayests_add_model_fixture(VarNormalWishart-score-partial VarNormalWishart none 0 0 4 --score --partial-test)
+bayests_add_model_fixture(VarNormalWishart-scenario      VarNormalWishart none 0 0 4 --scenario)
+
+# The quarterly averages observed up to an error: one soft group, its precision
+# drawn in every sweep and written beside the rest of the posterior.
+bayests_add_model_fixture(VarNormalWishart-mixed-soft VarNormalWishart none 0 0 4 --mixed --soft)
+
+# The same step in VarNormalGamma, with its covariance block: the whole error
+# precision, Psi' Omega Psi, is what the completion step conditions on.
+bayests_add_model_fixture(VarNormalGamma-mixed-covar      VarNormalGamma none 1 0 4 --mixed)
+bayests_add_model_fixture(VarNormalGamma-mixed-soft-score VarNormalGamma none 1 0 4 --mixed --soft --score)
+bayests_add_model_fixture(VarNormalGamma-scenario-covar   VarNormalGamma none 1 0 4 --scenario)
+
+# The stochastic volatility VAR and the three time-varying ones: the same
+# completion step, handed a covariance per period and, for the TVP models, a
+# coefficient path. They estimate and forecast from an incomplete panel; a score
+# and a scenario are refused for them for now.
+bayests_add_model_fixture(VarNormalStochvol-mixed-covar VarNormalStochvol none 1 0 4 --mixed)
+bayests_add_model_fixture(VarTvpWishart-mixed           VarTvpWishart     none 0 0 4 --mixed)
+bayests_add_model_fixture(VarTvpGamma-mixed-soft-covar  VarTvpGamma       none 1 0 4 --mixed --soft)
+bayests_add_model_fixture(VarTvpStochvol-missing-covar  VarTvpStochvol    none 1 0 4 --missing)
+
+# The adaptive priors and the stationarity condition, on the three
+# constant-coefficient Gaussian VARs that read them.
+bayests_add_model_fixture(VarNormalWishart-minnesota        VarNormalWishart  none 0 0 4 --shrinkage=minnesota)
+bayests_add_model_fixture(VarNormalGamma-horseshoe-covar    VarNormalGamma    none 1 0 4 --shrinkage=horseshoe)
+bayests_add_model_fixture(VarNormalStochvol-stationary      VarNormalStochvol none 0 0 4 --stationary)
+bayests_add_model_fixture(VarNormalWishart-minnesota-mixed  VarNormalWishart  none 0 0 4 --shrinkage=minnesota --stationary --mixed)
+
+# The steady-state prior, on each of the three, with the stationarity condition
+# and with a panel not observed whole beside it.
+bayests_add_model_fixture(VarNormalWishart-steady-state         VarNormalWishart  none 0 0 4 --steady-state)
+bayests_add_model_fixture(VarNormalGamma-steady-state-mixed     VarNormalGamma    none 0 0 4 --steady-state --mixed)
+bayests_add_model_fixture(VarNormalStochvol-steady-state-stationary VarNormalStochvol none 0 0 4 --steady-state --stationary)
 bayests_add_model_fixture(VarNormalGamma-nofcst     VarNormalGamma     none 0 0 0)
 bayests_add_model_fixture(VarNormalGamma-ssvs-covar VarNormalGamma     ssvs 1 0 4)
 bayests_add_model_fixture(VarNormalGamma-bvs-covar  VarNormalGamma     bvs  1 0 4)
@@ -813,7 +891,7 @@ endif()
 # cannot quietly stop running there. Point Python3_EXECUTABLE at the interpreter
 # to use when the first one found lacks the modules.
 set(BAYESTS_TEST_PYTHON "AUTO" CACHE STRING
-    "Run the tests written in Python (check.nonfinite, cli.interrupted): AUTO, ON or OFF")
+    "Run the tests written in Python (check.nonfinite, check.constraints, cli.interrupted): AUTO, ON or OFF")
 set_property(CACHE BAYESTS_TEST_PYTHON PROPERTY STRINGS AUTO ON OFF)
 
 if(NOT BAYESTS_TEST_PYTHON STREQUAL "OFF")
@@ -842,6 +920,29 @@ if(NOT BAYESTS_TEST_PYTHON STREQUAL "OFF")
                     "$<TARGET_FILE:bayests>" "${BAYESTS_FIXTURE_DIR}"
                     "${CMAKE_CURRENT_BINARY_DIR}/check_nonfinite")
         set_tests_properties(check.nonfinite PROPERTIES
+            FIXTURES_REQUIRED "${_bayests_all_fixtures}"
+            ENVIRONMENT "${_bayests_pin_threads}"
+            ENVIRONMENT_MODIFICATION "${_bayests_test_env_mod}")
+
+        # A constraint set -- what was observed of a panel not observed whole --
+        # is refused by `bayests check`, by name, for every algorithm: through each
+        # model's own reader, which the unit test building inputs in memory skips.
+        add_test(NAME check.constraints
+            COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/check_constraints.py"
+                    "$<TARGET_FILE:bayests>" "${BAYESTS_FIXTURE_DIR}"
+                    "${CMAKE_CURRENT_BINARY_DIR}/check_constraints")
+        set_tests_properties(check.constraints PROPERTIES
+            FIXTURES_REQUIRED "${_bayests_all_fixtures}"
+            ENVIRONMENT "${_bayests_pin_threads}"
+            ENVIRONMENT_MODIFICATION "${_bayests_test_env_mod}")
+
+        # A panel pinned whole is estimated as the complete panel, bit for bit, by
+        # every algorithm that completes one -- through its own reader and writer.
+        add_test(NAME check.pinned_panel
+            COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/check_pinned_panel.py"
+                    "$<TARGET_FILE:bayests>" "${BAYESTS_FIXTURE_DIR}"
+                    "${CMAKE_CURRENT_BINARY_DIR}/check_pinned_panel")
+        set_tests_properties(check.pinned_panel PROPERTIES
             FIXTURES_REQUIRED "${_bayests_all_fixtures}"
             ENVIRONMENT "${_bayests_pin_threads}"
             ENVIRONMENT_MODIFICATION "${_bayests_test_env_mod}")

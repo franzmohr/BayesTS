@@ -31,6 +31,9 @@ DfmTvpGammaInput read_input(const ModelFile &file)
 
     read_mat_if_present(file, "/data/train/y", input.train.y);
     read_test_observations(file, input.spec, input.test.y);
+    read_constraints(file, "/data/train/constraints", input.train.constraints);
+    read_constraints(file, "/data/test/constraints", input.test.constraints);
+    refuse_constraints(file, "/data/forecast/constraints", "DfmTvpGamma");
 
     const arma::uword tt = sample_periods(input);
     const arma::uword n_lambda = static_cast<arma::uword>(input.spec.n_lambda());

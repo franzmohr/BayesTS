@@ -29,6 +29,278 @@ heading, and move down into a version section when one is cut.
 
 ### Added
 
+- **The steady-state prior** of Villani (2009), for the same three
+  constant-coefficient Gaussian VARs: `/model/steady_state = true` puts the
+  prior on the unconditional mean `mu` — `/priors/mu/mu` and `v_inv`, starting
+  at `/initial/mu` — rather than on the intercept, whose meaning moves with every
+  lag coefficient. Two Gibbs blocks replace the coefficient draw
+  (`draw_steady_state()` in the new `core/models/steady_state_support.h`): the
+  lags given `mu`, from the demeaned series under the lag block of
+  `/priors/a`, and `mu` given the lags, a regression of `y_t - sum_j A_j y_{t-j}`
+  on `I - sum_j A_j` under each period's error precision. The intercept
+  `(I - sum_j A_j) mu` goes into `a`, so forecasts, log likelihoods, scores and
+  the completion step read a draw as before, and `mu` is written as
+  `/posterior/mu/coeffs`. It combines with `/model/stationary` and with an
+  incomplete panel. Refused: by every other algorithm; beside shrinkage,
+  variable selection, a structural form or `n_iid`; for a model with anything
+  but p lags and an intercept; a base prior coupling the lags with the
+  intercept; a prior precision on `mu` that is not positive definite.
+
+  `unit.steady_state` checks that every draw's intercept is exactly
+  `(I - sum_j A_j) mu`, that a loose prior recovers a simulated VAR's mean
+  (within 1.2 posterior sds), that a tight prior at a wrong mean holds `mu` there
+  — the prior acts on the mean — that the stationarity condition holds beside
+  it, and the refusals, on `VarNormalWishart` and `VarNormalGamma`. New
+  fixtures `VarNormalWishart-steady-state`, `VarNormalGamma-steady-state-mixed`
+  and `VarNormalStochvol-steady-state-stationary`, from
+  `make_model_fixture --steady-state`. *Draws are unchanged* for every file
+  without it: all 145 earlier fixtures agree, `/posterior/mu/coeffs absent` set
+  aside.
+
+- **Adaptive priors on the coefficients, and a stationarity condition**, for
+  the three constant-coefficient Gaussian VARs — `VarNormalWishart`,
+  `VarNormalGamma` and `VarNormalStochvol`. `/model/shrinkage` names the scheme
+  (`none`, `minnesota` or `horseshoe`) and `/priors/a/shrinkage/group` the group
+  of every coefficient, zero leaving its prior as given; the file's own
+  `/priors/a/v_inv` stays each coefficient's base scale and has to be diagonal
+  wherever one is shrunk. Under `minnesota` — the hierarchical Minnesota prior
+  of Chan (2021) — each group's prior variance is scaled by `s_g ~ IG(shape_g,
+  rate_g)`, from `/priors/a/shrinkage/shape` and `rate`; under `horseshoe`
+  (Carvalho, Polson and Scott 2010) by a global half-Cauchy scale per group and
+  a local one per coefficient, drawn through the auxiliary inverse gammas of
+  Makalic and Schmidt (2016). Every conditional is conjugate, so the scales are
+  Gibbs blocks after the coefficients (`CoefficientShrinkage` in the new
+  `core/models/shrinkage_support.h`); they start at `/initial/a_shrinkage` and
+  `/initial/a_local`, or at one, and are written as `/posterior/a/shrinkage` and
+  `/posterior/a/local`. `/model/stationary = true` redraws a coefficient draw
+  whose companion matrix has an eigenvalue of modulus one or more, up to 100
+  times, and keeps the previous draw if none qualifies — the reject of an
+  independence Metropolis-Hastings step, so the truncated posterior is left
+  invariant — saying through `Reporter::message()` how many sweeps did.
+
+  Every other algorithm refuses both by name (`require_supported_shrinkage()`),
+  and the three refuse them beside variable selection, a structural form or
+  `n_iid`. `validate_shrinkage()` refuses groups that do not cover the block or
+  leave a gap, a base precision coupling a shrunk position, and a Minnesota
+  prior without a positive shape and rate per group.
+
+  `unit.shrinkage` checks that the Minnesota scales average their inverse
+  gamma's mean (1.3 standard errors), the horseshoe's precision identity, that
+  on a sparse simulated VAR the horseshoe cuts the squared error over the 28
+  zero coefficients from 0.292 under a diffuse prior to 0.024, and that near a
+  unit root every kept draw is stationary where 69 of 400 were not without the
+  condition. New fixtures `VarNormalWishart-minnesota`,
+  `VarNormalGamma-horseshoe-covar`, `VarNormalStochvol-stationary` and
+  `VarNormalWishart-minnesota-mixed`, from `make_model_fixture --shrinkage=`
+  and `--stationary`. *Draws are unchanged* for every file without either: the
+  fingerprints of all 141 earlier fixtures agree, `/posterior/a/shrinkage` and
+  `/posterior/a/local absent` set aside.
+
+- **All six Gaussian VARs estimate from a panel not observed whole.**
+  `VarNormalGamma` reads the three constraint groups as `VarNormalWishart` does
+  — estimation, soft rows, scores from a completed panel or against a horizon
+  realised in part, scenarios — conditioning on the whole error precision,
+  covariance block included. `VarNormalStochvol`, `VarTvpWishart`,
+  `VarTvpGamma` and `VarTvpStochvol` read `/data/train/constraints`, soft rows
+  included: each sweep completes the panel under the error covariance of every
+  period and, for the TVP models, the coefficient path, and the log likelihood
+  is the density of what was observed under both. Their forecasts start from
+  each draw's completed panel. A score beside training constraints, a horizon
+  realised in part and a scenario stay refused for these four, by name — their
+  forecasts carry states forward, which the completion step over the horizon
+  does not yet; `require_completion_spec()` takes a flag for it.
+
+  The sampler side of the completion step moves into `completion_support.h`:
+  `PanelCompletion` keeps the regressors, presample and soft precisions between
+  sweeps; `var_path_prior_from()` takes a coefficient path as well as one set,
+  and a covariance per period; templates serve the log likelihood, the
+  forecast's start, a scenario and a score from the draws. `VarNormalWishart`
+  uses them with its draws unchanged. `read_constraint_prior()`,
+  `read_completion_draws()` and `write_completion_draws()` in
+  `model_io_common.cpp` do the same for the readers. Fixed on the way, before
+  it reached a sampler: `var_path_prior()` read `k` off the covariance, which is
+  `tt k` rows when it moves.
+
+  The new `check.pinned_panel` runs `bayests coefficients` and `loglik` on a
+  fixture of each of the six and on the same fixture pinned whole: every draw
+  has to match bit for bit, the log likelihood to 1e-9, and the completed panel
+  has to be the data. `unit.var_mixed_frequency` does the same for
+  `VarNormalGamma` in memory, with a quarterly series whose averages hold in
+  every draw. New fixtures `VarNormalGamma-mixed-covar`, `-mixed-soft-score`,
+  `-scenario-covar`, `VarNormalStochvol-mixed-covar`, `VarTvpWishart-mixed`,
+  `VarTvpGamma-mixed-soft-covar` and `VarTvpStochvol-missing-covar`.
+  *Draws are unchanged* for every file without constraints, and for the
+  `VarNormalWishart` fixtures with them through the refactor: the fingerprints
+  of all 137 earlier fixtures agree.
+
+- **`VarNormalWishart` reads soft rows in `/data/train/constraints`** — an
+  observation with an error: a series read with measurement noise, a quarterly
+  figure that almost holds (Barbaglia et al. 2025's inter-temporal
+  restriction), a revised vintage. Each soft group's error precision has a
+  gamma prior, `/priors/constraints/shape` and `rate`, one element per group,
+  and starts at `/initial/constraints_inv`; after every completion of the panel
+  it is drawn from what the completed panel leaves its rows to explain
+  (`draw_soft_precisions()` in `completion_support.h`, conjugate: shape
+  `+ n_g/2`, rate `+ SSE_g/2`). The draws are written as
+  `/posterior/constraints_inv/coeffs`, one row per group, and the log
+  likelihood reads them: the density of what a soft row observed depends on
+  its error. `require_soft_prior()` refuses soft rows without a prior and a
+  start of one positive value per group; soft rows in `/data/test` or
+  `/data/forecast` stay refused, nothing drawing or giving their variance.
+
+  `unit.var_mixed_frequency` checks, on a simulated monthly VAR one of whose
+  series is read with an error of variance 0.2 every month, that the variance
+  is recovered (posterior mean 0.206, 0.06 posterior sds off) and the posterior
+  mean of the series beats the readings (RMSE 0.330 against 0.440), that the
+  log likelihood refuses draws without the precisions, and the new refusals.
+  New fixture `VarNormalWishart-mixed-soft` from `make_model_fixture --mixed
+  --soft`. *Draws are unchanged* for every file without soft rows: the
+  fingerprints of the 127 original and 133 earlier fixtures agree, with
+  `/posterior/constraints_inv/coeffs absent` set aside like the line before it.
+
+- **`VarNormalWishart` scores from a panel not observed whole, scores against a
+  horizon realised in part, and forecasts under a scenario.** A new
+  `/data/forecast/constraints`, in the six-dataset form of the other two
+  groups, conditions the forecast on assumptions about the horizon — hard pins
+  on a path, a quarter's average — and is read into `ForecastData::constraints`
+  by the seventeen readers of models with forecast data; the five factor
+  models' readers refuse it by name (`refuse_constraints()`), having nowhere to
+  put it. It is assumptions, not observations: never scored against.
+
+  Where a scenario is given, each draw's horizon is drawn whole by the
+  completion step, conditioned on it and starting where that draw's panel
+  ends; the unconditional forecast keeps its recursion, so its draws do not
+  move. Where the sample was not observed whole or `/data/test/constraints`
+  says what the horizon realised, the score is the completion step's log
+  density of the realised rows, period by period, from each draw's panel; a
+  file with neither keeps the old recursion. A horizon pinned whole scores the
+  same either way, to rounding. `validate_constraints()` takes the panel's
+  shape explicitly and checks pins against values only where there are some;
+  `require_supported_forecast_constraints()` refuses a scenario on the sixteen
+  other algorithms with forecast data. Still refused, by name: soft rows in
+  `/data/test` and `/data/forecast` (in the sample the entry above lifts it),
+  a scenario beside a score — a score measures the
+  model's own forecast, which a scenario replaces — a scenario without `h` or
+  past it, a structural form and `n_iid`.
+
+  `unit.var_mixed_frequency` now also checks that a horizon pinned whole and a
+  sample pinned whole score as the recursion does (8e-16), that a horizon
+  realised in part never reads what it did not realise, that a scenario holds
+  in every draw and the forecast's mean is the conditioned one (largest |z|
+  1.0 over 4,000 draws), and the new refusals; `unit.constraints` that sixteen
+  algorithms refuse a scenario, `unit.constraints_io` that the reader refuses
+  one for a factor model. New fixtures `VarNormalWishart-mixed-score`,
+  `-score-partial` and `-scenario`, from `make_model_fixture --partial-test`
+  and `--scenario`; `check.constraints` covers all three groups. *Draws are
+  unchanged*: the fingerprints of the 127 fixtures from before this work and
+  the three from the entry below agree, with the same one line set aside.
+
+- **`VarNormalWishart` estimates from a panel not observed whole** — the first
+  sampler to read `/data/train/constraints`, and with it mixed-frequency VARs:
+  a quarterly series in a monthly model, observed as the average of its three
+  months, missing values, a ragged edge. Each sweep starts by completing the
+  panel with `draw_constrained_var_path()` given the current coefficients and
+  precision, rebuilds the lag block of the regressors from it, and then runs the
+  sweep of a complete panel unchanged; SSVS and BVS work as before. The pieces
+  between sampler and completion step are in the new
+  `core/models/completion_support.h`, for the VARs that follow.
+
+  The completed panel is written as `/posterior/y/coeffs`, one column of `k tt`
+  per draw, stacked by period like `/data/train/y`. It is part of the posterior
+  and it is what the forecast starts from: each draw's own last `p` periods,
+  never the placeholders the host wrote into `/data/forecast/x`, and a forecast
+  without it is refused. `/posterior/loglik` becomes the density of what was
+  observed, with the rest integrated out, period by period. The forecast is of
+  the monthly panel; aggregating it is the host's.
+
+  The `p` periods before the sample are conditioned on, as a VAR conditions on
+  its first observations, from the first row of `/data/train/z`: a host fills
+  them for a series it did not observe then. Refused for now, each by name
+  (`require_completion_spec()`): a structural form and `n_iid`. (A soft row and a
+  score beside training constraints were refused here too, until the entries
+  above lifted them.) Every other algorithm still
+  refuses constraints outright.
+
+  `unit.var_mixed_frequency` checks that a panel pinned whole gives draws
+  bit-identical to the same panel without constraints and the same log
+  likelihood to 6e-16; that on a simulated monthly VAR with one series seen only
+  as quarterly averages every average holds in every draw, the coefficients lie
+  within 2.8 posterior sds of the truth — the complete panel misses it the same
+  way, and the two posteriors are centred within 1.8 of the quarterly one's sds
+  — and the posterior monthly path has 0.74 times the RMSE of the quarterly
+  figure repeated; that the forecast starts from the completed panel; and the
+  refusals. New fixtures `VarNormalWishart-mixed`, `-mixed-bvs` and `-missing`,
+  from `make_model_fixture --mixed` and `--missing`; `check.constraints` now
+  expects `VarNormalWishart` to read a training set. *Draws are unchanged* for
+  every file without constraints: the fingerprints of the 127 existing fixtures
+  agree before and after, once the one new line each carries —
+  `/posterior/y/coeffs absent`, the harness now listing the dataset — is set
+  aside.
+
+- **The data-completion step for a VAR whose panel is not observed whole**, in
+  `core/algorithms/constrained_var_path.{h,cpp}`; no sampler calls it yet.
+  Given a VAR's parameters — `VarPathPrior`: the presample, the offsets, and
+  the coefficients and error covariance as one block or one per period — and a
+  constraint set, `draw_constrained_var_path()` draws the path conditioned on
+  what was observed and `constrained_var_path_log_density()` gives the log
+  density of the observations, one element per period.
+
+  The draw works in band storage on the precision `H' S^-1 H` of the path.
+  Hard single-entry rows pin their entry and are partitioned out, so only what
+  was not observed is drawn; soft rows enter the precision, widening the band
+  where a row reaches further than the VAR's own `p + 1` periods; hard rows of
+  several entries — an aggregate observed exactly — are imposed afterwards by
+  conditioning the draw on them (Rue and Held 2005, §2.3.3), so they hold to
+  rounding in every draw. The log density is a Kalman filter over a state as
+  long as the wider of `p` and the widest row, which gives each period's
+  observations given the ones before: with a path pinned whole it is the VAR's
+  own conditional log likelihood, period by period. A dense
+  `constrained_var_path_moments()` exposes the distribution drawn from, for
+  checking.
+
+  `unit.constrained_var_path` checks the mean, the covariance and the log
+  density against the joint Gaussian conditioned densely, to rounding, with
+  pinned entries, hard aggregates and soft rows each alone and together, a
+  constant and a per-period VAR, zero to two lags and a soft row wider than
+  the band; then 20,000 draws against the exact moments, the hard rows holding
+  in every draw. *Draws are unchanged*: no sampler reaches the new code, and
+  the fingerprints of all 127 generated fixtures agree before and after.
+
+- **A model file can say what was observed of a panel not observed whole** —
+  the file format and validation for mixed-frequency and missing-data
+  estimation, which no algorithm reads yet. `/data/train/constraints` and
+  `/data/test/constraints` each hold six one-dimensional datasets (a single
+  row or column, how the other vectors here are stored, reads too): per row a
+  `value` and a `group` (0 hard, soft groups numbered from 1), per entry a
+  `row`, `period`, `variable` (all counted from one in the file) and `weight`.
+  Each row states `value = sum of weight * y(period, variable)`, exactly or up
+  to a normal error shared by its soft group, so a single observed value, a
+  quarterly figure over the months it aggregates and a national total over its
+  regions are all one row. They reach the core as `bayests::Constraints`, a
+  new member of `TrainData` and `TestData`, read by `read_constraints()` in
+  `io/hdf5/model_io_common.cpp` in all twenty-two readers.
+
+  **Every algorithm refuses a file that carries either group**, naming itself,
+  through `require_supported_constraints()` in the new
+  `core/models/constraint_support.h`, called from each `validate()` beside the
+  i.i.d. block's check. A sampler reading `y` whole would otherwise estimate from
+  the placeholders standing in for what was not observed and report a fit.
+  `validate_constraints()` beside it is what a sampler that does read them will
+  rely on: it refuses a set whose shapes disagree, a position past the panel, a
+  row that observes nothing, an entry named twice in a row, soft groups with a
+  gap, a hard single-entry row whose value disagrees with what `y` holds there
+  (the signature of a row written against the wrong period), an entry pinned by
+  two hard rows, and a hard row reaching only pinned entries, which conditioning
+  on exactly would make singular.
+
+  `unit.constraints` checks each of those refusals and that all twenty-two input
+  types refuse training and test constraints by name; `unit.constraints_io` the
+  reader, including the one-based positions and their refusal when not whole;
+  `check.constraints` that `bayests check` refuses them through every model's
+  own reader, from files h5py writes. *Draws are unchanged*: the fingerprints
+  of all 127 generated fixtures agree before and after, on the same Windows
+  build.
+
 - **An equation can be restricted to carry no coefficients at all.**
   `/model/n_iid` names endogenous variables, ordered first, whose equations have
   no lags, no deterministic terms and nothing else: white noise that reaches the

@@ -15,6 +15,10 @@ add_library(bayests_core
             spec.cpp
             inputs.cpp
             models/model_support.h
+            models/constraint_support.h
+            models/completion_support.h
+            models/shrinkage_support.h
+            models/steady_state_support.h
             models/noncentred_support.h
             models/dfm_support.h
             models/discount_support.h

@@ -20,6 +20,9 @@ VarTvpStochvolInput read_input(const ModelFile &file)
     read_mat_if_present(file, "/data/train/z", input.train.z);
     read_forecast_regressors(file, input.spec.k, input.forecast.x);
     read_test_observations(file, input.spec, input.test.y);
+    read_constraints(file, "/data/train/constraints", input.train.constraints);
+    read_constraints(file, "/data/test/constraints", input.test.constraints);
+    read_constraints(file, "/data/forecast/constraints", input.forecast.constraints);
 
     const arma::uword tt = input.train.y.n_elem > 0 && input.spec.k > 0
                                ? input.train.periods(input.spec.k)
@@ -92,6 +95,7 @@ VarTvpStochvolInput read_input(const ModelFile &file)
     read_mat_if_present(file, "/initial/h", input.initial.h);
     read_vec_if_present(file, "/initial/h_init", input.initial.h_init);
 
+    read_constraint_prior(file, input.constraints_prior, input.initial.constraints_inv);
     return input;
 }
 
@@ -108,6 +112,7 @@ VarTvpStochvolDraws read_loglik_coefficients(const ModelFile &file,
     // the log likelihood scores every period under its own.
     draws.u_sigma_inv = read_precision(file, input.spec, input.train.periods(input.spec.k), false);
 
+    read_completion_draws(file, draws.y, draws.constraints_inv);
     return draws;
 }
 
@@ -151,6 +156,7 @@ VarTvpStochvolDraws read_forecast_coefficients(const ModelFile &file,
         read_draws_if_present(file, "/posterior/u_sigma_inv/sigma", draws.h_sigma);
     }
 
+    read_completion_draws(file, draws.y, draws.constraints_inv);
     return draws;
 }
 
@@ -182,6 +188,7 @@ void write_coefficients(const ModelFile &file, const VarTvpStochvolDraws &draws)
 
     write_draws(file, "/posterior/u_omega_inv/coeffs", draws.u_omega_inv);
     write_draws(file, "/posterior/u_sigma_inv/coeffs", draws.u_sigma_inv);
+    write_completion_draws(file, draws.y, draws.constraints_inv);
     write_draws(file, "/posterior/u_sigma_inv/sigma", draws.h_sigma);
     write_noncentred(file, "/posterior/u_sigma_inv", draws.h_noncentred);
 }

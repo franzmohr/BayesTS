@@ -47,6 +47,41 @@
 //                 model but VarNormalWishart, which is the one the fixtures
 //                 cover it on; the other three constant VARs read it too and
 //                 are covered by unit.iid_block.
+//     --mixed
+//                 writes /data/train/constraints for a panel not observed whole:
+//                 the third series quarterly, each quarter's three-month average
+//                 observed exactly, the second series missing its last two
+//                 months, the first observed throughout. /data/train/y holds
+//                 zeros wherever nothing was observed. VarNormalWishart only.
+//     --soft
+//                 with --mixed: the quarterly averages observed up to an error,
+//                 one soft group whose precision is drawn, with its gamma prior
+//                 at /priors/constraints and its start at /initial/constraints_inv.
+//     --missing
+//                 the same, with every series monthly but the second missing its
+//                 last two months and the third missing a month in the middle:
+//                 missing values and a ragged edge, no aggregation.
+//     --partial-test
+//                 with --score: /data/test/constraints, a horizon realised in
+//                 part -- the first series throughout, the third as the average
+//                 of the first three periods, the second not at all -- and
+//                 /data/test/y with zeros where nothing was realised.
+//                 VarNormalWishart only.
+//     --scenario
+//                 /data/forecast/constraints, a forecast conditioned on the first
+//                 series' path over two periods and the third series' average
+//                 over three. Needs h >= 3 and no --score. VarNormalWishart only.
+//     --shrinkage=minnesota | --shrinkage=horseshoe
+//                 writes /model/shrinkage and /priors/a/shrinkage: own lags in
+//                 group 1, other lags in group 2, the intercepts as given, and
+//                 under minnesota an inverse gamma per group. The three
+//                 constant-coefficient Gaussian VARs only, without varsel.
+//     --stationary
+//                 writes /model/stationary = true. The same three only.
+//     --steady-state
+//                 writes /model/steady_state = true, a normal prior on the
+//                 unconditional mean at /priors/mu and its start at /initial/mu.
+//                 The same three only, without --shrinkage.
 //     --hold-states
 //                 writes /model/forecast_states = "hold", so the forecast keeps
 //                 the last in-sample states rather than simulating them forward.
@@ -74,6 +109,7 @@
 #include <filesystem>
 #include <iostream>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace
@@ -340,7 +376,7 @@ arma::mat build_forecast_regressors(const arma::mat &series, const Layout &layou
 /// `--score` additive: the file's stream is consumed in the same order and the
 /// same number of times whether the flag is there or not, so adding the flag to
 /// a fixture row adds a dataset and moves no number that was there before.
-void write_test_observations(const ModelFile &file, const arma::vec &last, int h)
+arma::mat write_test_observations(const ModelFile &file, const arma::vec &last, int h)
 {
     Lcg rng(20260920ULL);
 
@@ -357,6 +393,65 @@ void write_test_observations(const ModelFile &file, const arma::vec &last, int h
 
     ensure_group(file, "/data/test");
     write_mat(file, "/data/test/y", realised);
+    return realised;
+}
+
+/// Six one-row datasets under `group`, the constraint set a host writes. Rows,
+/// periods and variables are zero-based here and one-based in the file.
+void write_constraint_set(const ModelFile &file, const std::string &group,
+                          const std::vector<double> &value,
+                          const std::vector<std::vector<std::pair<int, int>>> &entries,
+                          const std::vector<double> &weights)
+{
+    std::vector<double> row, period, variable, weight;
+    for (std::size_t r = 0; r < entries.size(); ++r)
+    {
+        for (const auto &e : entries[r])
+        {
+            row.push_back(static_cast<double>(r + 1));
+            period.push_back(static_cast<double>(e.first + 1));
+            variable.push_back(static_cast<double>(e.second + 1));
+            weight.push_back(weights[r]);
+        }
+    }
+    ensure_group(file, group);
+    write_row(file, group + "/value", arma::vec(value));
+    write_row(file, group + "/group", arma::vec(value.size(), arma::fill::zeros));
+    write_row(file, group + "/row", arma::vec(row));
+    write_row(file, group + "/period", arma::vec(period));
+    write_row(file, group + "/variable", arma::vec(variable));
+    write_row(file, group + "/weight", arma::vec(weight));
+}
+
+/// --partial-test: what a horizon of at least three periods realised in part,
+/// and /data/test/y again with zeros where it realised nothing.
+void write_partial_test(const ModelFile &file, arma::mat realised)
+{
+    std::vector<double> value;
+    std::vector<std::vector<std::pair<int, int>>> entries;
+    std::vector<double> weights;
+    for (int t = 0; t < static_cast<int>(realised.n_rows); ++t)
+    {
+        value.push_back(realised(static_cast<arma::uword>(t), 0));
+        entries.push_back({{t, 0}});
+        weights.push_back(1.0);
+    }
+    value.push_back(arma::mean(realised.col(2).head(3)));
+    entries.push_back({{0, 2}, {1, 2}, {2, 2}});
+    weights.push_back(1.0 / 3.0);
+    write_constraint_set(file, "/data/test/constraints", value, entries, weights);
+
+    realised.col(1).zeros();
+    realised.col(2).zeros();
+    write_mat(file, "/data/test/y", realised);
+}
+
+/// --scenario: the first series at 0.5 and then -0.25, the third averaging 0.1
+/// over the first three periods of the horizon.
+void write_scenario(const ModelFile &file)
+{
+    write_constraint_set(file, "/data/forecast/constraints", {0.5, -0.25, 0.1},
+                         {{{0, 0}}, {{1, 0}}, {{0, 2}, {1, 2}, {2, 2}}}, {1.0, 1.0, 1.0 / 3.0});
 }
 
 /// tt x n_x, the compact reading of the same regressors build_train_regressors()
@@ -376,6 +471,105 @@ arma::mat build_var_compact_regressors(const arma::mat &series, const Layout &la
         x.submat(t, 0, t, layout.n_x_lag - 1) = arma::trans(series.col(t));
     }
     return x;
+}
+
+/// /data/train/constraints for --mixed and --missing, and /data/train/y again
+/// with zeros where nothing was observed: the panel as a host writes one it did
+/// not observe whole. Positions are one-based, as the file counts them; each
+/// dataset is one row, how every other vector here is stored.
+void write_incomplete_panel(const ModelFile &file, const arma::mat &series, const bool mixed,
+                            const bool soft)
+{
+    const arma::mat sample = series.cols(kP, kTT + kP - 1); // k x tt
+    arma::mat held = sample;
+    std::vector<double> value, group, row, period, variable, weight;
+    const auto add = [&](const double v, const std::vector<std::pair<int, int>> &entries,
+                         const double w, const double g = 0.0) {
+        value.push_back(v);
+        group.push_back(g);
+        for (const auto &e : entries)
+        {
+            row.push_back(static_cast<double>(value.size()));
+            period.push_back(static_cast<double>(e.first + 1));
+            variable.push_back(static_cast<double>(e.second + 1));
+            weight.push_back(w);
+        }
+    };
+
+    for (int t = 0; t < kTT; ++t)
+    {
+        add(sample(0, t), {{t, 0}}, 1.0);
+        if (t < kTT - 2)
+        {
+            add(sample(1, t), {{t, 1}}, 1.0);
+        }
+        else
+        {
+            held(1, t) = 0.0;
+        }
+        if (!mixed && t != kTT / 2)
+        {
+            add(sample(2, t), {{t, 2}}, 1.0);
+        }
+    }
+    if (mixed)
+    {
+        held.row(2).zeros();
+        for (int q = 0; q < kTT / 3; ++q)
+        {
+            const double average =
+                (sample(2, 3 * q) + sample(2, 3 * q + 1) + sample(2, 3 * q + 2)) / 3.0;
+            add(average, {{3 * q, 2}, {3 * q + 1, 2}, {3 * q + 2, 2}}, 1.0 / 3.0,
+                soft ? 1.0 : 0.0);
+        }
+    }
+    else
+    {
+        held(2, kTT / 2) = 0.0;
+    }
+
+    write_row(file, "/data/train/y", arma::vectorise(held));
+    ensure_group(file, "/data/train/constraints");
+    write_row(file, "/data/train/constraints/value", arma::vec(value));
+    write_row(file, "/data/train/constraints/group", arma::vec(group));
+    write_row(file, "/data/train/constraints/row", arma::vec(row));
+    write_row(file, "/data/train/constraints/period", arma::vec(period));
+    write_row(file, "/data/train/constraints/variable", arma::vec(variable));
+    write_row(file, "/data/train/constraints/weight", arma::vec(weight));
+
+    if (soft)
+    {
+        // A gamma prior on the one soft group's precision, centred on a
+        // standard deviation of about a third, and a start at its mean.
+        ensure_group(file, "/priors/constraints");
+        write_row(file, "/priors/constraints/shape", arma::vec{2.0});
+        write_row(file, "/priors/constraints/rate", arma::vec{0.2});
+        write_row(file, "/initial/constraints_inv", arma::vec{10.0});
+    }
+}
+
+/// --shrinkage: /model/shrinkage and /priors/a/shrinkage. `a` is vec of the
+/// k x n_x coefficient matrix, lags first, so coefficient (i, j) sits at j k + i:
+/// own lags (j == i within the lag block) in group 1, other lags in group 2,
+/// the intercepts in group 0, their prior as given.
+void write_shrinkage(const ModelFile &file, const std::string &scheme, const Layout &layout)
+{
+    write_attribute<std::string>(file, "/model", "shrinkage", scheme);
+    arma::vec group(static_cast<arma::uword>(layout.nparams), arma::fill::zeros);
+    for (int j = 0; j < layout.n_x_lag; ++j)
+    {
+        for (int i = 0; i < kK; ++i)
+        {
+            group(static_cast<arma::uword>(j * kK + i)) = (j % kK == i) ? 1.0 : 2.0;
+        }
+    }
+    ensure_group(file, "/priors/a/shrinkage");
+    write_row(file, "/priors/a/shrinkage/group", group);
+    if (scheme == "minnesota")
+    {
+        write_row(file, "/priors/a/shrinkage/shape", arma::vec{3.0, 3.0});
+        write_row(file, "/priors/a/shrinkage/rate", arma::vec{1.0, 0.25});
+    }
 }
 
 void write_common(const ModelFile &file, const std::string &model, const std::string &varsel,
@@ -1957,6 +2151,14 @@ int main(int argc, char *argv[])
     bool score = false;
     bool noncentred = false;
     bool iid = false;
+    bool mixed = false;
+    bool missing = false;
+    bool partial_test = false;
+    std::string shrinkage;
+    bool stationary = false;
+    bool steady_state = false;
+    bool soft = false;
+    bool scenario = false;
     bool bare_group_seen = false;
 
     for (int i = 7; i < argc; i++)
@@ -1984,6 +2186,46 @@ int main(int argc, char *argv[])
             // `bayests forecasts` into a scoring run, so it is what puts a
             // fixture through the predictive density code at all.
             score = true;
+        }
+        else if (token == "--mixed")
+        {
+            // A quarterly series among monthly ones: /data/train/constraints.
+            mixed = true;
+        }
+        else if (token.rfind("--shrinkage=", 0) == 0)
+        {
+            // An adaptive prior on `a`: /model/shrinkage and /priors/a/shrinkage.
+            shrinkage = token.substr(12);
+        }
+        else if (token == "--steady-state")
+        {
+            // The prior on the unconditional mean: /model/steady_state.
+            steady_state = true;
+        }
+        else if (token == "--stationary")
+        {
+            // Every kept draw of `a` stationary: /model/stationary.
+            stationary = true;
+        }
+        else if (token == "--soft")
+        {
+            // With --mixed: the quarterly averages soft, their variance drawn.
+            soft = true;
+        }
+        else if (token == "--partial-test")
+        {
+            // A horizon realised in part: /data/test/constraints.
+            partial_test = true;
+        }
+        else if (token == "--scenario")
+        {
+            // A conditional forecast: /data/forecast/constraints.
+            scenario = true;
+        }
+        else if (token == "--missing")
+        {
+            // Missing values and a ragged edge: /data/train/constraints.
+            missing = true;
         }
         else if (token == "--iid")
         {
@@ -2095,6 +2337,46 @@ int main(int argc, char *argv[])
     if (varsel != "none" && varsel != "ssvs" && varsel != "bvs")
     {
         std::cerr << "Unknown variable selection scheme: " << varsel << '\n';
+        return 2;
+    }
+    const bool scores_panels = model == "VarNormalWishart" || model == "VarNormalGamma";
+    const bool completes = scores_panels || model == "VarNormalStochvol" ||
+                           model == "VarTvpWishart" || model == "VarTvpGamma" ||
+                           model == "VarTvpStochvol";
+    if ((mixed || missing) && (!completes || mixed == missing || iid || structural ||
+                               (score && !scores_panels)))
+    {
+        std::cerr << "--mixed and --missing are written on the six Gaussian VARs only, one at a "
+                     "time, without --iid or a structural form, and with --score only on "
+                     "VarNormalWishart and VarNormalGamma: the combinations "
+                     "require_completion_spec() refuses\n";
+        return 2;
+    }
+    const bool adapts = model == "VarNormalWishart" || model == "VarNormalGamma" ||
+                        model == "VarNormalStochvol";
+    if ((!shrinkage.empty() || stationary || steady_state) &&
+        (!adapts || varsel != "none" || iid || structural || (steady_state && !shrinkage.empty()) ||
+                                               (!shrinkage.empty() && shrinkage != "minnesota" &&
+                                                shrinkage != "horseshoe")))
+    {
+        std::cerr << "--shrinkage=minnesota|horseshoe and --stationary are written on "
+                     "VarNormalWishart, VarNormalGamma and VarNormalStochvol only, without "
+                     "variable selection, --iid or a structural form\n";
+        return 2;
+    }
+    if (soft && !mixed)
+    {
+        std::cerr << "--soft makes the quarterly averages of --mixed soft, so it needs --mixed\n";
+        return 2;
+    }
+    if ((partial_test || scenario) &&
+        (!scores_panels || iid || structural || h < 3 || (partial_test && !score) ||
+         (scenario && score)))
+    {
+        std::cerr << "--partial-test and --scenario are written on VarNormalWishart and "
+                     "VarNormalGamma only, with "
+                     "h >= 3 and without --iid or a structural form; --partial-test needs "
+                     "--score, and --scenario refuses it: a conditional forecast is not scored\n";
         return 2;
     }
     if (iid && model != "VarNormalWishart")
@@ -2307,7 +2589,38 @@ int main(int argc, char *argv[])
 
         if (score)
         {
-            write_test_observations(file, series.col(kTT + kP - 1), h);
+            const arma::mat realised = write_test_observations(file, series.col(kTT + kP - 1), h);
+            if (partial_test)
+            {
+                write_partial_test(file, realised);
+            }
+        }
+        if (scenario)
+        {
+            write_scenario(file);
+        }
+
+        if (mixed || missing)
+        {
+            write_incomplete_panel(file, series, mixed, soft);
+        }
+        if (!shrinkage.empty())
+        {
+            write_shrinkage(file, shrinkage, layout);
+        }
+        if (stationary)
+        {
+            write_attribute<bool>(file, "/model", "stationary", true);
+        }
+        if (steady_state)
+        {
+            // A prior centred on zero with a standard deviation of one per
+            // series, the chain starting at zero.
+            write_attribute<bool>(file, "/model", "steady_state", true);
+            ensure_group(file, "/priors/mu");
+            write_row(file, "/priors/mu/mu", arma::vec(kK, arma::fill::zeros));
+            write_mat(file, "/priors/mu/v_inv", arma::eye<arma::mat>(kK, kK));
+            write_row(file, "/initial/mu", arma::vec(kK, arma::fill::zeros));
         }
 
         if (model == "VarTvpDiscount")
@@ -2352,6 +2665,12 @@ int main(int argc, char *argv[])
                   << ", k=" << kK << ", tt=" << kTT << ", nparams=" << layout.nparams
                   << (hold_states ? ", forecast_states=hold" : "")
                   << (score ? ", score=1" : "") << (noncentred ? ", noncentred=1" : "")
+                  << (mixed ? ", mixed=1" : "") << (missing ? ", missing=1" : "")
+                  << (partial_test ? ", partial_test=1" : "") << (scenario ? ", scenario=1" : "")
+                  << (soft ? ", soft=1" : "")
+                  << (shrinkage.empty() ? "" : ", shrinkage=" + shrinkage)
+                  << (stationary ? ", stationary=1" : "")
+                  << (steady_state ? ", steady_state=1" : "")
                   << ")\n";
     }
     catch (const std::exception &e)

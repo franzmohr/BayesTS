@@ -8,7 +8,9 @@
 #include <cmath>
 #include <set>
 #include <stdexcept>
+#include <string>
 #include <utility>
+#include <vector>
 
 namespace bayests::hdf5_io
 {
@@ -209,6 +211,186 @@ arma::uvec read_positions(const ModelFile &file, const std::string &dataset)
     return arma::conv_to<arma::uvec>::from(one_based - 1);
 }
 
+namespace
+{
+
+/// A dataset holding one value per element of a list: one-dimensional, the way
+/// h5py and most writers store a vector, or a single row or column, the way
+/// every other vector in these files is stored. Anything else is refused rather
+/// than flattened, since which order a matrix was meant to be read in is not
+/// recoverable.
+arma::vec read_list(const ModelFile &file, const std::string &dataset)
+{
+    const HighFive::DataSet data = file.getDataSet(dataset);
+    const std::vector<size_t> dims = data.getDimensions();
+
+    if (dims.size() == 1)
+    {
+        std::vector<double> values;
+        data.read(values);
+        return arma::vec(values);
+    }
+    if (dims.size() == 2 && (dims[0] == 1 || dims[1] == 1))
+    {
+        return read_vec(file, dataset);
+    }
+
+    std::string shape;
+    for (const size_t d : dims)
+    {
+        shape += (shape.empty() ? "" : " x ") + std::to_string(d);
+    }
+    throw std::invalid_argument("'" + file.resolve(dataset) + "' must be one-dimensional, or a "
+                                "single row or column, got " +
+                                (shape.empty() ? std::string("a scalar") : shape));
+}
+
+/// Whole numbers no smaller than `minimum`, shifted down by it: read as
+/// doubles for the reason read_positions() gives, so that a NaN or a 2.5 is
+/// refused by name rather than converted.
+arma::uvec read_counted_from(const ModelFile &file, const std::string &dataset,
+                             const double minimum)
+{
+    const arma::vec values = read_list(file, dataset);
+
+    for (const double value : values)
+    {
+        if (!std::isfinite(value) || value != std::floor(value) || value < minimum)
+        {
+            throw std::invalid_argument(
+                "'" + dataset + "' holds " + std::to_string(value) +
+                ", which is not a whole number of at least " + std::to_string(int(minimum)));
+        }
+    }
+
+    return arma::conv_to<arma::uvec>::from(values - minimum);
+}
+
+} // namespace
+
+bool read_constraints(const ModelFile &file, const std::string &group, Constraints &out)
+{
+    if (!file.exist(group))
+    {
+        return false;
+    }
+
+    for (const char *member : {"value", "group", "row", "period", "variable", "weight"})
+    {
+        if (!file.exist(group + "/" + member))
+        {
+            throw std::invalid_argument("'" + group + "' has no '" + member +
+                                        "'; a constraint set is the six datasets value, group, "
+                                        "row, period, variable and weight together");
+        }
+    }
+
+    Constraints c;
+    c.value = read_list(file, group + "/value");
+    c.group = read_counted_from(file, group + "/group", 0.0);
+    c.row = read_counted_from(file, group + "/row", 1.0);
+    c.period = read_counted_from(file, group + "/period", 1.0);
+    c.variable = read_counted_from(file, group + "/variable", 1.0);
+    c.weight = read_list(file, group + "/weight");
+
+    out = std::move(c);
+    return true;
+}
+
+void read_constraint_prior(const ModelFile &file, GammaPrior &prior, arma::vec &initial)
+{
+    if (file.exist("/priors/constraints"))
+    {
+        prior = read_gamma_prior(file, "/priors/constraints");
+    }
+    read_vec_if_present(file, "/initial/constraints_inv", initial);
+}
+
+void read_shrinkage_prior(const ModelFile &file, const std::string &block, ShrinkagePrior &prior,
+                          arma::vec &initial_scale, arma::vec &initial_local)
+{
+    const std::string group = "/priors/" + block + "/shrinkage";
+    if (file.exist(group + "/group"))
+    {
+        // Whole numbers from zero, zero meaning the prior stays as given.
+        const arma::vec values = read_vec(file, group + "/group");
+        for (const double v : values)
+        {
+            if (!std::isfinite(v) || v != std::floor(v) || v < 0.0)
+            {
+                throw std::invalid_argument("'" + group + "/group' holds " + std::to_string(v) +
+                                            ", which is not a whole number of at least 0");
+            }
+        }
+        prior.group = arma::conv_to<arma::uvec>::from(values);
+    }
+    read_vec_if_present(file, group + "/shape", prior.shape);
+    read_vec_if_present(file, group + "/rate", prior.rate);
+    read_vec_if_present(file, "/initial/" + block + "_shrinkage", initial_scale);
+    read_vec_if_present(file, "/initial/" + block + "_local", initial_local);
+}
+
+void read_shrinkage_draws(const ModelFile &file, const std::string &block, arma::mat &scale,
+                          arma::mat &local)
+{
+    if (dataset_has_data(file, "/posterior/" + block + "/shrinkage"))
+    {
+        scale = read_draws(file, "/posterior/" + block + "/shrinkage");
+    }
+    if (dataset_has_data(file, "/posterior/" + block + "/local"))
+    {
+        local = read_draws(file, "/posterior/" + block + "/local");
+    }
+}
+
+void write_shrinkage_draws(const ModelFile &file, const std::string &block, const arma::mat &scale,
+                           const arma::mat &local)
+{
+    if (scale.n_elem > 0)
+    {
+        write_draws(file, "/posterior/" + block + "/shrinkage", scale);
+    }
+    if (local.n_elem > 0)
+    {
+        write_draws(file, "/posterior/" + block + "/local", local);
+    }
+}
+
+void read_completion_draws(const ModelFile &file, arma::mat &y, arma::mat &constraints_inv)
+{
+    if (dataset_has_data(file, "/posterior/y/coeffs"))
+    {
+        y = read_draws(file, "/posterior/y/coeffs");
+    }
+    if (dataset_has_data(file, "/posterior/constraints_inv/coeffs"))
+    {
+        constraints_inv = read_draws(file, "/posterior/constraints_inv/coeffs");
+    }
+}
+
+void write_completion_draws(const ModelFile &file, const arma::mat &y,
+                            const arma::mat &constraints_inv)
+{
+    if (y.n_elem > 0)
+    {
+        write_draws(file, "/posterior/y/coeffs", y);
+    }
+    if (constraints_inv.n_elem > 0)
+    {
+        write_draws(file, "/posterior/constraints_inv/coeffs", constraints_inv);
+    }
+}
+
+void refuse_constraints(const ModelFile &file, const std::string &group, const char *algorithm)
+{
+    if (file.exist(group))
+    {
+        throw std::invalid_argument(std::string(algorithm) + " does not read " + group +
+                                    ": it does not condition a forecast on a scenario. Drop the "
+                                    "constraints for an unconditional forecast");
+    }
+}
+
 void ensure_group(const ModelFile &file, const std::string &group)
 {
     if (!file.exist(group))
@@ -270,6 +452,10 @@ VarSpec read_spec(const ModelFile &file, const char *covar_error)
 
     spec.varsel = var_selection_from_string(
         optional_attribute_string(file, "/model", "varsel", "none"));
+    spec.shrinkage = shrinkage_from_string(
+        optional_attribute_string(file, "/model", "shrinkage", "none"));
+    spec.stationary = optional_attribute_bool(file, "/model", "stationary", false);
+    spec.steady_state = optional_attribute_bool(file, "/model", "steady_state", false);
     spec.structural = optional_attribute_bool(file, "/model", "structural", false);
 
     // Absent from every file written before the choice existed. Those files
@@ -529,7 +715,7 @@ bool is_model_attribute(const std::string &name)
         "m",         "s",         "h",          "quantile",     "n",          "n_iid",
         "rank",      "k_beta",    "n_restricted", "n_factors",  "n_obs_factors",
         "varsel",    "structural", "error",     "seed",       "forecast_states",
-        "delta_beta", "delta_sigma",
+        "delta_beta", "delta_sigma", "shrinkage", "stationary", "steady_state",
     };
     return names.count(name) > 0;
 }

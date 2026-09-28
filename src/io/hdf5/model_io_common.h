@@ -93,6 +93,51 @@ arma::uword last_sample_period(arma::uword periods);
 /// count. The samplers index from zero.
 arma::uvec read_positions(const ModelFile &file, const std::string &dataset);
 
+/// What was observed of a panel not observed whole (see Constraints), read from
+/// the six one-dimensional datasets under `group` -- `value`, `group`, `row`,
+/// `period`, `variable` and `weight`. One-dimensional so that no orientation
+/// question arises: a row here is a constraint, not a dataspace row.
+///
+/// `row`, `period` and `variable` are counted from one in the file, as
+/// read_positions() counts, and `group` from zero, zero meaning hard. Returns
+/// false and leaves `out` alone when `group` is not in the file; throws when it
+/// is and any of the six is missing or holds something that is not a whole
+/// number where one is meant. Whether the rows describe the panel is the
+/// sampler's validate(), which knows its shape.
+bool read_constraints(const ModelFile &file, const std::string &group, Constraints &out);
+
+/// Throws, naming `algorithm`, when `group` is in the file: for a constraint
+/// group a model has nowhere to put -- the factor models carry no forecast
+/// data, so a scenario in their file would otherwise be read by nobody and a
+/// forecast reported as if it had been conditioned.
+void refuse_constraints(const ModelFile &file, const std::string &group, const char *algorithm);
+
+/// The gamma prior on each soft group's error precision, /priors/constraints,
+/// and its start, /initial/constraints_inv, each where the file has it.
+void read_constraint_prior(const ModelFile &file, GammaPrior &prior, arma::vec &initial);
+
+/// What a chain from a panel not observed whole keeps beside its draws: the
+/// completed panels, /posterior/y/coeffs, and the soft precisions,
+/// /posterior/constraints_inv/coeffs -- read where present, written where not
+/// empty.
+void read_completion_draws(const ModelFile &file, arma::mat &y, arma::mat &constraints_inv);
+
+/// The adaptive prior on a block of coefficients (VarSpec::shrinkage) --
+/// /priors/<block>/shrinkage/{group,shape,rate}, group counted from zero, zero
+/// leaving a coefficient's prior as given -- and its starting scales,
+/// /initial/<block>_shrinkage and /initial/<block>_local, each where present.
+void read_shrinkage_prior(const ModelFile &file, const std::string &block, ShrinkagePrior &prior,
+                          arma::vec &initial_scale, arma::vec &initial_local);
+
+/// Its draws: /posterior/<block>/shrinkage, one row per group, and
+/// /posterior/<block>/local, one row per coefficient under a horseshoe.
+void read_shrinkage_draws(const ModelFile &file, const std::string &block, arma::mat &scale,
+                          arma::mat &local);
+void write_shrinkage_draws(const ModelFile &file, const std::string &block, const arma::mat &scale,
+                           const arma::mat &local);
+void write_completion_draws(const ModelFile &file, const arma::mat &y,
+                            const arma::mat &constraints_inv);
+
 void ensure_group(const ModelFile &file, const std::string &group);
 
 /// The /model attributes that describe the shape of the model, whichever model

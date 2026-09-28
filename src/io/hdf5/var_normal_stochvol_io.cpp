@@ -49,6 +49,9 @@ VarNormalStochvolInput read_input(const ModelFile &file)
     read_mat_if_present(file, "/data/train/z", input.train.z);
     read_forecast_regressors(file, input.spec.k, input.forecast.x);
     read_test_observations(file, input.spec, input.test.y);
+    read_constraints(file, "/data/train/constraints", input.train.constraints);
+    read_constraints(file, "/data/test/constraints", input.test.constraints);
+    read_constraints(file, "/data/forecast/constraints", input.forecast.constraints);
 
     if (input.use_a())
     {
@@ -93,6 +96,15 @@ VarNormalStochvolInput read_input(const ModelFile &file)
     read_mat_if_present(file, "/initial/h", input.initial.h);
     read_vec_if_present(file, "/initial/h_init", input.initial.h_init);
 
+    read_constraint_prior(file, input.constraints_prior, input.initial.constraints_inv);
+    read_shrinkage_prior(file, "a", input.a_shrinkage_prior, input.initial.a_shrinkage,
+                         input.initial.a_local);
+    // The steady-state prior on the unconditional mean, where the file has it.
+    if (file.exist("/priors/mu"))
+    {
+        input.mu_prior = read_normal_prior(file, "/priors/mu");
+    }
+    read_vec_if_present(file, "/initial/mu", input.initial.mu);
     return input;
 }
 
@@ -106,6 +118,12 @@ VarNormalStochvolDraws read_coefficients(const ModelFile &file)
         draws.u_sigma_inv = read_draws(file, "/posterior/u_sigma_inv/coeffs");
     }
 
+    read_completion_draws(file, draws.y, draws.constraints_inv);
+    read_shrinkage_draws(file, "a", draws.a_shrinkage, draws.a_local);
+    if (dataset_has_data(file, "/posterior/mu/coeffs"))
+    {
+        draws.mu = read_draws(file, "/posterior/mu/coeffs");
+    }
     return draws;
 }
 
@@ -137,6 +155,12 @@ VarNormalStochvolDraws read_forecast_coefficients(const ModelFile &file,
         read_draws_if_present(file, "/posterior/u_sigma_inv/sigma", draws.h_sigma);
     }
 
+    read_completion_draws(file, draws.y, draws.constraints_inv);
+    read_shrinkage_draws(file, "a", draws.a_shrinkage, draws.a_local);
+    if (dataset_has_data(file, "/posterior/mu/coeffs"))
+    {
+        draws.mu = read_draws(file, "/posterior/mu/coeffs");
+    }
     return draws;
 }
 
@@ -162,6 +186,12 @@ void write_coefficients(const ModelFile &file, const VarNormalStochvolDraws &dra
     }
     write_draws(file, "/posterior/u_omega_inv/coeffs", draws.u_omega_inv);
     write_draws(file, "/posterior/u_sigma_inv/coeffs", draws.u_sigma_inv);
+    write_shrinkage_draws(file, "a", draws.a_shrinkage, draws.a_local);
+    if (draws.mu.n_elem > 0)
+    {
+        write_draws(file, "/posterior/mu/coeffs", draws.mu);
+    }
+    write_completion_draws(file, draws.y, draws.constraints_inv);
     write_draws(file, "/posterior/u_sigma_inv/sigma", draws.h_sigma);
 }
 

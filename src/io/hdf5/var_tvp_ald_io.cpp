@@ -20,6 +20,9 @@ VarTvpAldInput read_input(const ModelFile &file)
     read_mat_if_present(file, "/data/train/y", input.train.y);
     read_mat_if_present(file, "/data/train/z", input.train.z);
     read_test_observations(file, input.spec, input.test.y);
+    read_constraints(file, "/data/train/constraints", input.train.constraints);
+    read_constraints(file, "/data/test/constraints", input.test.constraints);
+    read_constraints(file, "/data/forecast/constraints", input.forecast.constraints);
 
     const arma::uword tt = input.train.periods(input.spec.k);
 
