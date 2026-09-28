@@ -20,6 +20,8 @@ VarNormalAldInput read_input(const ModelFile &file)
 
     read_mat_if_present(file, "/data/train/y", input.train.y);
     read_mat_if_present(file, "/data/train/z", input.train.z);
+    // What a quantile grid forecasts from; a single quantile does not forecast.
+    read_forecast_regressors(file, input.spec.k, input.forecast.x);
     read_test_observations(file, input.spec, input.test.y);
     read_constraints(file, "/data/train/constraints", input.train.constraints);
     read_constraints(file, "/data/test/constraints", input.test.constraints);
@@ -89,8 +91,16 @@ void write_coefficients(const ModelFile &file, const VarNormalAldDraws &draws)
         }
     }
     write_draws(file, "/posterior/u_scale/coeffs", draws.u_scale);
-    write_draws(file, "/posterior/u_omega_inv/coeffs", draws.u_omega_inv);
-    write_draws(file, "/posterior/u_sigma_inv/coeffs", draws.u_sigma_inv);
+    // A quantile grid keeps neither precision path: one per level would be the
+    // largest thing in the file, and nothing downstream of a grid reads them.
+    if (draws.u_omega_inv.n_elem > 0)
+    {
+        write_draws(file, "/posterior/u_omega_inv/coeffs", draws.u_omega_inv);
+    }
+    if (draws.u_sigma_inv.n_elem > 0)
+    {
+        write_draws(file, "/posterior/u_sigma_inv/coeffs", draws.u_sigma_inv);
+    }
 }
 
 } // namespace bayests::hdf5_io::var_normal_ald

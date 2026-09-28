@@ -108,6 +108,9 @@ add_executable(bayests_unit_shrinkage unit_shrinkage.cpp)
 # The steady-state prior: the intercept every draw implies, and the prior
 # acting on the mean rather than the intercept.
 add_executable(bayests_unit_steady_state unit_steady_state.cpp)
+# The structural quantile VAR: the distribution a grid of quantiles describes,
+# and a recursive system's forecast simulated through it against the truth.
+add_executable(bayests_unit_var_quantile_grid unit_var_quantile_grid.cpp)
 add_executable(bayests_unit_input_values unit_input_values.cpp)
 add_executable(bayests_unit_var_normal_stochvol unit_var_normal_stochvol.cpp)
 # The one model that draws nothing, so unlike every sampler beside it the whole
@@ -164,7 +167,7 @@ foreach(_core_unit bayests_unit_identification bayests_unit_vec_klgs_2010 bayest
                    bayests_unit_var_ald bayests_unit_thin
                    bayests_unit_favar_normal_wishart bayests_unit_bvs bayests_unit_ssvs
                    bayests_unit_iid_block bayests_unit_constraints bayests_unit_var_mixed_frequency
-                   bayests_unit_shrinkage bayests_unit_steady_state
+                   bayests_unit_shrinkage bayests_unit_steady_state bayests_unit_var_quantile_grid
                    bayests_unit_input_values bayests_unit_var_normal_stochvol
                    bayests_unit_var_tvp_discount bayests_unit_vec_tvp_discount
                    bayests_unit_predictive_score bayests_unit_factor_score
@@ -348,7 +351,7 @@ foreach(_unit vec_to_var forecast_lags forecast_regressors_io forecast_group_io 
               vec_klgs_2010 vec_tvp_coint coint_prior_symmetry coint_klgs_prior coint_jacobian coint_dees_us dfm_normal_gamma dfm_normal_stochvol
               dfm_tvp_gamma dfm_tvp_stochvol favar_normal_wishart var_ald thin model_group bvs ssvs
               input_values var_normal_stochvol var_tvp_discount vec_tvp_discount read_path bool_attributes tvp_initial_state
-              forecast_states noncentred iid_block constraints constraints_io var_mixed_frequency shrinkage steady_state)
+              forecast_states noncentred iid_block constraints constraints_io var_mixed_frequency shrinkage steady_state var_quantile_grid)
     add_test(NAME "unit.${_unit}" COMMAND "bayests_unit_${_unit}")
     set_tests_properties("unit.${_unit}" PROPERTIES
         ENVIRONMENT_MODIFICATION "${_bayests_test_env_mod}")
@@ -635,6 +638,8 @@ bayests_add_model_fixture(VarTvpDiscount-nofcst VarTvpDiscount none 0 0 0)
 bayests_add_model_fixture(VarNormalAld-plain      VarNormalAld none 0 0 0)
 bayests_add_model_fixture(VarNormalAld-bvs        VarNormalAld bvs  0 0 0)
 bayests_add_model_fixture(VarNormalAld-structural VarNormalAld none 0 1 0)
+# A grid of quantiles: the structural quantile VAR, forecast by simulation.
+bayests_add_model_fixture(VarNormalAld-grid-structural VarNormalAld none 0 1 4 --quantile-grid)
 bayests_add_model_fixture(VarTvpAld-plain         VarTvpAld    none 0 0 0)
 bayests_add_model_fixture(VarTvpAld-bvs           VarTvpAld    bvs  0 0 0)
 bayests_add_model_fixture(VarTvpAld-structural    VarTvpAld    none 0 1 0)

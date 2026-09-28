@@ -433,6 +433,11 @@ VarSpec read_spec(const ModelFile &file, const char *covar_error)
     // median there, which is the value at which the asymmetric Laplace is
     // symmetric and the model is the one every other sampler here already is.
     spec.quantile = optional_attribute_double(file, "/model", "quantile", 0.5);
+    if (attribute_exists(file, "/model", "quantiles"))
+    {
+        spec.quantiles = get_attribute_double_vector(file, "/model", "quantiles");
+    }
+    spec.forecast_quantile = optional_attribute_double(file, "/model", "forecast_quantile", 0.0);
 
     // Absent from every file but a discounted model's, and left at one there,
     // which is not a neutral default but a meaningful model: both at one is the
@@ -723,7 +728,7 @@ bool is_model_attribute(const std::string &name)
     // every /model attribute this does not list.
     static const std::set<std::string> names = {
         "algorithm", "k",         "iterations", "burnin",       "thin",       "p",
-        "m",         "s",         "h",          "quantile",     "n",          "n_iid",
+        "m",         "s",         "h",          "quantile",     "quantiles",  "forecast_quantile", "n",          "n_iid",
         "rank",      "k_beta",    "n_restricted", "n_factors",  "n_obs_factors",
         "varsel",    "structural", "error",     "seed",       "forecast_states",
         "delta_beta", "delta_sigma", "shrinkage", "stationary", "steady_state",
