@@ -123,18 +123,22 @@ void read_constraint_prior(const ModelFile &file, GammaPrior &prior, arma::vec &
 void read_completion_draws(const ModelFile &file, arma::mat &y, arma::mat &constraints_inv);
 
 /// The adaptive prior on a block of coefficients (VarSpec::shrinkage) --
-/// /priors/<block>/shrinkage/{group,shape,rate}, group counted from zero, zero
-/// leaving a coefficient's prior as given -- and its starting scales,
-/// /initial/<block>_shrinkage and /initial/<block>_local, each where present.
+/// /priors/<block>/shrinkage/{group,shape,rate,theta,theta_rate}, group counted
+/// from zero, zero leaving a coefficient's prior as given -- and its starts,
+/// /initial/<block>_shrinkage, /initial/<block>_local and
+/// /initial/<block>_theta, each where present.
 void read_shrinkage_prior(const ModelFile &file, const std::string &block, ShrinkagePrior &prior,
-                          arma::vec &initial_scale, arma::vec &initial_local);
+                          arma::vec &initial_scale, arma::vec &initial_local,
+                          arma::vec &initial_theta);
 
-/// Its draws: /posterior/<block>/shrinkage, one row per group, and
-/// /posterior/<block>/local, one row per coefficient under a horseshoe.
+/// Its draws: /posterior/<block>/shrinkage, one row per group,
+/// /posterior/<block>/local, one row per coefficient under a horseshoe or a
+/// normal-gamma prior, and /posterior/<block>/theta, one row per group where a
+/// normal-gamma prior draws theta.
 void read_shrinkage_draws(const ModelFile &file, const std::string &block, arma::mat &scale,
-                          arma::mat &local);
+                          arma::mat &local, arma::mat &theta);
 void write_shrinkage_draws(const ModelFile &file, const std::string &block, const arma::mat &scale,
-                           const arma::mat &local);
+                           const arma::mat &local, const arma::mat &theta);
 void write_completion_draws(const ModelFile &file, const arma::mat &y,
                             const arma::mat &constraints_inv);
 

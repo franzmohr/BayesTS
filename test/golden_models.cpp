@@ -102,6 +102,7 @@ constexpr const char *kOutputs[] = {
     // horseshoe.
     "/posterior/a/shrinkage",
     "/posterior/a/local",
+    "/posterior/a/theta",
     // The unconditional mean under the steady-state prior.
     "/posterior/mu/coeffs",
     "/posterior/v_sigma_inv/coeffs",

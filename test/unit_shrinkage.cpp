@@ -202,6 +202,97 @@ void test_normal_gamma_update()
           local.is_finite() && local.min() >= bayests::core::kNormalGammaMinLocal);
 }
 
+/// With theta drawn, the fixed point is the joint posterior of (lambda, theta)
+/// given a: the local variances integrate out as above, now with their gamma's
+/// normalising constant, which depends on theta. Both means by quadrature over
+/// a grid in (log lambda, log theta), against a chain whose theta step is tuned
+/// over a burn-in and then held.
+void test_normal_gamma_theta_update()
+{
+    std::printf("the normal-gamma update with theta drawn\n");
+    NormalPrior base;
+    base.mu = arma::zeros<arma::vec>(4);
+    base.v_inv = arma::diagmat(arma::vec{1.0, 4.0, 0.5, 2.0});
+    ShrinkagePrior prior;
+    prior.group = {1, 1, 1, 0};
+    prior.theta_rate = {1.0};
+    prior.shape = {2.0};
+    prior.rate = {1.0};
+    const arma::vec a = {0.3, -0.05, 1.2, 7.0};
+    const arma::vec dev = arma::square(a.head(3)) % arma::vec(base.v_inv.diag()).head(3);
+
+    const auto log_density = [&](const double lambda, const double theta) {
+        double out = std::log(lambda) - lambda - theta; // G(2, 1) on lambda, Exp(1) on theta
+        for (const double d : dev)
+        {
+            out += theta * std::log(0.5 * theta * lambda) - std::lgamma(theta) +
+                   0.5 * (theta - 0.5) * std::log(d / (theta * lambda)) +
+                   log_bessel_integral(theta - 0.5, std::sqrt(d * theta * lambda));
+        }
+        return out;
+    };
+    const int grid = 240;
+    arma::mat log_w(grid, grid);
+    arma::vec lambdas(grid), thetas(grid);
+    for (int i = 0; i < grid; i++)
+    {
+        lambdas(i) = std::exp(-10.0 + 15.0 * (i + 0.5) / grid);
+        thetas(i) = std::exp(-7.0 + 10.0 * (i + 0.5) / grid);
+    }
+    for (int i = 0; i < grid; i++)
+    {
+        for (int j = 0; j < grid; j++)
+        {
+            // d lambda d theta = lambda theta d log lambda d log theta
+            log_w(i, j) = log_density(lambdas(i), thetas(j)) + std::log(lambdas(i) * thetas(j));
+        }
+    }
+    const arma::mat w = arma::exp(log_w - log_w.max());
+    const double total = arma::accu(w);
+    const double expected_lambda = arma::accu(arma::sum(w, 1) % lambdas) / total;
+    const double expected_theta = arma::accu(arma::sum(w, 0).t() % thetas) / total;
+
+    const int burn = 5000, n = 400000, batch = 4000;
+    CoefficientShrinkage shrinkage(Shrinkage::normal_gamma, prior, base, arma::vec(), arma::vec(),
+                                   arma::vec{0.1}, burn);
+    check("theta is drawn", shrinkage.draws_theta());
+    arma::arma_rng::set_seed(7);
+    for (int i = 0; i < burn; i++)
+    {
+        shrinkage.update(a);
+    }
+    const arma::vec step = shrinkage.theta_step();
+    arma::mat draws(2, n);
+    for (int i = 0; i < n; i++)
+    {
+        shrinkage.update(a);
+        draws(0, i) = shrinkage.scale()(0);
+        draws(1, i) = shrinkage.theta()(0);
+    }
+    check("the step is held after the burn-in",
+          arma::approx_equal(step, shrinkage.theta_step(), "absdiff", 0.0));
+    const double acceptance = shrinkage.theta_acceptance()(0);
+    std::printf("    step %.3f, acceptance after the burn-in %.3f\n", step(0), acceptance);
+    check_below("the tuned step accepts near its target of 0.3", std::fabs(acceptance - 0.3), 0.15);
+
+    const arma::vec expected = {expected_lambda, expected_theta};
+    const char *names[] = {"lambda", "theta"};
+    for (arma::uword r = 0; r < 2; r++)
+    {
+        arma::vec means(n / batch);
+        for (int b = 0; b < n / batch; b++)
+        {
+            means(b) = arma::mean(arma::vec(draws.row(r).subvec(b * batch, (b + 1) * batch - 1).t()));
+        }
+        const double se = arma::stddev(means) / std::sqrt(static_cast<double>(means.n_elem));
+        const double got = arma::mean(draws.row(r));
+        const double z = std::fabs(got - expected(r)) / se;
+        std::printf("    E[%s | a] = %.5f by quadrature, %.5f drawn, %.2f standard errors\n", names[r],
+                    expected(r), got, z);
+        check_below(std::string("the chain averages ") + names[r] + " to its posterior mean", z, 5.0);
+    }
+}
+
 void test_horseshoe_precision()
 {
     std::printf("the horseshoe\n");
@@ -374,6 +465,20 @@ void test_normal_gamma_shrinks_zeros()
     check("its scales are drawn and kept",
           g.a_shrinkage.n_rows == 1 && g.a_local.n_rows == kK * kNx && g.a_local.is_finite() &&
               g.a_shrinkage.min() > 0.0 && g.a_local.min() > 0.0);
+    check("and theta, being fixed, is not", g.a_theta.is_empty());
+
+    bayests::VarNormalWishartInput drawn = ng;
+    drawn.a_shrinkage_prior.theta.reset();
+    drawn.a_shrinkage_prior.theta_rate = {1.0};
+    arma::arma_rng::set_seed(3);
+    const auto t = bayests::VarNormalWishartSampler{}.draw_coefficients(drawn, reporter);
+    const double error_drawn = arma::accu(arma::square(arma::vec(arma::mean(t.a, 1)).elem(zeros)));
+    std::printf("    with theta drawn: squared error %.4f, posterior mean of theta %.3f\n",
+                error_drawn, arma::mean(arma::vec(t.a_theta.row(0).t())));
+    check_below("with theta drawn the zeros are still closer to zero", error_drawn / error_diffuse,
+                0.5);
+    check("and theta is drawn and kept",
+          t.a_theta.n_rows == 1 && t.a_theta.n_cols == t.a.n_cols && t.a_theta.min() > 0.0);
 }
 
 void test_stationarity()
@@ -478,6 +583,22 @@ void test_refusals()
     input.a_shrinkage_prior.theta = {0.1};
     input.a_shrinkage_prior.rate.reset();
     check("and one without a rate on the global scale", refuses(input, "/rate"));
+    input.a_shrinkage_prior.rate = {1.0};
+    input.a_shrinkage_prior.theta_rate = {1.0};
+    check("theta both fixed and drawn is refused", refuses(input, "both /theta and /theta_rate"));
+    input.a_shrinkage_prior.theta.reset();
+    input.a_shrinkage_prior.theta_rate = {0.0};
+    check("and a theta_rate that is not positive", refuses(input, "theta_rate must be positive"));
+    input.a_shrinkage_prior.theta_rate = {1.0};
+    input.initial.a_theta = {-1.0};
+    check("and a start of theta that is not positive", refuses(input, "a_theta must be positive"));
+
+    input = base;
+    input.a_shrinkage_prior.theta_rate = {1.0};
+    check("theta_rate beside a Minnesota prior is refused", refuses(input, "normal_gamma only"));
+    input = base;
+    input.initial.a_theta = {0.1};
+    check("and so is a start of theta that nothing draws", refuses(input, "_theta is read only"));
 
     bayests::VarTvpGammaInput tvp;
     tvp.spec.k = static_cast<int>(kK);
@@ -496,6 +617,7 @@ int main()
         test_horseshoe_precision();
         test_horseshoe_shrinks_zeros();
         test_normal_gamma_update();
+        test_normal_gamma_theta_update();
         test_normal_gamma_shrinks_zeros();
         test_stationarity();
         test_refusals();

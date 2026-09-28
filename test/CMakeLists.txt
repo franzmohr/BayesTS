@@ -550,6 +550,9 @@ bayests_add_model_fixture(VarNormalWishart-minnesota-mixed  VarNormalWishart  no
 bayests_add_model_fixture(VarNormalWishart-normal-gamma       VarNormalWishart  none 0 0 4 --shrinkage=normal_gamma)
 bayests_add_model_fixture(VarNormalGamma-normal-gamma-covar-mixed VarNormalGamma    none 1 0 4 --shrinkage=normal_gamma --mixed)
 bayests_add_model_fixture(VarNormalStochvol-normal-gamma-stationary VarNormalStochvol none 0 0 4 --shrinkage=normal_gamma --stationary)
+# And with theta drawn, on the two samplers the fixed-theta ones leave plain.
+bayests_add_model_fixture(VarNormalWishart-normal-gamma-theta VarNormalWishart  none 0 0 4 --shrinkage=normal_gamma --draw-theta)
+bayests_add_model_fixture(VarNormalGamma-normal-gamma-theta-covar VarNormalGamma none 1 0 4 --shrinkage=normal_gamma --draw-theta)
 
 # The steady-state prior, on each of the three, with the stationarity condition
 # and with a panel not observed whole beside it.
