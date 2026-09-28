@@ -77,6 +77,10 @@
 //                 under minnesota an inverse gamma per group, under
 //                 normal_gamma theta = 0.1 and a gamma on each global rate. The three
 //                 constant-coefficient Gaussian VARs only, without varsel.
+//     --draw-theta
+//                 with --shrinkage=normal_gamma: theta drawn under an
+//                 exponential prior, /priors/a/shrinkage/theta_rate in place of
+//                 theta, started at /initial/a_theta.
 //     --stationary
 //                 writes /model/stationary = true. The same three only.
 //     --steady-state
@@ -553,7 +557,8 @@ void write_incomplete_panel(const ModelFile &file, const arma::mat &series, cons
 /// k x n_x coefficient matrix, lags first, so coefficient (i, j) sits at j k + i:
 /// own lags (j == i within the lag block) in group 1, other lags in group 2,
 /// the intercepts in group 0, their prior as given.
-void write_shrinkage(const ModelFile &file, const std::string &scheme, const Layout &layout)
+void write_shrinkage(const ModelFile &file, const std::string &scheme, const Layout &layout,
+                     const bool draw_theta = false)
 {
     write_attribute<std::string>(file, "/model", "shrinkage", scheme);
     arma::vec group(static_cast<arma::uword>(layout.nparams), arma::fill::zeros);
@@ -571,9 +576,17 @@ void write_shrinkage(const ModelFile &file, const std::string &scheme, const Lay
         write_row(file, "/priors/a/shrinkage/shape", arma::vec{3.0, 3.0});
         write_row(file, "/priors/a/shrinkage/rate", arma::vec{1.0, 0.25});
     }
-    if (scheme == "normal_gamma")
+    if (scheme == "normal_gamma" && draw_theta)
+    {
+        write_row(file, "/priors/a/shrinkage/theta_rate", arma::vec{1.0, 1.0});
+        write_row(file, "/initial/a_theta", arma::vec{0.1, 0.1});
+    }
+    else if (scheme == "normal_gamma")
     {
         write_row(file, "/priors/a/shrinkage/theta", arma::vec{0.1, 0.1});
+    }
+    if (scheme == "normal_gamma")
+    {
         write_row(file, "/priors/a/shrinkage/shape", arma::vec{0.01, 0.01});
         write_row(file, "/priors/a/shrinkage/rate", arma::vec{0.01, 0.01});
     }
@@ -2163,6 +2176,7 @@ int main(int argc, char *argv[])
     bool partial_test = false;
     std::string shrinkage;
     bool stationary = false;
+    bool draw_theta = false;
     bool steady_state = false;
     bool soft = false;
     bool scenario = false;
@@ -2208,6 +2222,11 @@ int main(int argc, char *argv[])
         {
             // The prior on the unconditional mean: /model/steady_state.
             steady_state = true;
+        }
+        else if (token == "--draw-theta")
+        {
+            // theta of the normal-gamma prior drawn rather than fixed.
+            draw_theta = true;
         }
         else if (token == "--stationary")
         {
@@ -2369,6 +2388,11 @@ int main(int argc, char *argv[])
         std::cerr << "--shrinkage=minnesota|horseshoe|normal_gamma and --stationary are written on "
                      "VarNormalWishart, VarNormalGamma and VarNormalStochvol only, without "
                      "variable selection, --iid or a structural form\n";
+        return 2;
+    }
+    if (draw_theta && shrinkage != "normal_gamma")
+    {
+        std::cerr << "--draw-theta needs --shrinkage=normal_gamma\n";
         return 2;
     }
     if (soft && !mixed)
@@ -2613,7 +2637,7 @@ int main(int argc, char *argv[])
         }
         if (!shrinkage.empty())
         {
-            write_shrinkage(file, shrinkage, layout);
+            write_shrinkage(file, shrinkage, layout, draw_theta);
         }
         if (stationary)
         {
@@ -2677,6 +2701,7 @@ int main(int argc, char *argv[])
                   << (soft ? ", soft=1" : "")
                   << (shrinkage.empty() ? "" : ", shrinkage=" + shrinkage)
                   << (stationary ? ", stationary=1" : "")
+                  << (draw_theta ? ", draw_theta=1" : "")
                   << (steady_state ? ", steady_state=1" : "")
                   << ")\n";
     }

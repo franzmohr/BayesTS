@@ -29,6 +29,38 @@ heading, and move down into a version section when one is cut.
 
 ### Added
 
+- **theta of the normal-gamma prior drawn**, as Huber and Feldkircher (2019)
+  do: `/priors/a/shrinkage/theta_rate` in place of `theta` puts an exponential
+  prior on each group's theta, and every sweep makes one random walk
+  Metropolis-Hastings move on log theta per group, from
+  `-r theta + n (theta log(theta lambda / 2) - lgamma(theta)) + (theta - 1) sum log psi - theta lambda sum psi / 2`
+  plus the Jacobian of the log. The step starts at 0.5 and follows a
+  Robbins-Monro recursion towards an acceptance rate of 0.3 over the burn-in,
+  and is held over every kept draw, so the chain there is plain
+  Metropolis-within-Gibbs. The start is `/initial/a_theta`, or the prior mean
+  1 / theta_rate; the draws are `/posterior/a/theta`, `(G, iterations)`.
+  `theta_rate` is new in `ShrinkagePrior`, and `a_theta` in the three initial
+  and the three draws structs. `CoefficientShrinkage` takes the start
+  and the burn-in as two defaulted constructor arguments, and
+  `read_shrinkage_prior()`, `read_shrinkage_draws()` and `write_shrinkage_draws()`
+  one more argument each. Refused: `theta` and `theta_rate` together, a
+  non-positive `theta_rate` or start, either beside another scheme, and a start
+  of theta where nothing draws it.
+
+  `unit.shrinkage` checks the chain at fixed coefficients against the joint
+  posterior of `(lambda, theta)`, whose means it computes by quadrature over a
+  240 by 240 grid in the logs, the local variances integrated out as Bessel
+  functions: 1.41 and 1.56 batch-means standard errors off over 400,000 sweeps.
+  The step has to be unchanged after the burn-in and accept 0.35 of moves there,
+  and on the sparse VAR the zero coefficients' squared error falls to 15% of the
+  diffuse prior's, with the posterior mean of theta at 0.35. Two fixtures,
+  `VarNormalWishart-normal-gamma-theta` and `VarNormalGamma-normal-gamma-theta-covar`
+  (`make_model_fixture --draw-theta`), and `/posterior/a/theta` among the
+  golden outputs. *Draws are unchanged* for every file without `theta_rate`,
+  the fixed-theta normal-gamma fixtures included: 151 of 151 fixtures
+  fingerprint identically, once the `absent` line the new golden output adds
+  is set aside.
+
 - **The normal-gamma prior** of Griffin and Brown (2010), as Huber and
   Feldkircher (2019) put it on a VAR, as a third adaptive prior for the three
   constant-coefficient Gaussian VARs: `/model/shrinkage = normal_gamma` gives

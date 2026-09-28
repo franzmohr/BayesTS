@@ -98,7 +98,7 @@ VarNormalStochvolInput read_input(const ModelFile &file)
 
     read_constraint_prior(file, input.constraints_prior, input.initial.constraints_inv);
     read_shrinkage_prior(file, "a", input.a_shrinkage_prior, input.initial.a_shrinkage,
-                         input.initial.a_local);
+                         input.initial.a_local, input.initial.a_theta);
     // The steady-state prior on the unconditional mean, where the file has it.
     if (file.exist("/priors/mu"))
     {
@@ -119,7 +119,7 @@ VarNormalStochvolDraws read_coefficients(const ModelFile &file)
     }
 
     read_completion_draws(file, draws.y, draws.constraints_inv);
-    read_shrinkage_draws(file, "a", draws.a_shrinkage, draws.a_local);
+    read_shrinkage_draws(file, "a", draws.a_shrinkage, draws.a_local, draws.a_theta);
     if (dataset_has_data(file, "/posterior/mu/coeffs"))
     {
         draws.mu = read_draws(file, "/posterior/mu/coeffs");
@@ -156,7 +156,7 @@ VarNormalStochvolDraws read_forecast_coefficients(const ModelFile &file,
     }
 
     read_completion_draws(file, draws.y, draws.constraints_inv);
-    read_shrinkage_draws(file, "a", draws.a_shrinkage, draws.a_local);
+    read_shrinkage_draws(file, "a", draws.a_shrinkage, draws.a_local, draws.a_theta);
     if (dataset_has_data(file, "/posterior/mu/coeffs"))
     {
         draws.mu = read_draws(file, "/posterior/mu/coeffs");
@@ -186,7 +186,7 @@ void write_coefficients(const ModelFile &file, const VarNormalStochvolDraws &dra
     }
     write_draws(file, "/posterior/u_omega_inv/coeffs", draws.u_omega_inv);
     write_draws(file, "/posterior/u_sigma_inv/coeffs", draws.u_sigma_inv);
-    write_shrinkage_draws(file, "a", draws.a_shrinkage, draws.a_local);
+    write_shrinkage_draws(file, "a", draws.a_shrinkage, draws.a_local, draws.a_theta);
     if (draws.mu.n_elem > 0)
     {
         write_draws(file, "/posterior/mu/coeffs", draws.mu);

@@ -307,7 +307,7 @@ void read_constraint_prior(const ModelFile &file, GammaPrior &prior, arma::vec &
 }
 
 void read_shrinkage_prior(const ModelFile &file, const std::string &block, ShrinkagePrior &prior,
-                          arma::vec &initial_scale, arma::vec &initial_local)
+                          arma::vec &initial_scale, arma::vec &initial_local, arma::vec &initial_theta)
 {
     const std::string group = "/priors/" + block + "/shrinkage";
     if (file.exist(group + "/group"))
@@ -327,12 +327,14 @@ void read_shrinkage_prior(const ModelFile &file, const std::string &block, Shrin
     read_vec_if_present(file, group + "/shape", prior.shape);
     read_vec_if_present(file, group + "/rate", prior.rate);
     read_vec_if_present(file, group + "/theta", prior.theta);
+    read_vec_if_present(file, group + "/theta_rate", prior.theta_rate);
     read_vec_if_present(file, "/initial/" + block + "_shrinkage", initial_scale);
     read_vec_if_present(file, "/initial/" + block + "_local", initial_local);
+    read_vec_if_present(file, "/initial/" + block + "_theta", initial_theta);
 }
 
 void read_shrinkage_draws(const ModelFile &file, const std::string &block, arma::mat &scale,
-                          arma::mat &local)
+                          arma::mat &local, arma::mat &theta)
 {
     if (dataset_has_data(file, "/posterior/" + block + "/shrinkage"))
     {
@@ -342,10 +344,14 @@ void read_shrinkage_draws(const ModelFile &file, const std::string &block, arma:
     {
         local = read_draws(file, "/posterior/" + block + "/local");
     }
+    if (dataset_has_data(file, "/posterior/" + block + "/theta"))
+    {
+        theta = read_draws(file, "/posterior/" + block + "/theta");
+    }
 }
 
 void write_shrinkage_draws(const ModelFile &file, const std::string &block, const arma::mat &scale,
-                           const arma::mat &local)
+                           const arma::mat &local, const arma::mat &theta)
 {
     if (scale.n_elem > 0)
     {
@@ -354,6 +360,10 @@ void write_shrinkage_draws(const ModelFile &file, const std::string &block, cons
     if (local.n_elem > 0)
     {
         write_draws(file, "/posterior/" + block + "/local", local);
+    }
+    if (theta.n_elem > 0)
+    {
+        write_draws(file, "/posterior/" + block + "/theta", theta);
     }
 }
 
