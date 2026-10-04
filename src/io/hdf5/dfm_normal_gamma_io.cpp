@@ -22,6 +22,11 @@ DfmNormalGammaInput read_input(const ModelFile &file)
     read_constraints(file, "/data/test/constraints", input.test.constraints);
     refuse_constraints(file, "/data/forecast/constraints", "DfmNormalGamma");
 
+    // Deterministic terms: the data under /data/train/x and /data/forecast/x,
+    // and the prior and starting value of their coefficients C.
+    read_factor_deterministic(file, input.train, input.forecast);
+    read_normal_block_if_present(file, "c", input.c_prior, input.initial.c);
+
     // Only draw_coefficients needs the priors and the starting values. A file
     // that holds nothing but a fitted posterior can still be forecast from, so a
     // missing one is left for validate() to complain about if it turns out to
@@ -84,6 +89,8 @@ DfmNormalGammaDraws read_coefficients(const ModelFile &file)
         draws.v_sigma_inv = read_draws(file, "/posterior/v_sigma_inv/coeffs");
     }
 
+    read_draws_if_present(file, "/posterior/c/coeffs", draws.c);
+
     return draws;
 }
 
@@ -108,6 +115,11 @@ void write_coefficients(const ModelFile &file, const DfmNormalGammaDraws &draws)
 
     write_draws(file, "/posterior/u_sigma_inv/coeffs", draws.u_sigma_inv);
     write_draws(file, "/posterior/v_sigma_inv/coeffs", draws.v_sigma_inv);
+
+    if (draws.has_c())
+    {
+        write_draws(file, "/posterior/c/coeffs", draws.c);
+    }
 }
 
 } // namespace bayests::hdf5_io::dfm_normal_gamma

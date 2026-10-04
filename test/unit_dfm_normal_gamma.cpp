@@ -507,6 +507,152 @@ void the_impossible_inputs_are_refused()
     expect_rejected("a starting precision that is not positive", bad_precision);
 }
 
+//////////////////////////////////////////////////////////////////////////////
+// 3b. Deterministic terms.
+//
+// x_t = Lambda f_t + C d_t + u_t with a constant, a trend and a dummy on every
+// fourth period. The factors carry no mean of their own, so every one of the
+// three columns of C is identified, and the checks are recovery, then the three
+// places the terms reach after estimation -- the forecast, the likelihood and
+// the score.
+//
+// Identified, but not by much in the direction that matters. A persistent
+// factor can carry part of a level or a trend for a small price in its own
+// transition, so the constant and the trend of C trade off against the level of
+// the factor path along a ridge, and the Gibbs sampler, which draws the two
+// apart, walks that ridge slowly. A chain started at C = 0 puts the whole level
+// into the factors at its first draw and has not given it back after a few
+// hundred more: at 400 draws of burn-in the constant was more than seven
+// posterior standard deviations from where it was simulated. The chain here is
+// therefore long and starts at zero on purpose -- it checks that the sampler
+// gets there, not that it gets there quickly -- and the error is measured in
+// posterior standard deviations, since along the ridge those are wide (about
+// 0.4 for the constant and 0.7 for the trend on this sample) while the
+// seasonal column is pinned to within 0.1.
+
+arma::mat deterministic_terms(const int first, const int periods, const int tt)
+{
+    arma::mat d(static_cast<arma::uword>(periods), 3);
+    for (int t = 0; t < periods; t++)
+    {
+        const arma::uword row = static_cast<arma::uword>(t);
+        d(row, 0) = 1.0;
+        d(row, 1) = static_cast<double>(first + t + 1) / tt;
+        d(row, 2) = ((first + t) % 4 == 0) ? 1.0 : 0.0;
+    }
+    return d;
+}
+
+void it_recovers_deterministic_terms()
+{
+    std::printf("recovery of deterministic terms\n");
+
+    const int k = 8, n = 2, p = 1, tt = 800, n_det = 3, h = 6;
+
+    arma::arma_rng::set_seed(20261004);
+    Simulated s = simulate(k, n, p, tt);
+
+    arma::mat c(k, n_det);
+    for (int i = 0; i < k; i++)
+    {
+        c(i, 0) = 1.0 + 0.2 * i;
+        c(i, 1) = (i % 2 == 0) ? 1.5 : -1.0;
+        c(i, 2) = (i % 3 == 0) ? 0.8 : -0.5;
+    }
+    const arma::mat d = deterministic_terms(0, tt, tt);
+    s.x += d * arma::trans(c);
+
+    const int draws = 3000;
+    bayests::DfmNormalGammaInput in = make_input(s, k, n, p, draws, 5000);
+    in.spec.n = n_det;
+    in.train.x = d;
+    in.c_prior.mu = arma::vec(k * n_det, arma::fill::zeros);
+    in.c_prior.v_inv = arma::eye<arma::mat>(k * n_det, k * n_det) * 0.01;
+    in.initial.c = arma::vec(k * n_det, arma::fill::zeros);
+
+    bayests::NullReporter reporter;
+    const bayests::DfmNormalGammaDraws out =
+        bayests::DfmNormalGammaSampler{}.draw_coefficients(in, reporter);
+
+    check("C is stored as (k n) x draws",
+          out.c.n_rows == static_cast<arma::uword>(k * n_det) &&
+              out.c.n_cols == static_cast<arma::uword>(draws));
+
+    // About one standard deviation at worst here.
+    const arma::mat c_mean = arma::reshape(arma::mean(out.c, 1), k, n_det);
+    const arma::mat c_sd = arma::reshape(arma::stddev(out.c, 0, 1), k, n_det);
+    check_below("the deterministic coefficients, in posterior standard deviations",
+                arma::abs((c_mean - c) / c_sd).max(), 3.0);
+    check_below("the seasonal column, which nothing trades off against",
+                arma::abs(c_mean.col(2) - c.col(2)).max(), 0.30);
+    const arma::mat lambda_mean = arma::reshape(arma::mean(out.lambda, 1), k, n);
+    check_below("the loadings beside them", max_abs_diff(lambda_mean, s.lambda), 0.25);
+
+    // The forecast reads the horizon's terms, so its mean far enough out is
+    // C d_{T+i} -- the factors having decayed towards zero by then. Against the
+    // posterior mean of C rather than the simulated one: what is being checked
+    // is that the forecast carries the terms, not how well C was estimated.
+    bayests::DfmNormalGammaInput fcst_in = in;
+    fcst_in.spec.h = h;
+    fcst_in.forecast.x = deterministic_terms(tt, h, tt);
+    const bayests::ForecastDraws fcst =
+        bayests::DfmNormalGammaSampler{}.forecast(fcst_in, out, reporter);
+    const arma::vec last_mean = arma::mean(fcst.values.rows((h - 1) * k, h * k - 1), 1);
+    const arma::vec last_want = c_mean * arma::trans(fcst_in.forecast.x.row(h - 1));
+    check_below("the forecast carries the deterministic terms over the horizon",
+                arma::abs(last_mean - last_want).max(), 0.35);
+
+    bayests::DfmNormalGammaInput no_horizon = fcst_in;
+    no_horizon.forecast.x.reset();
+    bool refused = false;
+    try
+    {
+        (void)bayests::DfmNormalGammaSampler{}.forecast(no_horizon, out, reporter);
+    }
+    catch (const std::exception &)
+    {
+        refused = true;
+    }
+    check("a forecast without the horizon's terms is refused", refused);
+
+    const arma::mat loglik = bayests::DfmNormalGammaSampler{}.log_likelihood(in, out);
+    check("the log likelihood is finite", loglik.is_finite());
+
+    // The score with the offset against one that ignores it: the realised
+    // values sit a constant, a trend and a dummy away from zero, so the model
+    // that knows that has to put more density on them.
+    fcst_in.test.y = arma::trans(c * arma::trans(fcst_in.forecast.x));
+    const arma::mat score = bayests::DfmNormalGammaSampler{}.predictive_log_density(fcst_in, out);
+    bayests::DfmNormalGammaInput ignored = fcst_in;
+    ignored.spec.n = 0;
+    const arma::mat score_ignored =
+        bayests::DfmNormalGammaSampler{}.predictive_log_density(ignored, out);
+    check("the score is finite", score.is_finite());
+    check("the score subtracts the deterministic part",
+          arma::accu(score) > arma::accu(score_ignored) + 100.0);
+
+    // What validate() refuses of them.
+    bayests::DfmNormalGammaInput wrong_rows = in;
+    wrong_rows.train.x = d.rows(0, tt - 2);
+    expect_rejected("deterministic terms that do not cover the sample", wrong_rows);
+
+    bayests::DfmNormalGammaInput no_data = in;
+    no_data.train.x.reset();
+    expect_rejected("deterministic terms counted but not given", no_data);
+
+    bayests::DfmNormalGammaInput not_counted = in;
+    not_counted.spec.n = 0;
+    expect_rejected("deterministic terms given but not counted", not_counted);
+
+    bayests::DfmNormalGammaInput coupled = in;
+    coupled.c_prior.v_inv(0, 1) = coupled.c_prior.v_inv(1, 0) = 0.001;
+    expect_rejected("a prior precision coupling two rows of C", coupled);
+
+    bayests::DfmNormalGammaInput exogenous = in;
+    exogenous.spec.m = 1;
+    expect_rejected("exogenous variables", exogenous);
+}
+
 void run_group(const char *name, void (*group)())
 {
     try
@@ -532,6 +678,7 @@ int main()
     run_group("group: the factor path", the_factor_path_is_the_posterior_it_should_be);
     run_group("group: recovery", it_recovers_what_it_was_given);
     run_group("group: refused inputs", the_impossible_inputs_are_refused);
+    run_group("group: deterministic terms", it_recovers_deterministic_terms);
 
     std::printf("\n%s\n", failures == 0 ? "all checks passed" : "THERE WERE FAILURES");
     return failures == 0 ? 0 : 1;

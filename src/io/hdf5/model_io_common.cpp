@@ -489,6 +489,22 @@ VarSpec read_spec(const ModelFile &file, const char *covar_error)
     return spec;
 }
 
+void read_factor_deterministic(const ModelFile &file, TrainData &train, ForecastData &forecast)
+{
+    read_mat_if_present(file, "/data/train/x", train.x);
+    read_mat_if_present(file, "/data/forecast/x", forecast.x);
+}
+
+void read_normal_block_if_present(const ModelFile &file, const std::string &name,
+                                  NormalPrior &prior, arma::vec &initial)
+{
+    if (file.exist("/priors/" + name + "/mu"))
+    {
+        prior = read_normal_prior(file, "/priors/" + name);
+    }
+    read_vec_if_present(file, "/initial/" + name, initial);
+}
+
 NormalPrior read_normal_prior(const ModelFile &file, const std::string &group)
 {
     NormalPrior prior;

@@ -29,6 +29,12 @@ FavarNormalWishartInput read_input(const ModelFile &file)
     read_constraints(file, "/data/test/constraints", input.test.constraints);
     refuse_constraints(file, "/data/forecast/constraints", "FavarNormalWishart");
 
+    // Deterministic terms: the data under /data/train/x and /data/forecast/x,
+    // and the prior and starting value of their coefficients C.
+    read_factor_deterministic(file, input.train, input.forecast);
+    read_normal_block_if_present(file, "c", input.c_prior, input.initial.c);
+    read_normal_block_if_present(file, "c_obs", input.c_obs_prior, input.initial.c_obs);
+
     // Only draw_coefficients needs the priors and the starting values. A file
     // that holds nothing but a fitted posterior can still be forecast from, so a
     // missing one is left for validate() to complain about if it turns out to
@@ -97,6 +103,9 @@ FavarNormalWishartDraws read_coefficients(const ModelFile &file)
         draws.v_sigma_inv = read_draws(file, "/posterior/v_sigma_inv/coeffs");
     }
 
+    read_draws_if_present(file, "/posterior/c/coeffs", draws.c);
+    read_draws_if_present(file, "/posterior/c_obs/coeffs", draws.c_obs);
+
     return draws;
 }
 
@@ -123,6 +132,12 @@ void write_coefficients(const ModelFile &file, const FavarNormalWishartDraws &dr
 
     write_draws(file, "/posterior/u_sigma_inv/coeffs", draws.u_sigma_inv);
     write_draws(file, "/posterior/v_sigma_inv/coeffs", draws.v_sigma_inv);
+
+    if (draws.has_c())
+    {
+        write_draws(file, "/posterior/c/coeffs", draws.c);
+        write_draws(file, "/posterior/c_obs/coeffs", draws.c_obs);
+    }
 }
 
 } // namespace bayests::hdf5_io::favar_normal_wishart

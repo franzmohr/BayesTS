@@ -558,6 +558,114 @@ void the_impossible_inputs_are_refused()
 
 /// Runs one group and reports a throw as a failure of that group rather than
 /// letting it abort the harness.
+//////////////////////////////////////////////////////////////////////////////
+// Deterministic terms.
+//
+// Two blocks of them. The observed factors deviate from C_obs d_t and the
+// transition runs over the deviations, which is the block drawn through the
+// transition rather than row by row -- the one whose design, d_t' kron E less
+// the lagged d_{t-j}' kron Phi_j E, is easiest to get subtly wrong, since a
+// sign or a lag off still runs. The panel carries C d_t of its own, measured on
+// the observed factors themselves, so a panel simulated as Lambda s~_t + C_p d_t
+// on the deviations has C = C_p - Lambda_y C_obs in the model's terms.
+//
+// A constant and a dummy on every fourth period, no trend: what is checked is
+// the transition's GLS draw, and a trend would bring in the ridge against the
+// factors' level that unit_dfm_normal_gamma.cpp describes, which is not what
+// this is about.
+
+void it_recovers_deterministic_terms()
+{
+    std::printf("recovery of deterministic terms\n");
+
+    const int k = 8, n = 2, n_obs = 2, p = 1, tt = 800, n_det = 2, h = 4;
+
+    arma::arma_rng::set_seed(20261004);
+    Simulated s = simulate(k, n, n_obs, p, tt);
+
+    arma::mat d(tt, n_det);
+    for (int t = 0; t < tt; t++)
+    {
+        d(t, 0) = 1.0;
+        d(t, 1) = (t % 4 == 0) ? 1.0 : 0.0;
+    }
+    arma::mat c_obs(n_obs, n_det);
+    c_obs(0, 0) = 2.0;
+    c_obs(1, 0) = -1.0;
+    c_obs(0, 1) = 0.5;
+    c_obs(1, 1) = -0.8;
+    arma::mat c_panel(k, n_det);
+    for (int i = 0; i < k; i++)
+    {
+        c_panel(i, 0) = 0.5 + 0.1 * i;
+        c_panel(i, 1) = (i % 2 == 0) ? 0.3 : -0.3;
+    }
+
+    s.obs += d * arma::trans(c_obs);
+    s.x += c_panel * arma::trans(d);
+    const arma::mat c = c_panel - s.lambda.tail_cols(n_obs) * c_obs;
+
+    bayests::FavarNormalWishartInput in = make_input(s, k, n, n_obs, p, 2000, 2000);
+    in.spec.n = n_det;
+    in.train.x = d;
+    in.c_prior.mu = arma::vec(k * n_det, arma::fill::zeros);
+    in.c_prior.v_inv = arma::eye<arma::mat>(k * n_det, k * n_det) * 0.01;
+    in.initial.c = arma::vec(k * n_det, arma::fill::zeros);
+    in.c_obs_prior.mu = arma::vec(n_obs * n_det, arma::fill::zeros);
+    in.c_obs_prior.v_inv = arma::eye<arma::mat>(n_obs * n_det, n_obs * n_det) * 0.01;
+    in.initial.c_obs = arma::vec(n_obs * n_det, arma::fill::zeros);
+
+    bayests::NullReporter reporter;
+    const bayests::FavarNormalWishartDraws out =
+        bayests::FavarNormalWishartSampler{}.draw_coefficients(in, reporter);
+
+    check("C and C_obs are stored, one column per draw",
+          out.c.n_rows == static_cast<arma::uword>(k * n_det) &&
+              out.c_obs.n_rows == static_cast<arma::uword>(n_obs * n_det) &&
+              out.c.n_cols == 2000 && out.c_obs.n_cols == 2000);
+
+    const arma::mat c_obs_mean = arma::reshape(arma::mean(out.c_obs, 1), n_obs, n_det);
+    const arma::mat c_obs_sd = arma::reshape(arma::stddev(out.c_obs, 0, 1), n_obs, n_det);
+    check_below("the observed factors' deterministic terms, in posterior standard deviations",
+                arma::abs((c_obs_mean - c_obs) / c_obs_sd).max(), 3.0);
+    check_below("and in their own units", max_abs_diff(c_obs_mean, c_obs), 0.25);
+
+    const arma::mat c_mean = arma::reshape(arma::mean(out.c, 1), k, n_det);
+    const arma::mat c_sd = arma::reshape(arma::stddev(out.c, 0, 1), k, n_det);
+    check_below("the panel's deterministic terms, in posterior standard deviations",
+                arma::abs((c_mean - c) / c_sd).max(), 3.0);
+
+    const int ns = n + n_obs;
+    const arma::mat a_mean = arma::reshape(arma::mean(out.a, 1), ns, ns * p);
+    check_below("the transition beside them", max_abs_diff(a_mean, s.a), 0.15);
+
+    // Far enough out, the observed factors' forecast is their mean: the
+    // deviations have decayed and what is left is C_obs d_{T+h}.
+    bayests::FavarNormalWishartInput fcst_in = in;
+    fcst_in.spec.h = h;
+    fcst_in.forecast.x = arma::mat(h, n_det);
+    for (int i = 0; i < h; i++)
+    {
+        fcst_in.forecast.x(i, 0) = 1.0;
+        fcst_in.forecast.x(i, 1) = ((tt + i) % 4 == 0) ? 1.0 : 0.0;
+    }
+    const bayests::ForecastDraws fcst =
+        bayests::FavarNormalWishartSampler{}.forecast(fcst_in, out, reporter);
+    const int width = k + n_obs;
+    const arma::vec obs_last =
+        arma::mean(fcst.values.rows((h - 1) * width + k, h * width - 1), 1);
+    const arma::vec obs_want = c_obs_mean * arma::trans(fcst_in.forecast.x.row(h - 1));
+    check_below("the forecast of the observed factors returns to their mean",
+                arma::abs(obs_last - obs_want).max(), 0.15);
+
+    const arma::mat loglik = bayests::FavarNormalWishartSampler{}.log_likelihood(in, out);
+    check("the log likelihood is finite", loglik.is_finite());
+
+    bayests::FavarNormalWishartInput short_c_obs = in;
+    short_c_obs.initial.c_obs = arma::vec(1, arma::fill::zeros);
+    check("a starting C_obs of the wrong length is refused", rejected(short_c_obs));
+}
+
 void run_group(const char *name, void (*group)())
 {
     try
@@ -583,6 +691,7 @@ int main()
     run_group("group: the transition precision", the_transition_precision_collapses);
     run_group("group: recovery", it_recovers_what_it_was_given);
     run_group("group: refused inputs", the_impossible_inputs_are_refused);
+    run_group("group: deterministic terms", it_recovers_deterministic_terms);
 
     std::printf("\n%s\n", failures == 0 ? "all checks passed" : "THERE WERE FAILURES");
     return failures == 0 ? 0 : 1;

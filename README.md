@@ -190,15 +190,16 @@ rather than ignoring it.
 The four `Dfm*` entries are the models here that are not regressions:
 
 ```
-x_t = Lambda f_t + u_t,                u_t ~ N(0, U),  U diagonal,
+x_t = Lambda f_t + C d_t + u_t,        u_t ~ N(0, U),  U diagonal,
 f_t = sum_{j=1..p} A_j f_{t-j} + v_t,  v_t ~ N(0, V),  V diagonal,
 ```
 
 for `k` observed series and `n_factors` unobserved ones, after Chan, Koop,
 Poirier and Tobias (2019). Three things follow from the factors being
 unobserved, and each shows up in the file format. The regressors are drawn
-rather than given, so there is no `/data/train/z` — `/data/train/y` is all the
-data there is, and the horizon alone drives the forecast. A whole `tt`-period
+rather than given, so there is no `/data/train/z` — `/data/train/y` is the
+data, beside the deterministic terms `d_t` in `/data/train/x` where the model
+has any, and the forecast needs nothing out of sample but theirs. A whole `tt`-period
 factor path is part of every draw and is written to `/posterior/factors/coeffs`;
 the forecast and the log likelihood read it back rather than re-filtering, which
 makes the reported likelihood the *conditional* one, `p(x_t | f_t, Lambda, U)`.
@@ -289,8 +290,8 @@ a broken one, so nothing would fail.
 state:
 
 ```
-x_t = Lambda_f f_t + Lambda_y y_t + e_t,   e_t ~ N(0, R),  R diagonal,
-s_t = sum_{j=1..p} Phi_j s_{t-j} + v_t,   v_t ~ N(0, Q),   s_t = (f_t', y_t')',
+x_t = Lambda_f f_t + Lambda_y y_t + C d_t + e_t,   e_t ~ N(0, R),  R diagonal,
+s_t = sum_{j=1..p} Phi_j s_{t-j} + v_t,   v_t ~ N(0, Q),   s_t = (f_t', (y_t - C_obs d_t)')',
 ```
 
 for `k` panel series, `n_factors` unobserved factors and `n_obs_factors` observed
@@ -301,6 +302,24 @@ beside it because the transition is a VAR over both blocks jointly: the factors
 respond to the policy variable and the policy variable responds back, and that
 coupling is the model. They arrive in `/data/train/f_obs`, `tt` by
 `n_obs_factors`.
+
+Deterministic terms — a constant, a trend, seasonal dummies, any column known
+in advance — enter a factor model's measurement, `x_t = Lambda f_t + C d_t + u_t`,
+so the factors are deviations from them. `/model/n` counts them, `/data/train/x`
+holds them `tt` by `n` and `/data/forecast/x` `h` by `n` for the horizon, and
+`/priors/c` (`mu`, `v_inv`) and `/initial/c` are over `vec(C)`, column by
+column. `C` is drawn row by row given the factors, so `v_inv` may not couple two
+of its rows, and it does not drift in the time-varying models. A FAVAR has a
+second block, `C_obs`: its observed factors are `C_obs d_t` plus a deviation,
+and the transition runs over the deviations, so `C_obs` is drawn through the
+transition, jointly, under `/priors/c_obs` and `/initial/c_obs`. The panel is
+measured on the observed factors themselves. Both are written to
+`/posterior/c/coeffs` and `/posterior/c_obs/coeffs`. A persistent factor can
+carry part of a level or a trend cheaply, so the constant and the trend of `C`
+trade off against the factors' level and the chain moves along that direction
+slowly: start `C` at its least-squares value on `d_t` and give it a long
+burn-in. A factor model takes no exogenous variables, and `m` or `s` above zero
+is refused.
 
 Half the state being data is the whole of what is new, and it lands in three
 places. The path draw *conditions* on the observed half instead of drawing it:
@@ -521,16 +540,17 @@ written for a simpler model still describes a valid one.
 | `/model` (attributes) | `algorithm`, `k` endogenous variables, `iterations` kept, `burnin` discarded; optional `thin` (keep one draw in `thin` after the burn-in, default 1), `p`, `m`, `s`, `n` (lags, exogenous variables, their lags, deterministic terms), `h` forecast horizon, `forecast_states` (`simulate`, the default, or `hold`: whether the forecast of a model with time-varying coefficients or volatilities carries its random walks over the horizon or keeps them at the last sample period), `varsel` (`none`, `ssvs`, `bvs`), `structural`, `error`, `seed` (a non-negative whole number that fixes the run's draws on a single thread — set `OMP_NUM_THREADS=1` and `OPENBLAS_NUM_THREADS=1`, since the program otherwise uses every core and the draws then vary with the thread count); `rank`, `k_beta`, `n_restricted` for a VEC, `n_factors` for a factor model and `n_obs_factors` for a FAVAR; `delta_beta` and `delta_sigma`, both in (0, 1] and both defaulting to 1, for the two `*TvpDiscount` models, where they are the drift of the coefficients and of the error covariance |
 | `/data/train/y`, `/data/train/z` | Endogenous variables and the regressor matrix, `(tt k)` rows by `nparams` columns |
 | `/data/train/w` | A VEC's error correction term, `tt` rows by `k_beta` columns |
-| `/data/train/x` | The regressors in the compact layout, `tt` rows by one column each; read by `VecKlgs2010`, `VarTvpDiscount` and `VecTvpDiscount` in place of `z`. For the two VECs it holds the short-run blocks alone — the error correction columns are built from `w` and `beta` |
+| `/data/train/x` | The regressors in the compact layout, `tt` rows by one column each; read by `VecKlgs2010`, `VarTvpDiscount` and `VecTvpDiscount` in place of `z`, and by the factor models as their `n` deterministic terms. For the two VECs it holds the short-run blocks alone — the error correction columns are built from `w` and `beta` |
 | `/data/train/f_obs` | A FAVAR only: the observed factors, `tt` rows by `n_obs_factors` columns. The observed half of the state vector, not regressors |
 | `/data/forecast/x` | Out-of-sample regressors in the compact layout, `h` rows by one column per regressor; required when `h` > 0. A file written before this layout carries `/data/forecast/z` instead — the same regressors kroneckered up with `I_k` — and is still read, the reader compacting it on the way in |
 | `/priors/a`, `/priors/psi` | Normal prior `mu` and `v_inv` for the coefficients and the covariance block, plus `inprior`, `include`, and `tau0`/`tau1` for SSVS. A time-varying model adds `shape`/`rate` for the variance of the random walk's innovations, or `omega_v` in its place for the non-centred prior, which every sampler whose states drift takes. The two `*TvpDiscount` models read `mean` and `cov` here instead — a matrix normal prior, `mean` being the `n_x` by `k` coefficient matrix and `cov` the regressor side of its covariance, the equation side being the error covariance the Wishart prior already carries. Different names for a different object, so a file bringing the wrong pair is read as having no coefficient prior and `bayests check` says so |
 | `/model/priors/psi` (attribute) | `varsel` for the covariance block on its own, read by the four time-varying models that have one; the `/model` attribute above governs the coefficients |
 | `/priors/u_sigma` | `shape`/`rate` for gamma precisions, `df`/`scale` for Wishart, `mu`/`v_inv`/`sigma`/`offset` for stochastic volatility, with `shape`/`rate` on the log-volatility innovations — or `omega_v` in their place under `VarTvpStochvol`, `VecTvpStochvol` and `DfmTvpStochvol`, whose factor innovation volatility reads the same pair under `/priors/v_sigma` |
 | `/priors/beta` | A VEC only: `p_tau_inv`, the prior precision of the cointegration space, and for the time-varying three `mu`/`v_inv` over beta before the sample and the state autoregression `rho`. `rho_min`/`rho_max`, given together, make `rho` a drawn parameter with that uniform prior instead of a fixed one, and `rho` the value the chain starts at. `p_tau`, `k_beta` square, symmetric with eigenvalues in [0, 1], is the transition of the state equation with `rho` taken out -- Koop, Leon-Gonzalez and Strachan's informative marginal prior, which centres the space on the one `p_tau` has an eigenvalue of one along; absent, the transition is `rho` alone |
+| `/priors/c`, `/priors/c_obs` | A factor model with deterministic terms only: normal `mu`/`v_inv` over `vec(C)`, the `k` by `n` coefficients of the measurement, column by column and with no precision between two rows; and under `FavarNormalWishart` over `vec(C_obs)`, `n_obs_factors` by `n`, the mean the observed factors deviate from |
 | `/priors/lambda`, `/priors/v_sigma` | A factor model only: normal `mu`/`v_inv` over the free loadings, and `shape`/`rate` for the factor innovation precisions. Under `DfmTvpGamma` the loading group is a state equation instead, `shape`/`rate` on the innovation variance beside `mu`/`v_inv` on the state before the sample, and `/priors/a` reads the same way. Under `FavarNormalWishart` the `v_sigma` group is `df`/`scale` rather than `shape`/`rate`, its state innovation precision being a matrix |
 | `/initial/…` | Starting values — read by `VecTvpDiscount` as the space it conditions on rather than a start, nothing there being iterated: `a`, `psi`, `u_sigma_inv`, `u_omega_inv`, `h`, the `*_init` states and the `*_lambda`, `*_sigma_inv` blocks the samplers that need them read; `beta` for a VEC; `lambda`, `v_sigma_inv` and, under stochastic volatility, `u_h`/`v_h` for a DFM; `lambda` and `a` are paths under `DfmTvpGamma`, beside `lambda_sigma_inv`, `lambda_init`, `a_sigma_inv` and `a_init`; under `FavarNormalWishart` `v_sigma_inv` is an `n_state` square matrix rather than a diagonal |
-| `/posterior/…` | Written by the run: `a/coeffs`, `a/lambda`, `a/sigma`, the matching `psi/…`, `u_sigma_inv/coeffs`, `u_omega_inv/coeffs`, `forecast` and `loglik`; `u_sigma_inv/sigma`, the variance of the log-volatility innovations, for every stochastic volatility model; `omega`, `omega_log_zero` and `omega_log_zero_joint` under `a/`, `psi/` or `u_sigma_inv/` for a block drawn non-centred, `sigma` being written beside them as `omega` squared; with `v_sigma_inv/sigma` beside it for a factor model's factor innovations; `u_scale/coeffs`, the asymmetric Laplace scale, for the two `*Ald` models; `beta/coeffs` for a VEC, and `beta/rho` where a time-varying one put a prior on the state autoregression; `lambda/coeffs`, `factors/coeffs` and `v_sigma_inv/coeffs` for a factor model, plus `lambda/sigma` where the loadings drift. Under `FavarNormalWishart` `factors/coeffs` holds the unobserved factors alone, `v_sigma_inv/coeffs` is `n_state` squared per draw, and `forecast` is `h * (k + n_obs_factors)` rows rather than `h * k`. The two `*TvpDiscount` models write none of the `coeffs` datasets and a closed form instead: `a/mean`, `a/scale`, `a/cov`, `u_sigma/scale` and `df`, one column per period rather than per draw, with no `start`/`end`/`thin` beside them — there is no chain. `u_sigma/scale` is a covariance, which is why it is not at `u_sigma_inv`. `VecTvpDiscount` writes `beta/coeffs` too, one column, holding the space it was given |
+| `/posterior/…` | Written by the run: `a/coeffs`, `a/lambda`, `a/sigma`, the matching `psi/…`, `u_sigma_inv/coeffs`, `u_omega_inv/coeffs`, `forecast` and `loglik`; `u_sigma_inv/sigma`, the variance of the log-volatility innovations, for every stochastic volatility model; `omega`, `omega_log_zero` and `omega_log_zero_joint` under `a/`, `psi/` or `u_sigma_inv/` for a block drawn non-centred, `sigma` being written beside them as `omega` squared; with `v_sigma_inv/sigma` beside it for a factor model's factor innovations; `u_scale/coeffs`, the asymmetric Laplace scale, for the two `*Ald` models; `beta/coeffs` for a VEC, and `beta/rho` where a time-varying one put a prior on the state autoregression; `lambda/coeffs`, `factors/coeffs` and `v_sigma_inv/coeffs` for a factor model, plus `lambda/sigma` where the loadings drift, and `c/coeffs` — with `c_obs/coeffs` under `FavarNormalWishart` — where it has deterministic terms. Under `FavarNormalWishart` `factors/coeffs` holds the unobserved factors alone, `v_sigma_inv/coeffs` is `n_state` squared per draw, and `forecast` is `h * (k + n_obs_factors)` rows rather than `h * k`. The two `*TvpDiscount` models write none of the `coeffs` datasets and a closed form instead: `a/mean`, `a/scale`, `a/cov`, `u_sigma/scale` and `df`, one column per period rather than per draw, with no `start`/`end`/`thin` beside them — there is no chain. `u_sigma/scale` is a covariance, which is why it is not at `u_sigma_inv`. `VecTvpDiscount` writes `beta/coeffs` too, one column, holding the space it was given |
 
 Two conventions are worth knowing before writing a file by hand. The first is
 which way round the matrices are stored, and it is worth stating twice, because

@@ -35,6 +35,11 @@ DfmTvpGammaInput read_input(const ModelFile &file)
     read_constraints(file, "/data/test/constraints", input.test.constraints);
     refuse_constraints(file, "/data/forecast/constraints", "DfmTvpGamma");
 
+    // Deterministic terms: the data under /data/train/x and /data/forecast/x,
+    // and the prior and starting value of their coefficients C.
+    read_factor_deterministic(file, input.train, input.forecast);
+    read_normal_block_if_present(file, "c", input.c_prior, input.initial.c);
+
     const arma::uword tt = sample_periods(input);
     const arma::uword n_lambda = static_cast<arma::uword>(input.spec.n_lambda());
 
@@ -136,6 +141,8 @@ DfmTvpGammaDraws read_loglik_coefficients(const ModelFile &file)
     }
     read_common(file, draws);
 
+    read_draws_if_present(file, "/posterior/c/coeffs", draws.c);
+
     return draws;
 }
 
@@ -171,6 +178,8 @@ DfmTvpGammaDraws read_forecast_coefficients(const ModelFile &file, const DfmTvpG
         }
     }
 
+    read_draws_if_present(file, "/posterior/c/coeffs", draws.c);
+
     return draws;
 }
 
@@ -202,6 +211,11 @@ void write_coefficients(const ModelFile &file, const DfmTvpGammaDraws &draws)
 
     write_draws(file, "/posterior/u_sigma_inv/coeffs", draws.u_sigma_inv);
     write_draws(file, "/posterior/v_sigma_inv/coeffs", draws.v_sigma_inv);
+
+    if (draws.has_c())
+    {
+        write_draws(file, "/posterior/c/coeffs", draws.c);
+    }
 }
 
 } // namespace bayests::hdf5_io::dfm_tvp_gamma

@@ -29,6 +29,46 @@ heading, and move down into a version section when one is cut.
 
 ### Added
 
+- **Deterministic terms in every factor model.** A constant, a trend,
+  seasonal dummies or any other column known in advance now enters the
+  measurement of the four DFMs, `x_t = Lambda f_t + C d_t + u_t`, so the
+  factors are deviations from them; until now `/model/n` was ignored by a
+  factor model and a panel had to be demeaned and deseasonalised before it was
+  written. `/model/n` counts the terms, `/data/train/x` holds them (`tt` by
+  `n`) and `/data/forecast/x` holds them over the horizon (`h` by `n`);
+  `/priors/c` and `/initial/c` are over `vec(C)`, and the draws go to
+  `/posterior/c/coeffs`. `C` is a Gibbs block of its own, drawn row by row
+  given the factors and weighted by period where the idiosyncratic volatility
+  moves (`draw_measurement_deterministic()` in `dfm_support.h`); it does not
+  drift in the time-varying models. The forecast adds `C d_{T+i}`, the log
+  likelihood subtracts `C d_t`, and the score carries it into the filter as
+  `FactorPeriod::offset` (`with_deterministic_offset()` in `factor_score.h`).
+  `FavarNormalWishart` gets both `C` for its panel and `C_obs`, the mean its
+  observed factors deviate from: the transition runs over the deviations, so
+  `C_obs` is drawn through it, jointly, as a GLS regression whose design is
+  linear in `vec(C_obs)` (`draw_observed_deterministic()` in
+  `favar_support.h`), under `/priors/c_obs` and `/initial/c_obs`, written to
+  `/posterior/c_obs/coeffs`. The panel is measured on the observed factors
+  themselves, which keeps `C_obs` out of the measurement and the two blocks'
+  conditionals separate. `validate()` refuses `m` or `s` above zero on a
+  factor model, deterministic terms that do not cover the sample or are
+  present with `n` zero, and a prior precision coupling two rows of `C`; the
+  forecast and the score refuse a horizon `/data/forecast/x` does not cover.
+  One caveat belongs to the model rather than the code: a persistent factor
+  can carry part of a level or a trend cheaply, so the constant and the trend
+  of `C` trade off against the factors' level and the chain moves along that
+  direction slowly. Started at `C = 0` with 400 draws of burn-in the constant
+  was seven posterior standard deviations off; from least-squares starting
+  values, or after a long burn-in, it is where it should be. Seven
+  `*-deterministic` fixtures (one per model, two of them scored), the
+  `--deterministic` flag of `make_model_fixture`, two golden datasets, and a
+  `deterministic terms` group in `unit.dfm_normal_gamma` and
+  `unit.favar_normal_wishart` that recover `C` and `C_obs` on simulated data.
+  *Draws are unchanged* for every file without deterministic terms: the new
+  blocks consume no random numbers when `n` is zero, and the fingerprints of
+  all 155 fixtures that existed before were compared, before against after,
+  with none moved.
+
 - **The structural quantile VAR** of Chavleishvili and Manganelli (2019), as a
   grid of quantiles on `VarNormalAld`. `/model/quantiles`, a vector attribute of
   levels strictly increasing in (0, 1), makes the model estimate every level

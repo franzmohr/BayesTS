@@ -40,6 +40,15 @@
 //                 how far a random walk moves: the non-centred parameterisation.
 //                 Refused for any model but VarTvpStochvol, VarTvpGamma,
 //                 VecTvpStochvol and VecTvpGamma, the four that read it.
+//     --deterministic
+//                 for a factor model: writes /model/n = 3 deterministic terms --
+//                 a constant, a linear trend and a dummy on every fourth period
+//                 -- under /data/train/x and /data/forecast/x, with their prior
+//                 and starting value under /priors/c and /initial/c, and shifts
+//                 the simulated panel by them so the sampler has something to
+//                 find. FavarNormalWishart also gets /priors/c_obs and
+//                 /initial/c_obs, and its observed factors are shifted too.
+//                 Refused for any model but the four DFMs and the FAVAR.
 //     --iid
 //                 writes /model/n_iid = 1, so the first endogenous variable's
 //                 equation carries no coefficients at all: white noise, related
@@ -1675,6 +1684,63 @@ void write_dfm_normal_gamma(const ModelFile &file, int h, const arma::mat &x)
     }
 }
 
+/// Deterministic terms of the factor fixtures written with --deterministic: a
+/// constant, a linear trend scaled to one over the sample, and a dummy on every
+/// fourth period -- one of each kind a caller is likely to pass. `first` is the
+/// period the rows start at, so the horizon continues the sample's pattern.
+constexpr int kFactorDetN = 3;
+
+arma::mat fixture_deterministic(const int first, const int periods)
+{
+    arma::mat d(static_cast<arma::uword>(periods), kFactorDetN);
+    for (int t = 0; t < periods; ++t)
+    {
+        const arma::uword row = static_cast<arma::uword>(t);
+        d(row, 0) = 1.0;
+        d(row, 1) = static_cast<double>(first + t + 1) / kTT;
+        d(row, 2) = ((first + t) % 4 == 0) ? 1.0 : 0.0;
+    }
+    return d;
+}
+
+/// The deterministic part a fixture's series are shifted by, `rows` x n: a
+/// level, a trend and a seasonal effect that differ from row to row.
+arma::mat fixture_deterministic_effects(const arma::uword rows)
+{
+    arma::mat c(rows, kFactorDetN);
+    for (arma::uword i = 0; i < rows; ++i)
+    {
+        c(i, 0) = 0.5 + 0.1 * static_cast<double>(i);
+        c(i, 1) = 0.3;
+        c(i, 2) = (i % 2 == 0) ? 0.4 : -0.4;
+    }
+    return c;
+}
+
+/// /model/n, the deterministic terms over the sample and the horizon, and the
+/// prior and starting value of each coefficient block in `blocks`, given as
+/// (name, rows) pairs.
+void write_factor_deterministic(const ModelFile &file, const int h,
+                                const std::vector<std::pair<std::string, int>> &blocks)
+{
+    write_attribute<int>(file, "/model", "n", kFactorDetN);
+    write_mat(file, "/data/train/x", fixture_deterministic(0, kTT));
+    if (h > 0)
+    {
+        ensure_group(file, "/data/forecast");
+        write_mat(file, "/data/forecast/x", fixture_deterministic(kTT, h));
+    }
+    for (const auto &block : blocks)
+    {
+        const arma::uword width = static_cast<arma::uword>(block.second) * kFactorDetN;
+        ensure_group(file, "/priors/" + block.first);
+        write_row(file, "/priors/" + block.first + "/mu", arma::vec(width, arma::fill::zeros));
+        write_mat(file, "/priors/" + block.first + "/v_inv",
+                  arma::eye<arma::mat>(width, width) * 0.01);
+        write_row(file, "/initial/" + block.first, arma::vec(width, arma::fill::zeros));
+    }
+}
+
 /// Dimensions of the factor augmented VAR fixture.
 ///
 /// The panel and the factors are the DFM's, so the two fixtures are comparable,
@@ -2188,6 +2254,7 @@ int main(int argc, char *argv[])
     bool hold_states = false;
     bool score = false;
     bool noncentred = false;
+    bool deterministic = false;
     bool iid = false;
     bool mixed = false;
     bool missing = false;
@@ -2276,6 +2343,11 @@ int main(int argc, char *argv[])
         {
             // Missing values and a ragged edge: /data/train/constraints.
             missing = true;
+        }
+        else if (token == "--deterministic")
+        {
+            // Deterministic terms in a factor model: /model/n and /data/train/x.
+            deterministic = true;
         }
         else if (token == "--iid")
         {
@@ -2479,6 +2551,13 @@ int main(int argc, char *argv[])
                      "DfmTvpStochvol\n";
         return 2;
     }
+    if (deterministic && !is_dfm && !is_favar)
+    {
+        std::cerr << "--deterministic is the factor models' fixture: expected one of "
+                     "DfmNormalGamma, DfmNormalStochvol, DfmTvpGamma, DfmTvpStochvol, "
+                     "FavarNormalWishart\n";
+        return 2;
+    }
     if (coint_rho && model != "VecTvpWishart" && model != "VecTvpGamma" &&
         model != "VecTvpStochvol")
     {
@@ -2540,20 +2619,34 @@ int main(int argc, char *argv[])
         if (is_favar)
         {
             arma::mat obs;
-            const arma::mat x = simulate_favar(rng, obs);
+            arma::mat x = simulate_favar(rng, obs);
+            if (deterministic)
+            {
+                const arma::mat d = fixture_deterministic(0, kTT);
+                x += fixture_deterministic_effects(kDfmK) * arma::trans(d);
+                obs += d * arma::trans(fixture_deterministic_effects(kFavarNObs));
+            }
             write_favar_normal_wishart(file, h, x, obs);
+            if (deterministic)
+            {
+                write_factor_deterministic(file, h, {{"c", kDfmK}, {"c_obs", kFavarNObs}});
+            }
 
             std::cout << "wrote " << dest.string() << group_suffix << " (" << model
                       << ", h=" << h << ", k=" << kDfmK << ", tt=" << kTT
                       << ", n_factors=" << kDfmN << ", n_obs_factors=" << kFavarNObs
                       << ", p=" << kDfmP << ", n_lambda=" << kFavarNLambda
-                      << ", n_a=" << kFavarNA << ")\n";
+                      << ", n_a=" << kFavarNA << (deterministic ? ", n=3" : "") << ")\n";
             return 0;
         }
 
         if (is_dfm)
         {
-            const arma::mat x = simulate_dfm(rng);
+            arma::mat x = simulate_dfm(rng);
+            if (deterministic)
+            {
+                x += fixture_deterministic_effects(kDfmK) * arma::trans(fixture_deterministic(0, kTT));
+            }
             if (model == "DfmNormalStochvol")
             {
                 write_dfm_normal_stochvol(file, h, x);
@@ -2576,6 +2669,11 @@ int main(int argc, char *argv[])
                 write_attribute<std::string>(file, "/model", "forecast_states", "hold");
             }
 
+            if (deterministic)
+            {
+                write_factor_deterministic(file, h, {{"c", kDfmK}});
+            }
+
             if (score)
             {
                 write_test_observations(file, x.col(kTT - 1), h);
@@ -2585,7 +2683,7 @@ int main(int argc, char *argv[])
                       << ", k=" << kDfmK << ", tt=" << kTT << ", n_factors=" << kDfmN
                       << ", p=" << kDfmP << ", n_lambda=" << kDfmNLambda << ", n_a=" << kDfmNA
                       << (hold_states ? ", forecast_states=hold" : "")
-                      << (score ? ", score=1" : "") << ")\n";
+                      << (score ? ", score=1" : "") << (deterministic ? ", n=3" : "") << ")\n";
             return 0;
         }
 
