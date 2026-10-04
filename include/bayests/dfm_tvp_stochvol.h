@@ -84,9 +84,10 @@ public:
     /// column per draw; the two precisions may carry either the whole path or the
     /// terminal block, since the last block of a path is what is read either way.
     ///
-    /// As in every dynamic factor model here, no out-of-sample regressor matrix
-    /// is needed: the path is the transition run forward from the last p drawn
-    /// factors, with an innovation drawn at each step.
+    /// As in every dynamic factor model here, the path is the transition run
+    /// forward from the last p drawn factors, with an innovation drawn at each
+    /// step, and the only out-of-sample input read is `input.forecast.x`, the
+    /// deterministic terms of the horizon, where the model has any.
     ///
     /// Requires `draws.factors`, and `draws.a` when the transition has an order.
     ForecastDraws forecast(const DfmTvpStochvolInput &input, const DfmTvpStochvolDraws &draws,

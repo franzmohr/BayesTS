@@ -71,10 +71,11 @@ public:
 
     /// Simulates one forecast path of the observed series per posterior draw.
     ///
-    /// As in DfmNormalGamma, no out-of-sample regressor matrix is needed: the
-    /// path is the transition run forward from the last p drawn factors, with an
-    /// innovation drawn at each step, and the observed series read off the
-    /// loadings. `spec.h` is the horizon.
+    /// As in DfmNormalGamma, the path is the transition run forward from the
+    /// last p drawn factors, with an innovation drawn at each step, and the
+    /// observed series read off the loadings, plus C d_{T+i} from
+    /// `input.forecast.x` where the model has deterministic terms. `spec.h` is
+    /// the horizon.
     ///
     /// Both volatilities start from their terminal value. Under
     /// ForecastStates::simulate, the default, each log-volatility then takes one
