@@ -85,8 +85,12 @@ void FavarNormalWishart::forecast(const ModelLocation &location_arg)
         return;
     }
 
-    // Stop if forecasts are already available in the object
-    if (dataset_has_data(file, "/posterior/forecast/forecasts"))
+    // The two members of the group are asked for separately so that adding
+    // /data/test/y to a file that was already forecast is enough to score it,
+    // rather than needing the paths thrown away first.
+    const bool scorable = dataset_has_data(file, "/data/test/y");
+    const bool scored = dataset_has_data(file, "/posterior/forecast/loglik");
+    if (dataset_has_data(file, "/posterior/forecast/forecasts") && (!scorable || scored))
     {
         return;
     }
@@ -95,10 +99,21 @@ void FavarNormalWishart::forecast(const ModelLocation &location_arg)
     const bayests::FavarNormalWishartDraws draws = io::read_coefficients(file);
 
     bayests::NullReporter reporter;
-    const bayests::ForecastDraws fcst =
-        bayests::FavarNormalWishartSampler{}.forecast(input, draws, reporter);
+    if (!dataset_has_data(file, "/posterior/forecast/forecasts"))
+    {
+        const bayests::ForecastDraws fcst =
+            bayests::FavarNormalWishartSampler{}.forecast(input, draws, reporter);
+        bayests::hdf5_io::write_forecast(file, fcst);
+    }
 
-    bayests::hdf5_io::write_forecast(file, fcst);
+    // Scored by filtering the realised panel and observed factors through the
+    // state -- see FavarNormalWishartSampler::predictive_log_density().
+    if (scorable && !scored)
+    {
+        const arma::mat score =
+            bayests::FavarNormalWishartSampler{}.predictive_log_density(input, draws);
+        bayests::hdf5_io::write_forecast_loglik(file, score);
+    }
 }
 
 void FavarNormalWishart::log_likelihood(const ModelLocation &location_arg)

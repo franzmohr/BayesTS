@@ -24,7 +24,10 @@ FavarNormalWishartInput read_input(const ModelFile &file)
     // state vector, and TrainData keeps them in a member of their own for that
     // reason.
     read_mat_if_present(file, "/data/train/f_obs", input.train.f_obs);
-    read_test_observations(file, input.spec, input.test.y);
+    // The panel and then the observed factors: what the forecast holds per
+    // period, and so what a horizon is scored on.
+    read_test_observations(file, input.spec, input.test.y,
+                           input.spec.k + input.spec.n_obs_factors);
     read_constraints(file, "/data/train/constraints", input.train.constraints);
     read_constraints(file, "/data/test/constraints", input.test.constraints);
     refuse_constraints(file, "/data/forecast/constraints", "FavarNormalWishart");

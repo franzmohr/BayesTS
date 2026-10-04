@@ -7,6 +7,7 @@
 #include "core/models/favar_support.h"
 #include "core/models/forecast_states.h"
 #include "core/models/model_support.h"
+#include "core/models/predictive_score.h"
 
 #include <algorithm>
 #include <cmath>
@@ -501,6 +502,227 @@ FavarNormalWishartSampler::log_likelihood(const FavarNormalWishartInput &input,
         {
             const double part_c = -arma::dot(u_sigma_inv, arma::square(u.col(i))) / 2;
             loglik(draw, i) = part_a + part_b + part_c;
+        }
+    }
+
+    return loglik;
+}
+
+arma::mat FavarNormalWishartSampler::predictive_log_density(
+    const FavarNormalWishartInput &input, const FavarNormalWishartDraws &coefficients) const
+{
+    const int k = input.spec.k;
+    const int n = input.spec.n_factors;
+    const int n_obs = input.spec.n_obs_factors;
+    const int ns = input.spec.n_state();
+    const int p = input.spec.p;
+    const bool use_a = input.use_a();
+
+    core::require_scorable(input.spec, "a factor augmented VAR");
+    if (k <= 0 || n <= 0 || n_obs <= 0)
+    {
+        throw std::invalid_argument("a factor augmented VAR must have at least one observed "
+                                    "series (k), one factor (n_factors) and one observed factor "
+                                    "(n_obs_factors)");
+    }
+    if (!coefficients.has_factors())
+    {
+        throw std::invalid_argument("posterior draws of the factors are missing; a factor "
+                                    "augmented VAR is scored by filtering on from them");
+    }
+    if (coefficients.lambda.n_elem == 0)
+    {
+        throw std::invalid_argument("posterior draws of lambda are missing");
+    }
+    if (coefficients.u_sigma_inv.n_elem == 0 || coefficients.v_sigma_inv.n_elem == 0)
+    {
+        throw std::invalid_argument("posterior draws of the error precisions are missing");
+    }
+    if (use_a && !coefficients.has_a())
+    {
+        throw std::invalid_argument("the state has a transition of order " + std::to_string(p) +
+                                    " but posterior draws of a are missing");
+    }
+
+    // What the horizon realised, one row per period: the k panel series and then
+    // the n_obs observed factors -- the width the forecast has, since both are
+    // what a FAVAR forecasts.
+    const arma::mat &realised = input.test.y;
+    const arma::uword periods = core::scored_horizons(realised, input.spec);
+    const arma::uword width = static_cast<arma::uword>(k + n_obs);
+    if (realised.n_cols != width)
+    {
+        throw std::invalid_argument("the realised values of a factor augmented VAR must have "
+                                    "k + n_obs_factors = " + std::to_string(width) +
+                                    " columns, the panel and then the observed factors, got " +
+                                    std::to_string(realised.n_cols));
+    }
+
+    const int tt = static_cast<int>(input.train.periods(k));
+    if (tt < p)
+    {
+        throw std::invalid_argument("a transition of order " + std::to_string(p) +
+                                    " needs that many states to start from, and the sample has " +
+                                    std::to_string(tt));
+    }
+    if (coefficients.factors.n_rows != static_cast<arma::uword>(n * tt))
+    {
+        throw std::invalid_argument(
+            "posterior draws of the factors must have " + std::to_string(n * tt) + " rows for " +
+            std::to_string(n) + " factors over " + std::to_string(tt) + " periods, got " +
+            std::to_string(coefficients.factors.n_rows));
+    }
+    const arma::mat obs = obs_factors_by_period(input.train);
+    if (obs.n_cols != static_cast<arma::uword>(tt) ||
+        obs.n_rows != static_cast<arma::uword>(n_obs))
+    {
+        throw std::invalid_argument("the observed factors must cover the whole sample, " +
+                                    std::to_string(n_obs) + " of them over " +
+                                    std::to_string(tt) + " periods");
+    }
+
+    // Deterministic terms over the scored periods and over the sample, as the
+    // forecast reads them. Both empty without them.
+    const arma::mat d_h = forecast_deterministic(input.spec, input.forecast, coefficients.c,
+                                                 static_cast<arma::uword>(k), periods);
+    const arma::mat d_t = deterministic_by_period(input.train);
+    const bool use_c = d_h.n_rows > 0;
+    if (use_c && coefficients.c_obs.n_rows != static_cast<arma::uword>(n_obs) * d_h.n_rows)
+    {
+        throw std::invalid_argument("posterior draws of the observed factors' deterministic "
+                                    "coefficients c_obs are missing");
+    }
+
+    // The filter of factor_score.h, with the two things that make a FAVAR
+    // different from a dynamic factor model:
+    //
+    //   * the observation is the panel and the observed factors together,
+    //     z_i = (x_i', y_i')', and the observed factors are the second block of
+    //     the state measured without error, so Z = [Lambda; 0 I] and
+    //     R = diag(u, 0). F stays positive definite through the state noise,
+    //     and after the update the filter is certain of the observed block, as
+    //     it should be: it has just seen it.
+    //   * the state noise Q is a full matrix (a Wishart precision), not a
+    //     diagonal.
+    //
+    // With deterministic terms the state is in deviations, as in the forecast:
+    // the observed factors are taken less C_obs d_i, and the panel less C d_i
+    // and less the loadings on the observed factors' means, Lambda_obs C_obs d_i.
+    //
+    // The state stacks the p states the transition reaches back over, most
+    // recent first. The filter starts from the drawn factors and the observed
+    // history, certain of both -- the convention of every factor model here.
+    const arma::uword blocks = p > 0 ? static_cast<arma::uword>(p) : 1;
+    const arma::uword uns = static_cast<arma::uword>(ns);
+    const arma::uword n_big = uns * blocks;
+    const arma::uword uk = static_cast<arma::uword>(k);
+    const arma::uword un = static_cast<arma::uword>(n);
+    const arma::uword uobs = static_cast<arma::uword>(n_obs);
+
+    const arma::uword draws = coefficients.iterations();
+    arma::mat loglik(draws, periods);
+    const double constant = -static_cast<double>(width) * std::log(2 * arma::datum::pi) / 2;
+
+    // The shift that carries yesterday's blocks down one, which never changes.
+    arma::mat transition(n_big, n_big, arma::fill::zeros);
+    if (blocks > 1)
+    {
+        transition.submat(uns, 0, n_big - 1, n_big - uns - 1) =
+            arma::eye<arma::mat>(n_big - uns, n_big - uns);
+    }
+    arma::mat state_noise(n_big, n_big, arma::fill::zeros);
+    arma::mat observation(width, n_big, arma::fill::zeros);
+    observation.submat(uk, un, width - 1, uns - 1) = arma::eye<arma::mat>(uobs, uobs);
+    arma::vec measurement_var(width, arma::fill::zeros);
+
+    for (arma::uword draw = 0; draw < draws; draw++)
+    {
+        const arma::mat lambda = arma::reshape(coefficients.lambda.col(draw), uk, uns);
+        observation.submat(0, 0, uk - 1, uns - 1) = lambda;
+        measurement_var.head(uk) = 1.0 / coefficients.u_sigma_inv.col(draw);
+
+        const arma::mat q = arma::inv_sympd(
+            arma::symmatu(arma::reshape(coefficients.v_sigma_inv.col(draw), uns, uns)));
+        state_noise.submat(0, 0, uns - 1, uns - 1) = (q + arma::trans(q)) / 2;
+        if (use_a)
+        {
+            transition.submat(0, 0, uns - 1, n_big - 1) =
+                arma::reshape(coefficients.a.col(draw), uns, uns * static_cast<arma::uword>(p));
+        }
+        else
+        {
+            transition.submat(0, 0, uns - 1, n_big - 1).zeros();
+        }
+
+        const arma::mat c_mat =
+            use_c ? arma::mat(arma::reshape(coefficients.c.col(draw), uk, d_h.n_rows)) : arma::mat();
+        const arma::mat c_obs_mat =
+            use_c ? arma::mat(arma::reshape(coefficients.c_obs.col(draw), uobs, d_h.n_rows))
+                  : arma::mat();
+
+        // The starting state: the last p periods of the drawn factors and of the
+        // observed factors' deviations, most recent first.
+        arma::vec state(n_big, arma::fill::zeros);
+        if (p > 0)
+        {
+            const arma::mat drawn = arma::reshape(coefficients.factors.col(draw), un, tt);
+            for (arma::uword j = 0; j < blocks; j++)
+            {
+                const arma::uword t = static_cast<arma::uword>(tt) - 1 - j;
+                state.subvec(j * uns, j * uns + un - 1) = drawn.col(t);
+                arma::vec y_dev = obs.col(t);
+                if (use_c)
+                {
+                    y_dev -= c_obs_mat * d_t.col(t);
+                }
+                state.subvec(j * uns + un, (j + 1) * uns - 1) = y_dev;
+            }
+        }
+        arma::mat variance(n_big, n_big, arma::fill::zeros);
+
+        for (arma::uword i = 0; i < periods; i++)
+        {
+            // Predict.
+            state = transition * state;
+            variance = transition * variance * arma::trans(transition) + state_noise;
+
+            // The realised observation, in deviations where the model has them.
+            arma::vec z = arma::trans(realised.row(i));
+            if (use_c)
+            {
+                const arma::vec mean_obs = c_obs_mat * d_h.col(i);
+                z.head(uk) -= c_mat * d_h.col(i) + lambda.tail_cols(uobs) * mean_obs;
+                z.tail(uobs) -= mean_obs;
+            }
+
+            const arma::vec innovation = z - observation * state;
+            const arma::mat gain = variance * arma::trans(observation);
+            arma::mat scale = observation * gain + arma::diagmat(measurement_var);
+            scale = (scale + arma::trans(scale)) / 2;
+
+            // A Cholesky rather than arma::log_det(): F is symmetric positive
+            // definite by construction, and this fails exactly when it is not.
+            arma::mat chol_scale;
+            if (!arma::chol(chol_scale, scale, "lower"))
+            {
+                throw std::runtime_error(
+                    "the one step ahead forecast variance of a scored period is not positive "
+                    "definite: a FAVAR measures its observed factors without error, so their "
+                    "state noise must be positive definite");
+            }
+            const double log_det = 2.0 * arma::accu(arma::log(chol_scale.diag()));
+            const arma::vec weighted =
+                arma::solve(arma::trimatu(arma::trans(chol_scale)),
+                            arma::solve(arma::trimatl(chol_scale), innovation));
+            loglik(draw, i) = constant - log_det / 2 - arma::dot(innovation, weighted) / 2;
+
+            // Update, K = P Z' F^-1, through the same factorisation.
+            const arma::mat k_gain = arma::trans(arma::solve(
+                arma::trimatu(arma::trans(chol_scale)),
+                arma::solve(arma::trimatl(chol_scale), arma::trans(gain))));
+            state += k_gain * innovation;
+            variance -= k_gain * arma::trans(gain);
+            variance = (variance + arma::trans(variance)) / 2;
         }
     }
 

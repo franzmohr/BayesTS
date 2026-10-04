@@ -79,7 +79,11 @@ bool read_forecast_regressors(const ModelFile &file, int k, arma::mat &out);
 /// be scored on before it is told how far to forecast, and refusing that here
 /// would fail the sampler over data no sampler reads. `bayests check` reports
 /// it instead.
-bool read_test_observations(const ModelFile &file, const VarSpec &spec, arma::mat &out);
+/// `width` is the number of columns a period has, k unless given: a factor
+/// augmented VAR forecasts, and is scored on, its panel and its observed factors
+/// together, k + n_obs_factors.
+bool read_test_observations(const ModelFile &file, const VarSpec &spec, arma::mat &out,
+                            int width = 0);
 
 arma::mat read_path(const ModelFile &file, const std::string &dataset, arma::uword rows,
                     arma::uword periods);
