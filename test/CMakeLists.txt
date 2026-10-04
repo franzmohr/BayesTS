@@ -722,6 +722,22 @@ bayests_add_model_fixture(DfmTvpStochvol-hold    DfmTvpStochvol    none 0 0 4 --
 bayests_add_model_fixture(FavarNormalWishart-plain  FavarNormalWishart none 0 0 4)
 bayests_add_model_fixture(FavarNormalWishart-nofcst FavarNormalWishart none 0 0 0)
 
+# Deterministic terms -- a constant, a trend and a seasonal dummy, /model/n = 3
+# -- in every factor model. The panel is shifted by them, so the rows exercise
+# the coefficient block C of the measurement, drawn row by row and weighted by
+# period where the idiosyncratic volatility moves; the FAVAR row adds C_obs,
+# the mean its observed factors deviate from, drawn through the transition. The
+# forecast reads /data/forecast/x, and the two -score rows put the offset C d_i
+# through the filter. Without --deterministic every factor row above is
+# bit-identical to what it was before the block existed.
+bayests_add_model_fixture(DfmNormalGamma-deterministic     DfmNormalGamma     none 0 0 4 --deterministic)
+bayests_add_model_fixture(DfmNormalStochvol-deterministic  DfmNormalStochvol  none 0 0 4 --deterministic)
+bayests_add_model_fixture(DfmTvpGamma-deterministic        DfmTvpGamma        none 0 0 4 --deterministic)
+bayests_add_model_fixture(DfmTvpStochvol-deterministic     DfmTvpStochvol     none 0 0 4 --deterministic)
+bayests_add_model_fixture(FavarNormalWishart-deterministic FavarNormalWishart none 0 0 4 --deterministic)
+bayests_add_model_fixture(DfmNormalGamma-deterministic-score DfmNormalGamma   none 0 0 4 --deterministic --score)
+bayests_add_model_fixture(DfmTvpStochvol-deterministic-score DfmTvpStochvol   none 0 0 4 --deterministic --score)
+
 # The VECs. All seven have a generator, VecKlgs2010 and VecNormalWishart
 # included. Their dimensions differ from the VAR rows above (rank 1, a restricted
 # constant and one lagged difference) and their forecast regressors are in

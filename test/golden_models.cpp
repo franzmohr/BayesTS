@@ -93,6 +93,12 @@ constexpr const char *kOutputs[] = {
     "/posterior/lambda/coeffs",
     "/posterior/lambda/sigma",
     "/posterior/factors/coeffs",
+    // The coefficients of a factor model's deterministic terms: C of the
+    // measurement, and C_obs, the mean a FAVAR's observed factors deviate from.
+    // Absent for a factor model without deterministic terms and for every
+    // other model, whose deterministic terms are part of `a`.
+    "/posterior/c/coeffs",
+    "/posterior/c_obs/coeffs",
     // The panel as each draw completed it, where it was not observed whole:
     // part of the posterior, and what a forecast from such a panel starts from.
     "/posterior/y/coeffs",

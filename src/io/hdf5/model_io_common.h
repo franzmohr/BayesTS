@@ -172,6 +172,18 @@ std::optional<std::uint64_t> read_model_seed(const ModelFile &file);
 /// The (mu, v_inv) pair every normal prior is stored as.
 NormalPrior read_normal_prior(const ModelFile &file, const std::string &group);
 
+/// The deterministic terms of a factor model, which it reads from where a VAR
+/// reads its compact regressors: `/data/train/x`, tt x n, and
+/// `/data/forecast/x`, h x n, both one period per row. Either is left empty
+/// where the file does not carry it -- a model without deterministic terms
+/// carries neither, and validate() refuses one whose `n` and data disagree.
+void read_factor_deterministic(const ModelFile &file, TrainData &train, ForecastData &forecast);
+
+/// A normal block's prior at `/priors/<name>` and starting value at
+/// `/initial/<name>`, each read where present.
+void read_normal_block_if_present(const ModelFile &file, const std::string &name,
+                                  NormalPrior &prior, arma::vec &initial);
+
 /// The (v_inv, p_tau_inv) pair every constant cointegration-space prior is stored as.
 ConstantCointSpacePrior read_coint_space_prior_constant(const ModelFile &file, const std::string &group);
 

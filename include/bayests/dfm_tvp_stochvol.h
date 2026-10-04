@@ -14,7 +14,7 @@ namespace bayests
 /// Dynamic factor model whose loadings and factor transition follow random walks
 /// and whose two error terms carry stochastic volatility.
 ///
-///     x_t = Lambda_t f_t + u_t,                  u_t ~ N(0, U_t),
+///     x_t = Lambda_t f_t + C d_t + u_t,          u_t ~ N(0, U_t),
 ///     f_t = sum_{j=1..p} A_{j,t} f_{t-j} + v_t,  v_t ~ N(0, V_t),
 ///
 /// with U_t = diag(exp(h^u_t)) and V_t = diag(exp(h^v_t)). The widest model here:

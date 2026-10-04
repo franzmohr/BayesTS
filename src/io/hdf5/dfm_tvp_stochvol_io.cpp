@@ -80,6 +80,11 @@ DfmTvpStochvolInput read_input(const ModelFile &file)
     read_constraints(file, "/data/test/constraints", input.test.constraints);
     refuse_constraints(file, "/data/forecast/constraints", "DfmTvpStochvol");
 
+    // Deterministic terms: the data under /data/train/x and /data/forecast/x,
+    // and the prior and starting value of their coefficients C.
+    read_factor_deterministic(file, input.train, input.forecast);
+    read_normal_block_if_present(file, "c", input.c_prior, input.initial.c);
+
     const arma::uword tt = sample_periods(input);
     const arma::uword n_lambda = static_cast<arma::uword>(input.spec.n_lambda());
 
@@ -151,6 +156,8 @@ DfmTvpStochvolDraws read_loglik_coefficients(const ModelFile &file)
     }
     read_common(file, draws);
 
+    read_draws_if_present(file, "/posterior/c/coeffs", draws.c);
+
     return draws;
 }
 
@@ -188,6 +195,8 @@ DfmTvpStochvolDraws read_forecast_coefficients(const ModelFile &file,
         read_draws_if_present(file, "/posterior/v_sigma_inv/sigma", draws.v_h_sigma);
     }
 
+    read_draws_if_present(file, "/posterior/c/coeffs", draws.c);
+
     return draws;
 }
 
@@ -223,6 +232,11 @@ void write_coefficients(const ModelFile &file, const DfmTvpStochvolDraws &draws)
     write_noncentred(file, "/posterior/v_sigma_inv", draws.v_h_noncentred);
     write_draws(file, "/posterior/u_sigma_inv/sigma", draws.u_h_sigma);
     write_draws(file, "/posterior/v_sigma_inv/sigma", draws.v_h_sigma);
+
+    if (draws.has_c())
+    {
+        write_draws(file, "/posterior/c/coeffs", draws.c);
+    }
 }
 
 } // namespace bayests::hdf5_io::dfm_tvp_stochvol
