@@ -2439,12 +2439,11 @@ int main(int argc, char *argv[])
                      "horizon to realise: pass h > 0" << '\n';
         return 2;
     }
-    if (score && (is_ald || is_favar))
+    if (score && is_ald)
     {
         std::cerr << "--score is not available for " << model
-                  << ": the quantile models have no forecast to score, and a FAVAR's is not "
-                     "scored yet -- see can_be_scored in src/check.cpp for the nineteen that "
-                     "are" << '\n';
+                  << ": the quantile models have no forecast to score -- see can_be_scored in "
+                     "src/check.cpp for the twenty that are" << '\n';
         return 2;
     }
     if (quantile_grid && (model != "VarNormalAld" || (h != 0 && !structural)))
@@ -2630,6 +2629,13 @@ int main(int argc, char *argv[])
             if (deterministic)
             {
                 write_factor_deterministic(file, h, {{"c", kDfmK}, {"c_obs", kFavarNObs}});
+            }
+            if (score)
+            {
+                // The panel and then the observed factors, as the forecast holds
+                // them per period.
+                write_test_observations(
+                    file, arma::join_vert(x.col(kTT - 1), arma::trans(obs.row(kTT - 1))), h);
             }
 
             std::cout << "wrote " << dest.string() << group_suffix << " (" << model

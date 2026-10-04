@@ -118,7 +118,8 @@ bool read_forecast_regressors(const ModelFile &file, int k, arma::mat &out)
     return true;
 }
 
-bool read_test_observations(const ModelFile &file, const VarSpec &spec, arma::mat &out)
+bool read_test_observations(const ModelFile &file, const VarSpec &spec, arma::mat &out,
+                            const int width)
 {
     arma::mat realised;
     if (!read_mat_if_present(file, "/data/test/y", realised))
@@ -126,12 +127,14 @@ bool read_test_observations(const ModelFile &file, const VarSpec &spec, arma::ma
         return false;
     }
 
-    const arma::uword k = spec.k > 0 ? static_cast<arma::uword>(spec.k) : 0;
+    const int columns = width > 0 ? width : spec.k;
+    const arma::uword k = columns > 0 ? static_cast<arma::uword>(columns) : 0;
     if (k == 0 || realised.n_cols != k)
     {
         throw std::invalid_argument(
-            "/data/test/y is one row per period and one column per variable, so it must have k = " +
-            std::to_string(spec.k) + " columns, got " + std::to_string(realised.n_rows) + " by " +
+            "/data/test/y is one row per period and one column per variable, so it must have " +
+            std::string(width > 0 ? "k + n_obs_factors = " : "k = ") + std::to_string(columns) +
+            " columns, got " + std::to_string(realised.n_rows) + " by " +
             std::to_string(realised.n_cols));
     }
     if (spec.h > 0 && realised.n_rows > static_cast<arma::uword>(spec.h))

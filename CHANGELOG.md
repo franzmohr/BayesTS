@@ -29,6 +29,25 @@ heading, and move down into a version section when one is cut.
 
 ### Added
 
+* **`FavarNormalWishart` can be scored**, the twentieth algorithm that can:
+  `FavarNormalWishartSampler::predictive_log_density()`, and `bayests forecasts`
+  writes `/posterior/forecast/loglik` for a FAVAR file that carries
+  `/data/test/y`. A FAVAR forecasts its panel and its observed factors together,
+  so `/data/test/y` is k + n_obs_factors wide -- the panel and then the observed
+  factors, the layout of `/posterior/forecast/forecasts` -- and both are scored.
+  The score is a filter, as for the dynamic factor models: the observed factors
+  are the second block of the state measured without error, the state noise is
+  the full Q, and the filter starts from the drawn factors and the observed
+  history, in deviations from `C_obs d_t` where the model has deterministic
+  terms. `read_test_observations()` takes the width, `bayests check` reports a
+  FAVAR's realised periods as scorable, and `make_model_fixture --score` writes
+  them for a FAVAR (`FavarNormalWishart-score`,
+  `FavarNormalWishart-deterministic-score`). `unit.favar_normal_wishart` pins the
+  sum of the columns against the joint Gaussian density of two periods computed
+  without a filter, and the first column against the one step ahead density.
+  *Draws are unchanged*: no sampler, forecast or log-likelihood code moved, the
+  score draws nothing, and the full suite (540 tests) passes.
+
 - **Deterministic terms in every factor model.** A constant, a trend,
   seasonal dummies or any other column known in advance now enters the
   measurement of the four DFMs, `x_t = Lambda f_t + C d_t + u_t`, so the

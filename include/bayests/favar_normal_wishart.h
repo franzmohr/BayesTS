@@ -125,6 +125,25 @@ public:
     /// Requires `draws.factors`.
     arma::mat log_likelihood(const FavarNormalWishartInput &input,
                              const FavarNormalWishartDraws &draws) const;
+
+    /// The log predictive density of what the horizon realised, draws x scored
+    /// periods -- one row per posterior draw, one column per period of
+    /// `input.test.y`, which is k + n_obs_factors wide: the panel and then the
+    /// observed factors, the two things a FAVAR forecasts.
+    ///
+    /// Scored by filtering, as a dynamic factor model is (see
+    /// core/models/factor_score.h): at every scored period the realised panel
+    /// and observed factors update the distribution of the state before the next
+    /// period is predicted, so the column is that period's prediction error
+    /// decomposition and the columns sum to the joint density of the realised
+    /// stretch. The observed factors are the second block of the state measured
+    /// without error, and the state noise is the full Q. The filter starts from
+    /// the drawn factors and the observed history at the end of the sample.
+    ///
+    /// Draws nothing, so it repeats without a seed. Requires `input.test.y`, the
+    /// drawn factors, and `draws.a` when the state has a transition.
+    arma::mat predictive_log_density(const FavarNormalWishartInput &input,
+                                     const FavarNormalWishartDraws &draws) const;
 };
 
 } // namespace bayests

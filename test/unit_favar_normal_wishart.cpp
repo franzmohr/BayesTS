@@ -680,6 +680,113 @@ void run_group(const char *name, void (*group)())
     }
 }
 
+/// The score is a filter, so over two periods with a first-order transition the
+/// sum of its two columns must be the joint Gaussian log density of what the two
+/// periods realised -- computed here directly, from the stacked mean and
+/// covariance, without any recursion. The observed factors are part of what is
+/// scored and are measured without error, so the joint covariance has a zero
+/// measurement variance in their rows, and is still positive definite through Q.
+void it_scores_by_filtering()
+{
+    std::printf("the predictive density of what the horizon realised\n");
+
+    const int k = 5, n = 1, n_obs = 2, p = 1, tt = 80, h = 2;
+    const int ns = n + n_obs, width = k + n_obs;
+
+    arma::arma_rng::set_seed(20261004);
+    const Simulated s = simulate(k, n, n_obs, p, tt);
+    bayests::FavarNormalWishartInput in = make_input(s, k, n, n_obs, p, 30, 20);
+
+    bayests::NullReporter reporter;
+    const bayests::FavarNormalWishartDraws out =
+        bayests::FavarNormalWishartSampler{}.draw_coefficients(in, reporter);
+
+    in.spec.h = h;
+    in.test.y = arma::randn<arma::mat>(h, width);
+    const arma::mat score = bayests::FavarNormalWishartSampler{}.predictive_log_density(in, out);
+
+    check("the score is draws x scored periods",
+          score.n_rows == out.iterations() && score.n_cols == static_cast<arma::uword>(h));
+    check("the score is finite", score.is_finite());
+
+    arma::mat zero_obs(width, ns, arma::fill::zeros);
+    double worst = 0.0;
+    for (arma::uword d = 0; d < out.iterations(); d++)
+    {
+        const arma::mat lambda = arma::reshape(out.lambda.col(d), k, ns);
+        const arma::mat a = arma::reshape(out.a.col(d), ns, ns);
+        const arma::mat q = arma::inv_sympd(arma::symmatu(arma::reshape(out.v_sigma_inv.col(d), ns, ns)));
+        arma::mat z = zero_obs;
+        z.head_rows(k) = lambda;
+        z.submat(k, n, width - 1, ns - 1) = arma::eye<arma::mat>(n_obs, n_obs);
+        arma::mat r(width, width, arma::fill::zeros);
+        r.submat(0, 0, k - 1, k - 1) = arma::diagmat(1.0 / out.u_sigma_inv.col(d));
+
+        const arma::mat drawn = arma::reshape(out.factors.col(d), n, tt);
+        const arma::vec start = arma::join_vert(drawn.col(tt - 1), arma::trans(s.obs.row(tt - 1)));
+
+        const arma::vec m1 = z * a * start;
+        const arma::vec m2 = z * a * a * start;
+        const arma::mat v1 = q;
+        const arma::mat v2 = a * q * arma::trans(a) + q;
+        arma::mat sigma(2 * width, 2 * width);
+        sigma.submat(0, 0, width - 1, width - 1) = z * v1 * arma::trans(z) + r;
+        sigma.submat(width, width, 2 * width - 1, 2 * width - 1) = z * v2 * arma::trans(z) + r;
+        sigma.submat(width, 0, 2 * width - 1, width - 1) = z * a * q * arma::trans(z);
+        sigma.submat(0, width, width - 1, 2 * width - 1) =
+            arma::trans(sigma.submat(width, 0, 2 * width - 1, width - 1));
+
+        const arma::vec y = arma::join_vert(arma::trans(in.test.y.row(0)), arma::trans(in.test.y.row(1)));
+        const arma::vec e = y - arma::join_vert(m1, m2);
+        double sign = 0.0, log_det = 0.0;
+        arma::log_det(log_det, sign, sigma);
+        const double want = -static_cast<double>(2 * width) * std::log(2 * arma::datum::pi) / 2 -
+                            log_det / 2 - arma::dot(e, arma::solve(sigma, e)) / 2;
+        worst = std::max(worst, std::abs(arma::accu(score.row(d)) - want));
+    }
+    check_below("its columns sum to the joint density of the realised stretch", worst, 1e-7);
+
+    // The first column alone is the one step ahead density, which needs no
+    // filter at all: N(Z A s_T, Z Q Z' + R).
+    {
+        const arma::uword d = 0;
+        const arma::mat lambda = arma::reshape(out.lambda.col(d), k, ns);
+        const arma::mat a = arma::reshape(out.a.col(d), ns, ns);
+        const arma::mat q = arma::inv_sympd(arma::symmatu(arma::reshape(out.v_sigma_inv.col(d), ns, ns)));
+        arma::mat z = zero_obs;
+        z.head_rows(k) = lambda;
+        z.submat(k, n, width - 1, ns - 1) = arma::eye<arma::mat>(n_obs, n_obs);
+        arma::mat f = z * q * arma::trans(z);
+        f.submat(0, 0, k - 1, k - 1) += arma::diagmat(1.0 / out.u_sigma_inv.col(d));
+        const arma::mat drawn = arma::reshape(out.factors.col(d), n, tt);
+        const arma::vec start = arma::join_vert(drawn.col(tt - 1), arma::trans(s.obs.row(tt - 1)));
+        const arma::vec e = arma::trans(in.test.y.row(0)) - z * a * start;
+        double sign = 0.0, log_det = 0.0;
+        arma::log_det(log_det, sign, f);
+        const double want = -static_cast<double>(width) * std::log(2 * arma::datum::pi) / 2 -
+                            log_det / 2 - arma::dot(e, arma::solve(f, e)) / 2;
+        check_below("the first column is the one step ahead density", std::abs(score(d, 0) - want), 1e-9);
+    }
+
+    // It repeats without a seed: a filter draws nothing.
+    const arma::mat again = bayests::FavarNormalWishartSampler{}.predictive_log_density(in, out);
+    check("and repeats exactly", arma::approx_equal(score, again, "absdiff", 0.0));
+
+    // The width is the panel and the observed factors; the panel alone is refused.
+    bayests::FavarNormalWishartInput narrow = in;
+    narrow.test.y = arma::randn<arma::mat>(h, k);
+    bool refused = false;
+    try
+    {
+        bayests::FavarNormalWishartSampler{}.predictive_log_density(narrow, out);
+    }
+    catch (const std::invalid_argument &)
+    {
+        refused = true;
+    }
+    check("a realised panel without its observed factors is refused", refused);
+}
+
 } // namespace
 
 int main()
@@ -692,6 +799,7 @@ int main()
     run_group("group: recovery", it_recovers_what_it_was_given);
     run_group("group: refused inputs", the_impossible_inputs_are_refused);
     run_group("group: deterministic terms", it_recovers_deterministic_terms);
+    run_group("group: the predictive density", it_scores_by_filtering);
 
     std::printf("\n%s\n", failures == 0 ? "all checks passed" : "THERE WERE FAILURES");
     return failures == 0 ? 0 : 1;

@@ -737,6 +737,8 @@ bayests_add_model_fixture(DfmTvpStochvol-deterministic     DfmTvpStochvol     no
 bayests_add_model_fixture(FavarNormalWishart-deterministic FavarNormalWishart none 0 0 4 --deterministic)
 bayests_add_model_fixture(DfmNormalGamma-deterministic-score DfmNormalGamma   none 0 0 4 --deterministic --score)
 bayests_add_model_fixture(DfmTvpStochvol-deterministic-score DfmTvpStochvol   none 0 0 4 --deterministic --score)
+bayests_add_model_fixture(FavarNormalWishart-score         FavarNormalWishart none 0 0 4 --score)
+bayests_add_model_fixture(FavarNormalWishart-deterministic-score FavarNormalWishart none 0 0 4 --deterministic --score)
 
 # The VECs. All seven have a generator, VecKlgs2010 and VecNormalWishart
 # included. Their dimensions differ from the VAR rows above (rank 1, a restricted
