@@ -29,6 +29,42 @@ heading, and move down into a version section when one is cut.
 
 ### Added
 
+* **The covariance block can be left out of variable selection, in every model
+  that has one.** `/model/priors/psi`'s `varsel` attribute was read by the four
+  time-varying models and ignored by the four with constant coefficients, which
+  applied `/model`'s scheme to both blocks and had no way of being told
+  otherwise. All eight now read it, so `varsel = "bvs"` on the model with
+  `varsel = "none"` on the covariance block selects over the coefficients and
+  estimates the covariances freely.
+
+  *Draws are unchanged for every file that does not use the new combination.*
+  The attribute is optional and absence is not `none`: a file that leaves it out
+  gets `/model`'s scheme on both blocks, exactly as before, and `psi_varsel` is
+  a `std::optional` in the input structs so that an embedded host which never
+  sets it behaves the same way. The full suite passes, 540 of 540, including the
+  fixture and golden tests of every algorithm.
+
+  Why it matters rather than being a tidiness: a generalised impulse response is
+  built from the off-diagonals of Sigma, so selecting them to zero collapses it
+  towards an orthogonalised response, which removes the thing that distinguishes
+  the two. The block is also small -- `k(k-1)/2` elements, at most fifteen in the
+  models this came up in, against 176 observations -- so there is no
+  dimensionality case for selecting over it the way there is for the
+  coefficients.
+
+### Fixed
+
+* **`bayests check` no longer says that no selection over the covariance block
+  will be made when some is.** The warning for an unread `/model/priors/psi`
+  `varsel` ended "so no selection over the covariance block will be made", which
+  was false for exactly the models it fired on: the four with constant
+  coefficients applied `/model`'s scheme to the block and switched covariances
+  off, sometimes in 99 per cent of draws. A reader following the warning would
+  have concluded the opposite of what the run did. The warning now fires only
+  where there is no covariance block to select over, and says so.
+
+### Added
+
 * **`FavarNormalWishart` can be scored**, the twentieth algorithm that can:
   `FavarNormalWishartSampler::predictive_log_density()`, and `bayests forecasts`
   writes `/posterior/forecast/loglik` for a FAVAR file that carries

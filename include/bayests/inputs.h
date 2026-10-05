@@ -4,6 +4,8 @@
 #ifndef BAYESTS_INPUTS_H
 #define BAYESTS_INPUTS_H
 
+#include <optional>
+
 #include "bayests/data.h"
 #include "bayests/priors.h"
 #include "bayests/spec.h"
@@ -112,6 +114,14 @@ struct VarNormalGammaInput
     NormalPrior psi_prior;       ///< Unused without a covariance block.
     VarSelPrior psi_varsel_prior;
 
+    /// Selection for the covariance block, when it is to differ from the
+    /// model's. Unset is not the same as VarSelection::none: unset means the
+    /// file or the host said nothing, and spec.varsel then governs both blocks,
+    /// which is what every file written before this was read has always meant.
+    /// Setting it to none is the way to say that the coefficients are selected
+    /// over and the covariances are not.
+    std::optional<VarSelection> psi_varsel;
+
     GammaPrior u_sigma_prior;
     /// A gamma prior on the error precision of each soft group of
     /// TrainData::constraints, one shape and one rate per group. Unused when
@@ -130,6 +140,9 @@ struct VarNormalGammaInput
 
     bool use_a() const { return train.nparams() > 0; }
     bool use_psi() const { return spec.uses_covar(); }
+    bool uses_psi_varsel() const { return psi_selection() != VarSelection::none; }
+    /// The scheme the covariance block is actually drawn under.
+    VarSelection psi_selection() const { return psi_varsel.value_or(spec.varsel); }
 
     void validate() const;
 };
@@ -181,6 +194,14 @@ struct VarNormalStochvolInput
     NormalPrior psi_prior;
     VarSelPrior psi_varsel_prior;
 
+    /// Selection for the covariance block, when it is to differ from the
+    /// model's. Unset is not the same as VarSelection::none: unset means the
+    /// file or the host said nothing, and spec.varsel then governs both blocks,
+    /// which is what every file written before this was read has always meant.
+    /// Setting it to none is the way to say that the coefficients are selected
+    /// over and the covariances are not.
+    std::optional<VarSelection> psi_varsel;
+
     StochvolPrior u_sigma_prior;
 
     /// A gamma prior on the error precision of each soft group of
@@ -200,6 +221,9 @@ struct VarNormalStochvolInput
 
     bool use_a() const { return train.nparams() > 0; }
     bool use_psi() const { return spec.uses_covar(); }
+    bool uses_psi_varsel() const { return psi_selection() != VarSelection::none; }
+    /// The scheme the covariance block is actually drawn under.
+    VarSelection psi_selection() const { return psi_varsel.value_or(spec.varsel); }
 
     void validate() const;
 };
@@ -307,10 +331,12 @@ struct VarTvpGammaInput
 
     GammaPrior u_sigma_prior;
 
-    /// Selection for the covariance block. Read from its own group rather than
-    /// from the model's, so it can differ from spec.varsel -- and does: this is
-    /// the only place where one half of a model selects and the other does not.
-    VarSelection psi_varsel = VarSelection::none;
+    /// Selection for the covariance block, when it is to differ from the
+    /// model's. Unset is not the same as VarSelection::none: unset means the
+    /// file or the host said nothing, and spec.varsel then governs both blocks.
+    /// Setting it to none is how a file says that the coefficients are selected
+    /// over and the covariances are not.
+    std::optional<VarSelection> psi_varsel;
 
     /// A gamma prior on the error precision of each soft group of
     /// TrainData::constraints, one shape and one rate per group. Unused when
@@ -321,7 +347,9 @@ struct VarTvpGammaInput
 
     bool use_a() const { return train.nparams() > 0; }
     bool use_psi() const { return spec.uses_covar(); }
-    bool uses_psi_varsel() const { return psi_varsel != VarSelection::none; }
+    bool uses_psi_varsel() const { return psi_selection() != VarSelection::none; }
+    /// The scheme the covariance block is actually drawn under.
+    VarSelection psi_selection() const { return psi_varsel.value_or(spec.varsel); }
 
     void validate() const;
 };
@@ -417,10 +445,12 @@ struct VarTvpStochvolInput
 
     StochvolPrior u_sigma_prior;
 
-    /// Selection for the covariance block. Read from its own group rather than
-    /// from the model's, so it can differ from spec.varsel, exactly as in
-    /// VarTvpGamma.
-    VarSelection psi_varsel = VarSelection::none;
+    /// Selection for the covariance block, when it is to differ from the
+    /// model's. Unset is not the same as VarSelection::none: unset means the
+    /// file or the host said nothing, and spec.varsel then governs both blocks.
+    /// Setting it to none is how a file says that the coefficients are selected
+    /// over and the covariances are not.
+    std::optional<VarSelection> psi_varsel;
 
     /// A gamma prior on the error precision of each soft group of
     /// TrainData::constraints, one shape and one rate per group. Unused when
@@ -431,7 +461,9 @@ struct VarTvpStochvolInput
 
     bool use_a() const { return train.nparams() > 0; }
     bool use_psi() const { return spec.uses_covar(); }
-    bool uses_psi_varsel() const { return psi_varsel != VarSelection::none; }
+    bool uses_psi_varsel() const { return psi_selection() != VarSelection::none; }
+    /// The scheme the covariance block is actually drawn under.
+    VarSelection psi_selection() const { return psi_varsel.value_or(spec.varsel); }
 
     void validate() const;
 };
@@ -1189,6 +1221,14 @@ struct VecNormalGammaInput
     NormalPrior psi_prior;
     VarSelPrior psi_varsel_prior;
 
+    /// Selection for the covariance block, when it is to differ from the
+    /// model's. Unset is not the same as VarSelection::none: unset means the
+    /// file or the host said nothing, and spec.varsel then governs both blocks,
+    /// which is what every file written before this was read has always meant.
+    /// Setting it to none is the way to say that the coefficients are selected
+    /// over and the covariances are not.
+    std::optional<VarSelection> psi_varsel;
+
     GammaPrior u_sigma_prior;
 
     VecNormalGammaInitial initial;
@@ -1196,6 +1236,9 @@ struct VecNormalGammaInput
     bool use_a() const { return train.nparams() > 0; }
     bool use_beta() const { return spec.uses_coint(); }
     bool use_psi() const { return spec.uses_covar(); }
+    bool uses_psi_varsel() const { return psi_selection() != VarSelection::none; }
+    /// The scheme the covariance block is actually drawn under.
+    VarSelection psi_selection() const { return psi_varsel.value_or(spec.varsel); }
 
     void validate() const;
 };
@@ -1240,6 +1283,14 @@ struct VecNormalStochvolInput
     NormalPrior psi_prior;
     VarSelPrior psi_varsel_prior;
 
+    /// Selection for the covariance block, when it is to differ from the
+    /// model's. Unset is not the same as VarSelection::none: unset means the
+    /// file or the host said nothing, and spec.varsel then governs both blocks,
+    /// which is what every file written before this was read has always meant.
+    /// Setting it to none is the way to say that the coefficients are selected
+    /// over and the covariances are not.
+    std::optional<VarSelection> psi_varsel;
+
     StochvolPrior u_sigma_prior;
 
     VecNormalStochvolInitial initial;
@@ -1247,6 +1298,9 @@ struct VecNormalStochvolInput
     bool use_a() const { return train.nparams() > 0; }
     bool use_beta() const { return spec.uses_coint(); }
     bool use_psi() const { return spec.uses_covar(); }
+    bool uses_psi_varsel() const { return psi_selection() != VarSelection::none; }
+    /// The scheme the covariance block is actually drawn under.
+    VarSelection psi_selection() const { return psi_varsel.value_or(spec.varsel); }
 
     void validate() const;
 };
@@ -1332,17 +1386,21 @@ struct VecTvpGammaInput
 
     GammaPrior u_sigma_prior;
 
-    /// Selection for the covariance block. Read from its own group rather than
-    /// from the model's, so it can differ from spec.varsel, exactly as in
-    /// VarTvpGamma.
-    VarSelection psi_varsel = VarSelection::none;
+    /// Selection for the covariance block, when it is to differ from the
+    /// model's. Unset is not the same as VarSelection::none: unset means the
+    /// file or the host said nothing, and spec.varsel then governs both blocks.
+    /// Setting it to none is how a file says that the coefficients are selected
+    /// over and the covariances are not.
+    std::optional<VarSelection> psi_varsel;
 
     VecTvpGammaInitial initial;
 
     bool use_a() const { return train.nparams() > 0; }
     bool use_beta() const { return spec.uses_coint(); }
     bool use_psi() const { return spec.uses_covar(); }
-    bool uses_psi_varsel() const { return psi_varsel != VarSelection::none; }
+    bool uses_psi_varsel() const { return psi_selection() != VarSelection::none; }
+    /// The scheme the covariance block is actually drawn under.
+    VarSelection psi_selection() const { return psi_varsel.value_or(spec.varsel); }
 
     void validate() const;
 };
@@ -1403,17 +1461,21 @@ struct VecTvpStochvolInput
 
     StochvolPrior u_sigma_prior;
 
-    /// Selection for the covariance block. Read from its own group rather than
-    /// from the model's, so it can differ from spec.varsel, exactly as in
-    /// VarTvpStochvol.
-    VarSelection psi_varsel = VarSelection::none;
+    /// Selection for the covariance block, when it is to differ from the
+    /// model's. Unset is not the same as VarSelection::none: unset means the
+    /// file or the host said nothing, and spec.varsel then governs both blocks.
+    /// Setting it to none is how a file says that the coefficients are selected
+    /// over and the covariances are not.
+    std::optional<VarSelection> psi_varsel;
 
     VecTvpStochvolInitial initial;
 
     bool use_a() const { return train.nparams() > 0; }
     bool use_beta() const { return spec.uses_coint(); }
     bool use_psi() const { return spec.uses_covar(); }
-    bool uses_psi_varsel() const { return psi_varsel != VarSelection::none; }
+    bool uses_psi_varsel() const { return psi_selection() != VarSelection::none; }
+    /// The scheme the covariance block is actually drawn under.
+    VarSelection psi_selection() const { return psi_varsel.value_or(spec.varsel); }
 
     void validate() const;
 };

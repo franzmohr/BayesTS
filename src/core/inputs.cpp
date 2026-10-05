@@ -879,11 +879,11 @@ void VarNormalGammaInput::validate() const
         const arma::uword n_psi = static_cast<arma::uword>(spec.n_psi());
         validate_normal_block(psi_prior, initial.psi, n_psi, "psi");
 
-        if (spec.uses_varsel())
+        if (uses_psi_varsel())
         {
-            validate_varsel(psi_varsel_prior, initial.psi_lambda, n_psi, spec.varsel, "psi");
+            validate_varsel(psi_varsel_prior, initial.psi_lambda, n_psi, psi_selection(), "psi");
         }
-        if (spec.varsel == VarSelection::ssvs)
+        if (psi_selection() == VarSelection::ssvs)
         {
             validate_ssvs_normal_prior(psi_varsel_prior, psi_prior, "psi");
         }
@@ -944,9 +944,9 @@ void VarNormalStochvolInput::validate() const
         const arma::uword n_psi = static_cast<arma::uword>(spec.n_psi());
         validate_normal_block(psi_prior, initial.psi, n_psi, "psi");
 
-        if (spec.uses_varsel())
+        if (uses_psi_varsel())
         {
-            validate_varsel(psi_varsel_prior, initial.psi_lambda, n_psi, spec.varsel, "psi");
+            validate_varsel(psi_varsel_prior, initial.psi_lambda, n_psi, psi_selection(), "psi");
         }
     }
 
@@ -1095,7 +1095,7 @@ void VarTvpGammaInput::validate() const
 
     require_identified_structural(spec, use_psi(), "a covariance block");
 
-    if (spec.varsel == VarSelection::ssvs || psi_varsel == VarSelection::ssvs)
+    if (spec.varsel == VarSelection::ssvs || psi_selection() == VarSelection::ssvs)
     {
         throw std::invalid_argument("SSVS is not implemented for a time-varying parameter model; "
                                     "expected one of none, bvs");
@@ -1128,7 +1128,7 @@ void VarTvpGammaInput::validate() const
 
         if (uses_psi_varsel())
         {
-            validate_varsel(psi_varsel_prior, initial.psi_lambda, n_psi, psi_varsel, "psi");
+            validate_varsel(psi_varsel_prior, initial.psi_lambda, n_psi, psi_selection(), "psi");
         }
     }
 
@@ -1223,7 +1223,7 @@ void VarTvpStochvolInput::validate() const
 
     require_identified_structural(spec, use_psi(), "a covariance block");
 
-    if (spec.varsel == VarSelection::ssvs || psi_varsel == VarSelection::ssvs)
+    if (spec.varsel == VarSelection::ssvs || psi_selection() == VarSelection::ssvs)
     {
         throw std::invalid_argument("SSVS is not implemented for a time-varying parameter model "
                                     "with stochastic volatility; expected one of none, bvs");
@@ -1256,7 +1256,7 @@ void VarTvpStochvolInput::validate() const
 
         if (uses_psi_varsel())
         {
-            validate_varsel(psi_varsel_prior, initial.psi_lambda, n_psi, psi_varsel, "psi");
+            validate_varsel(psi_varsel_prior, initial.psi_lambda, n_psi, psi_selection(), "psi");
         }
     }
 
@@ -2084,11 +2084,11 @@ void VecNormalGammaInput::validate() const
         const arma::uword n_psi = static_cast<arma::uword>(spec.n_psi());
         validate_normal_block(psi_prior, initial.psi, n_psi, "psi");
 
-        if (spec.uses_varsel())
+        if (uses_psi_varsel())
         {
-            validate_varsel(psi_varsel_prior, initial.psi_lambda, n_psi, spec.varsel, "psi");
+            validate_varsel(psi_varsel_prior, initial.psi_lambda, n_psi, psi_selection(), "psi");
         }
-        if (spec.varsel == VarSelection::ssvs)
+        if (psi_selection() == VarSelection::ssvs)
         {
             validate_ssvs_normal_prior(psi_varsel_prior, psi_prior, "psi");
         }
@@ -2151,9 +2151,9 @@ void VecNormalStochvolInput::validate() const
         const arma::uword n_psi = static_cast<arma::uword>(spec.n_psi());
         validate_normal_block(psi_prior, initial.psi, n_psi, "psi");
 
-        if (spec.uses_varsel())
+        if (uses_psi_varsel())
         {
-            validate_varsel(psi_varsel_prior, initial.psi_lambda, n_psi, spec.varsel, "psi");
+            validate_varsel(psi_varsel_prior, initial.psi_lambda, n_psi, psi_selection(), "psi");
         }
     }
 
@@ -2223,7 +2223,7 @@ void VecTvpGammaInput::validate() const
 
     require_identified_structural(spec, use_psi(), "a covariance block");
 
-    validate_tvp_preconditions(spec.varsel, psi_varsel, tt);
+    validate_tvp_preconditions(spec.varsel, psi_selection(), tt);
 
     if (use_a())
     {
@@ -2247,7 +2247,7 @@ void VecTvpGammaInput::validate() const
 
         if (uses_psi_varsel())
         {
-            validate_varsel(psi_varsel_prior, initial.psi_lambda, n_psi, psi_varsel, "psi");
+            validate_varsel(psi_varsel_prior, initial.psi_lambda, n_psi, psi_selection(), "psi");
         }
     }
 
@@ -2275,7 +2275,7 @@ void VecTvpStochvolInput::validate() const
 
     require_identified_structural(spec, use_psi(), "a covariance block");
 
-    validate_tvp_preconditions(spec.varsel, psi_varsel, tt);
+    validate_tvp_preconditions(spec.varsel, psi_selection(), tt);
 
     if (use_a())
     {
@@ -2299,7 +2299,7 @@ void VecTvpStochvolInput::validate() const
 
         if (uses_psi_varsel())
         {
-            validate_varsel(psi_varsel_prior, initial.psi_lambda, n_psi, psi_varsel, "psi");
+            validate_varsel(psi_varsel_prior, initial.psi_lambda, n_psi, psi_selection(), "psi");
         }
     }
 
