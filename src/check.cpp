@@ -280,8 +280,8 @@ void print_report(const std::string &algorithm, const ModelCheck &check)
 	{
 		std::cout << "  warning: attribute 'varsel' of /model/priors/psi is in the file, but "
 		          << algorithm
-		          << " never reads it: only the time-varying models with a covariance block "
-		             "switched on do, so no selection over the covariance block will be made\n";
+		          << " never reads it: a model reads it only with a covariance block "
+		             "switched on, and this run has none, so there is nothing to select over\n";
 	}
 
 	for (const ModelCheck::FlatSelection &flat : check.flat_selection)

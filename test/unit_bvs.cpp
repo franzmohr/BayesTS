@@ -34,6 +34,7 @@
 /// correlation the data leave no doubt about must now come out near one. The two
 /// VECs share the block line for line with the VAR beside them.
 
+#include <optional>
 #include "bayests/reporter.h"
 #include "bayests/var_normal_ald.h"
 #include "bayests/var_normal_gamma.h"
@@ -251,6 +252,64 @@ void covariance_block_selection_sees_the_data()
     check("VarNormalStochvol excludes one they do not", sv_out < 0.8);
 }
 
+/// Whether the covariance block is selected over at all, which is a choice of
+/// its own: `psi_varsel` unset leaves spec.varsel governing both blocks, and
+/// setting it to none selects the coefficients and leaves the covariances
+/// alone. The distinction matters because a generalised impulse response is
+/// built from the off-diagonals of Sigma, so selecting them away turns it into
+/// an orthogonalised one.
+void the_covariance_block_has_its_own_scheme()
+{
+    std::printf("the covariance block's own selection scheme\n");
+
+    // Errors the data give no reason to correlate, so that selection has
+    // something to switch off and the contrast with leaving it alone is one a
+    // reader can see in the draws rather than in the shape of the output.
+    const arma::mat independent = errors(200, 0.0);
+
+    const auto inclusion_under = [&](std::optional<bayests::VarSelection> psi_varsel) {
+        bayests::VarNormalStochvolInput input;
+        fill_common(input, independent, 0.5);
+        input.psi_varsel = psi_varsel;
+        input.u_sigma_prior.offset = arma::vec(2, arma::fill::value(1e-6));
+        input.u_sigma_prior.state.sigma.shape = arma::vec(2, arma::fill::value(5.0));
+        input.u_sigma_prior.state.sigma.rate = arma::vec(2, arma::fill::value(0.05));
+        input.u_sigma_prior.state.initial_state.mu = arma::vec(2, arma::fill::zeros);
+        input.u_sigma_prior.state.initial_state.v_inv = arma::eye<arma::mat>(2, 2);
+        input.initial.h = arma::mat(independent.n_rows, 2, arma::fill::zeros);
+        input.initial.h_init = arma::vec(2, arma::fill::zeros);
+        input.initial.h_sigma = arma::vec(2, arma::fill::value(0.01));
+
+        bayests::NullReporter reporter;
+        return bayests::VarNormalStochvolSampler{}.draw_coefficients(input, reporter);
+    };
+
+    // Unset: the model's own scheme governs both blocks, which is what every
+    // file written before the covariance block had a scheme of its own meant.
+    const bayests::VarNormalStochvolDraws unset = inclusion_under(std::nullopt);
+    check("unset selects the covariance block, as spec.varsel asks",
+          unset.psi_lambda.n_rows > 0);
+    check("and the data keep a correlation they do not show out",
+          arma::mean(unset.psi_lambda.row(1)) < 0.8);
+
+    // Explicitly none: the coefficients are selected over and the covariances
+    // are not, which is the combination that had no way of being expressed.
+    const bayests::VarNormalStochvolDraws off = inclusion_under(bayests::VarSelection::none);
+    check("none leaves the covariance block unselected", off.psi_lambda.n_rows == 0);
+    check("while the draws of psi are still there", off.psi.n_rows > 0);
+
+    // The correlation is then estimated rather than switched on and off, so it
+    // is never exactly zero, which selection makes it in some draws.
+    const arma::rowvec selected = unset.psi.row(1);
+    const arma::rowvec free_psi = off.psi.row(1);
+    const double zeros_selected = arma::accu(selected == 0.0) / double(selected.n_elem);
+    const double zeros_free = arma::accu(free_psi == 0.0) / double(free_psi.n_elem);
+    std::printf("    exactly zero: selected %.3f of draws, unselected %.3f\n",
+                zeros_selected, zeros_free);
+    check("a selected covariance is exactly zero in some draws", zeros_selected > 0.1);
+    check("an unselected one never is", zeros_free == 0.0);
+}
+
 /// Posterior mean inclusion of each of VarNormalAld's two slope coefficients,
 /// one of which the data depend on and one of which they do not.
 ///
@@ -413,6 +472,7 @@ int main()
     a_flat_likelihood_returns_the_prior();
     the_indicators_have_their_joint_posterior();
     covariance_block_selection_sees_the_data();
+    the_covariance_block_has_its_own_scheme();
     quantile_selection_sees_the_data();
     a_flat_prior_is_reported();
     a_run_reports_a_flat_prior();

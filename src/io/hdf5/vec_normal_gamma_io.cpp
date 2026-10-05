@@ -46,10 +46,20 @@ VecNormalGammaInput read_input(const ModelFile &file)
         input.psi_prior = read_normal_prior(file, "/priors/psi");
         input.initial.psi = read_vec(file, "/initial/psi");
 
-        if (input.spec.uses_varsel())
+        // Selection for the covariance block is declared in its own group, so
+        // it can differ from the model's, as it may in the time varying models.
+        // A file that says nothing leaves this unset, and spec.varsel then
+        // governs both blocks, which is what such a file has always meant.
+        if (attribute_exists(file, "/model/priors/psi", "varsel"))
+        {
+            input.psi_varsel = var_selection_from_string(
+                optional_attribute_string(file, "/model/priors/psi", "varsel", "none"));
+        }
+
+        if (input.uses_psi_varsel())
         {
             input.initial.psi_lambda = read_vec(file, "/initial/psi_lambda");
-            input.psi_varsel_prior = read_varsel_prior(file, "/priors/psi", input.spec.varsel);
+            input.psi_varsel_prior = read_varsel_prior(file, "/priors/psi", input.psi_selection());
         }
     }
 

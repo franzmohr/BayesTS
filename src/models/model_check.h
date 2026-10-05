@@ -119,9 +119,9 @@ ModelCheck inspect(const ModelFile &file, const Input &input,
     }
 
     // The covariance block's own selection scheme. A model reads it only if its
-    // input has somewhere to put it -- the four time-varying models with a
-    // covariance block -- and only with that block switched on. Anywhere else
-    // the file asks for a selection nothing performs.
+    // input has somewhere to put it -- the eight models with a covariance block,
+    // time varying or not -- and only with that block switched on. Anywhere else
+    // the file asks for a selection on a block the run does not have.
     check.psi_varsel_unread = attribute_exists(file, "/model/priors/psi", "varsel") &&
                               !(has_psi_varsel<Input>::value && input.spec.uses_covar());
 
@@ -145,7 +145,7 @@ ModelCheck inspect(const ModelFile &file, const Input &input,
             VarSelection psi_scheme = input.spec.varsel;
             if constexpr (has_psi_varsel<Input>::value)
             {
-                psi_scheme = input.psi_varsel;
+                psi_scheme = input.psi_selection();
             }
             collect_flat_selection(check, "psi", psi_scheme, input.psi_varsel_prior,
                                    input.psi_prior);

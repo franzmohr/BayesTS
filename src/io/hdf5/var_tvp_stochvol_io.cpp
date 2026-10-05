@@ -67,14 +67,19 @@ VarTvpStochvolInput read_input(const ModelFile &file)
         read_vec_if_present(file, "/priors/psi/omega_v", input.psi_prior.omega_v);
 
         // Selection for the covariance block is declared in its own group, so
-        // it can differ from the model's.
-        input.psi_varsel = var_selection_from_string(
-            optional_attribute_string(file, "/model/priors/psi", "varsel", "none"));
+        // it can differ from the model's. A file that says nothing leaves this
+        // unset, and spec.varsel then governs both blocks, which is what such a
+        // file has always meant for a model with constant coefficients.
+        if (attribute_exists(file, "/model/priors/psi", "varsel"))
+        {
+            input.psi_varsel = var_selection_from_string(
+                optional_attribute_string(file, "/model/priors/psi", "varsel", "none"));
+        }
 
-        if (input.psi_varsel == VarSelection::bvs)
+        if (input.psi_selection() == VarSelection::bvs)
         {
             input.initial.psi_lambda = read_vec(file, "/initial/psi_lambda");
-            input.psi_varsel_prior = read_varsel_prior(file, "/priors/psi", input.psi_varsel);
+            input.psi_varsel_prior = read_varsel_prior(file, "/priors/psi", input.psi_selection());
         }
     }
 
