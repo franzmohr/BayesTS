@@ -940,6 +940,50 @@ struct VecTvpDiscountPosterior
     bool has_beta() const { return beta.n_elem > 0; }
 };
 
+/// Posterior draws of an unobserved components model with gamma priors on the
+/// precisions of its shocks.
+///
+/// The trend is unobserved, so like a factor model's factors it is drawn whole
+/// every sweep and kept beside the parameters. The cycle is not kept: it is
+/// y - trend, exactly, and storing it would be storing the data twice.
+struct UcNormalGammaDraws
+{
+    /// (k * tt) x iterations; each column is vec of the k x tt trend path,
+    /// periods along the columns of that matrix.
+    arma::mat trend;
+
+    /// (k * k * p) x iterations; each column is vec([Phi_1 .. Phi_p]), the
+    /// whole k x kp matrix, the zeros off the diagonal under UcCycle::own
+    /// included -- as DfmNormalGammaDraws::lambda keeps the fixed part of the
+    /// loadings, so that reshaping gives the matrix without knowing the rule.
+    /// Empty when the cycle has no lags.
+    arma::mat a;
+
+    /// (k * n) x iterations, vec(C). Empty for a model without deterministic
+    /// terms.
+    arma::mat c;
+
+    /// (k * uc_trend_order()) x iterations: tau_0, and tau_{-1} after it for a
+    /// smooth trend.
+    arma::mat tau0;
+
+    /// (2k * 2k) x iterations; each column a vectorised lower-triangular Psi.
+    /// Empty without a covariance block.
+    arma::mat psi;
+
+    /// 2k x iterations, the diagonal of Omega.
+    arma::mat u_omega_inv;
+
+    /// (2k * 2k) x iterations, the precision of the shocks, Psi' Omega Psi.
+    arma::mat u_sigma_inv;
+
+    arma::uword iterations() const { return u_sigma_inv.n_cols; }
+    bool has_a() const { return a.n_elem > 0; }
+    bool has_c() const { return c.n_elem > 0; }
+    bool has_psi() const { return psi.n_elem > 0; }
+    bool has_trend() const { return trend.n_elem > 0; }
+};
+
 } // namespace bayests
 
 #endif // BAYESTS_RESULTS_H

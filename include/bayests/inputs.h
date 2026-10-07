@@ -1563,6 +1563,90 @@ struct VecTvpDiscountInput
     void validate() const;
 };
 
+/// Where the UcNormalGamma chain starts.
+///
+/// The trend path is not among these: it is the first thing every draw
+/// produces, from the coefficients and the precision, so there is nothing for a
+/// starting value to do.
+struct UcNormalGammaInitial
+{
+    /// The VarSpec::n_uc_a() free cycle coefficients. Under UcCycle::var,
+    /// vec([Phi_1 .. Phi_p]) of the k x kp matrix; under UcCycle::own, its
+    /// diagonals alone, lag by lag: Phi_1's k, then Phi_2's, and so on. Ignored
+    /// when the cycle has no lags.
+    arma::vec a;
+
+    /// vec(C), k x n with n = VarSpec::n: the drift of each trend on the
+    /// deterministic terms, column by column. Empty for a model without them.
+    arma::vec c;
+
+    /// The trend before the sample, k * VarSpec::uc_trend_order(): tau_0, and
+    /// for a smooth trend tau_{-1} after it.
+    arma::vec tau0;
+
+    /// The (2k)(2k-1)/2 free elements of the covariance block, row by row of
+    /// its strict lower triangle. Ignored without one.
+    arma::vec psi;
+
+    /// 2k, the diagonal of the precision of the shocks after the covariance
+    /// block has orthogonalised them -- of the shocks themselves without one.
+    /// Cycle shocks first, then trend shocks.
+    arma::vec u_omega_inv;
+};
+
+/// Unobserved components model with a normal prior on the cycle, the drift and
+/// the trend's starting point, and independent gamma priors on the precisions
+/// of its shocks, optionally with a constant covariance block.
+///
+///     y_t   = tau_t + c_t,
+///     c_t   = sum_{j=1..p} Phi_j c_{t-j} + u^c_t,
+///     tau_t = tau_{t-1} + C d_t + u^tau_t                    (VarSpec::trend rw)
+///     tau_t = 2 tau_{t-1} - tau_{t-2} + C d_t + u^tau_t      (VarSpec::trend smooth)
+///
+/// for k series, each with a trend and a cycle of its own, the 2k shocks
+/// (u^c_t', u^tau_t')' jointly normal. `train.y` holds the series, tt x k, and
+/// is the whole of the sample: the cycle is zero before it, as in Grant and Chan
+/// (2017), and the trend starts from `tau0`, which is drawn. `train.x` holds the
+/// n deterministic terms d_t, tt x n, and is empty without them; they enter the
+/// trend's increment, so a column of ones is a constant drift and a step dummy
+/// is a break in it. `z` and `w` are unused. `forecast.x` is d_t over the
+/// horizon, h x n; `spec.h` is the horizon.
+///
+/// The error is "gamma" or "gamma+covar", the same two spellings and the same
+/// arrangement VarNormalGamma has: the shocks e_t are orthogonalised by a unit
+/// lower triangular Psi, Psi e_t ~ N(0, Omega^-1), Omega diagonal, so the shock
+/// precision is Psi' Omega Psi. Without the block Psi is the identity and the
+/// 2k shocks are independent -- the model of Clark (1987). With it, and k = 1,
+/// it is the correlated model of Morley, Nelson and Zivot (2003) with the
+/// correlation as a loading; with k > 1, Sinclair's (2009) bivariate one.
+struct UcNormalGammaInput
+{
+    VarSpec spec;
+    TrainData train;
+    TestData test; ///< `y` empty unless the file carries realised values.
+    /// `x` holds the deterministic terms of the forecast horizon, h x n with
+    /// n = VarSpec::n, one period per row. Empty for a model without them.
+    ForecastData forecast;
+
+    NormalPrior a_prior;    ///< Over the free cycle coefficients. Unused when p is zero.
+    NormalPrior c_prior;    ///< Over vec(C). Unused when n is zero.
+    NormalPrior tau0_prior; ///< Over the k * uc_trend_order() starting values.
+    NormalPrior psi_prior;  ///< Unused without a covariance block.
+
+    /// 2k independent priors on the diagonal of Omega, cycle shocks first.
+    GammaPrior u_sigma_prior;
+
+    UcNormalGammaInitial initial;
+
+    bool use_a() const { return spec.p > 0; }
+    bool use_c() const { return spec.n > 0; }
+    bool use_psi() const { return spec.covar; }
+
+    /// Throws std::invalid_argument describing the first inconsistency it
+    /// finds. Called by the sampler before the first draw.
+    void validate() const;
+};
+
 } // namespace bayests
 
 #endif // BAYESTS_INPUTS_H

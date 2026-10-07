@@ -32,7 +32,8 @@ add_library(bayests_models
             VecTvpDiscount.cpp
             VecTvpGamma.cpp
             VecTvpStochvol.cpp
-            VecTvpWishart.cpp)
+            VecTvpWishart.cpp
+            UcNormalGamma.cpp)
 
 add_library(BayesTS::models ALIAS bayests_models)
 target_link_libraries(bayests_models PRIVATE bayests_warnings)

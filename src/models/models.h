@@ -261,6 +261,20 @@ public:
     ModelCheck check(const ModelLocation &location_arg) override;
 };
 
+class UcNormalGamma : public BaseModel
+{
+private:
+    // Where the model is: file plus the group its tree hangs under
+    ModelLocation location;
+public:
+    UcNormalGamma();
+    ~UcNormalGamma() override;
+    void draw_coefficients(const ModelLocation &location_arg) override;
+    void forecast(const ModelLocation &location_arg) override;
+    void log_likelihood(const ModelLocation &location_arg) override;
+    ModelCheck check(const ModelLocation &location_arg) override;
+};
+
 class DfmNormalStochvol : public BaseModel
 {
 private:

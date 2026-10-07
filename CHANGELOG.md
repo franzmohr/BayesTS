@@ -29,6 +29,65 @@ heading, and move down into a version section when one is cut.
 
 ### Added
 
+* **`UcNormalGamma`: an unobserved components model.** Each of `k` series is a
+  trend plus a stationary cycle, `y_t = tau_t + c_t`. The cycle is a VAR(p) or,
+  with `/model/cycle = "own"`, `k` separate AR(p)s; the trend is a random walk
+  whose drift `C d_t` comes from the deterministic terms in `/data/train/x` --
+  a column of ones for a constant drift, a step dummy for a break at a known
+  date -- or, with `/model/trend = "smooth"`, an integrated random walk. The
+  `2k` shocks, cycle shocks first, carry independent gamma priors, and
+  `error = "gamma+covar"` adds a unit lower triangular covariance block over
+  them, which at `k = 1` is the trend–cycle correlation of Morley, Nelson and
+  Zivot (2003) as a loading. That nests Clark (1987), the correlated and break
+  models Grant and Chan (2017) compare, the local level model at `p = 0`, and
+  Sinclair's (2009) bivariate model at `k = 2`. `/model/stationary` restricts
+  the cycle as Grant and Chan do.
+
+  Four Gibbs blocks: the trend path, drawn whole from its block banded precision
+  as Grant and Chan draw it; the cycle, the drift and the trend before the sample
+  (`/priors/tau0`) jointly given the path; the covariance block; the precisions.
+  `/posterior/loglik` integrates the trend out -- the one step prediction error
+  decomposition of a Kalman filter started at the draw's `tau0` -- which is the
+  likelihood those papers compare the models by, and the score of a forecast
+  runs the same filter on over `/data/test/y`. New: `UcNormalGammaSampler`
+  (`include/bayests/uc_normal_gamma.h`), `src/core/models/uc_support.h`,
+  `VarSpec::trend`, `cycle`, `uc_trend_order()`, `n_uc_a()`, `n_uc_shocks()`
+  and `n_uc_psi()`, the `/model` attributes `trend` and `cycle`, and
+  `/posterior/trend/coeffs` and `/posterior/tau0/coeffs`.
+
+  `chan_jeliazkov_2009_precision()` is a third entry point to the band sampler:
+  the draw alone, from a precision the caller assembled, for a path whose
+  posterior is block banded without being a state space model in the form the
+  other two take. The other two are untouched.
+
+  `unit.uc_normal_gamma` puts six shapes -- one and two series, cycles of order
+  zero to two, VAR and own-lags cycles, both trends, a break, with and without
+  the covariance block -- against the dense joint normal the model is given
+  everything but the trend: the trend's band precision and mean, its draw
+  against the dense Cholesky draw from the same normals, the shocks rebuilt from
+  the trend and the coefficients, the integrated likelihood, and the score of a
+  held-back stretch against its likelihood. All to rounding. Nine fixtures,
+  `UcNormalGamma-plain` and its `-nofcst`, `-covar`, `-break`, `-smooth`,
+  `-own`, `-stationary`, `-break-score` and `-group` variants, the last two
+  pairs reproducing `-plain` and `-covar` bit for bit. On a simulated series of
+  2000 periods -- a random walk with drift under an AR(2) cycle -- every
+  posterior mean lies within one posterior standard deviation of the value it
+  was generated with; with correlated shocks, the posterior mean of the
+  integrated log likelihood sits 3.7 below the exact maximum, against the 3.5
+  seven parameters lead one to expect.
+
+  *Draws are unchanged for every other algorithm.* Fingerprints recorded on the
+  same machine and build before and after, over all 164 fixtures: 164
+  unchanged, 0 moved, once the two `absent` lines the golden harness now prints
+  for the new datasets are set aside. The full suite passes, 572 of 572.
+
+  Not yet: a non-centred trend variance, and with it the Savage-Dickey test for
+  `sigma_tau = 0` Grant and Chan's deterministic trend models stand for; a
+  deterministic trend itself (`sigma_tau = 0` exactly); the uniform priors on
+  the variances and on the correlation the paper uses, which a gamma prior on the
+  precision and a normal one on the loading stand in for; and the marginal
+  likelihood by importance sampling.
+
 * **The covariance block can be left out of variable selection, in every model
   that has one.** `/model/priors/psi`'s `varsel` attribute was read by the four
   time-varying models and ignored by the four with constant coefficients, which

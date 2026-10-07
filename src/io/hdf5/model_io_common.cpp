@@ -484,6 +484,13 @@ VarSpec read_spec(const ModelFile &file, const char *covar_error)
     spec.forecast_states = forecast_states_from_string(
         optional_attribute_string(file, "/model", "forecast_states", "simulate"));
 
+    // Absent from every file but an unobserved components model's, and left at
+    // the random walk and the VAR cycle there -- the trend of Clark (1987) and
+    // the cycle Sinclair (2009) gives a bivariate model. Every other model
+    // ignores both.
+    spec.trend = uc_trend_from_string(optional_attribute_string(file, "/model", "trend", "rw"));
+    spec.cycle = uc_cycle_from_string(optional_attribute_string(file, "/model", "cycle", "var"));
+
     if (covar_error != nullptr)
     {
         spec.covar = optional_attribute_string(file, "/model", "error", "") == covar_error;
@@ -751,6 +758,7 @@ bool is_model_attribute(const std::string &name)
         "rank",      "k_beta",    "n_restricted", "n_factors",  "n_obs_factors",
         "varsel",    "structural", "error",     "seed",       "forecast_states",
         "delta_beta", "delta_sigma", "shrinkage", "stationary", "steady_state",
+        "trend",     "cycle",
     };
     return names.count(name) > 0;
 }

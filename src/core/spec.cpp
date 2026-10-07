@@ -99,6 +99,42 @@ const char *to_string(ForecastStates states)
     return states == ForecastStates::hold ? "hold" : "simulate";
 }
 
+UcTrend uc_trend_from_string(const std::string &name)
+{
+    if (name == "rw" || name.empty())
+    {
+        return UcTrend::random_walk;
+    }
+    if (name == "smooth")
+    {
+        return UcTrend::smooth;
+    }
+    throw std::invalid_argument("unknown trend '" + name + "'; expected one of rw, smooth");
+}
+
+const char *to_string(UcTrend trend)
+{
+    return trend == UcTrend::smooth ? "smooth" : "rw";
+}
+
+UcCycle uc_cycle_from_string(const std::string &name)
+{
+    if (name == "var" || name.empty())
+    {
+        return UcCycle::var;
+    }
+    if (name == "own")
+    {
+        return UcCycle::own;
+    }
+    throw std::invalid_argument("unknown cycle '" + name + "'; expected one of var, own");
+}
+
+const char *to_string(UcCycle cycle)
+{
+    return cycle == UcCycle::own ? "own" : "var";
+}
+
 void VarSpec::validate() const
 {
     if (k <= 0)

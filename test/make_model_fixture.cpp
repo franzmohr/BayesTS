@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Franz X. Mohr
 
 // Builds a complete model file for every registered algorithm, so that all
-// twenty-two can be put through the same before/after fingerprint comparison
+// twenty-three can be put through the same before/after fingerprint comparison
 // from a clean clone. No model file is checked in -- *.h5 is gitignored, and a
 // recorded one is mostly posterior draws -- so this tool writes one from
 // scratch.
@@ -17,6 +17,7 @@
 //                 | VecTvpStochvol | VecTvpDiscount
 //                 | DfmNormalGamma | DfmNormalStochvol
 //                 | DfmTvpGamma | DfmTvpStochvol | FavarNormalWishart
+//                 | UcNormalGamma
 //     varsel      none | ssvs | bvs        (ssvs reaches the four models with
 //                                           constant coefficients and no
 //                                           stochastic volatility only;
@@ -48,7 +49,9 @@
 //                 the simulated panel by them so the sampler has something to
 //                 find. FavarNormalWishart also gets /priors/c_obs and
 //                 /initial/c_obs, and its observed factors are shifted too.
-//                 Refused for any model but the four DFMs and the FAVAR.
+//                 Refused for any model but the four DFMs and the FAVAR, and
+//                 UcNormalGamma, for which it writes a drift with a break: a
+//                 constant and a step dummy from the middle of the sample.
 //     --iid
 //                 writes /model/n_iid = 1, so the first endogenous variable's
 //                 equation carries no coefficients at all: white noise, related
@@ -101,6 +104,13 @@
 //                 writes /model/steady_state = true, a normal prior on the
 //                 unconditional mean at /priors/mu and its start at /initial/mu.
 //                 The same three only, without --shrinkage.
+//     --smooth
+//                 UcNormalGamma only: writes /model/trend = "smooth", the trend
+//                 whose second difference is the shock, with no drift and a
+//                 tau0 of two periods.
+//     --own-cycle
+//                 UcNormalGamma only: writes /model/cycle = "own", each cycle an
+//                 AR(p) in its own lags.
 //     --hold-states
 //                 writes /model/forecast_states = "hold", so the forecast keeps
 //                 the last in-sample states rather than simulating them forward.
@@ -2223,6 +2233,171 @@ bool is_vec_model(const std::string &model)
            model == "VecTvpStochvol" || model == "VecTvpDiscount";
 }
 
+/// Dimensions of the unobserved components fixtures: two series, each a trend
+/// plus a cycle, and a cycle of order two, so that both the cross lags of a VAR
+/// cycle and a band wider than the trend's own are exercised.
+constexpr int kUcK = 2;
+constexpr int kUcP = 2;
+
+/// A sample with trends and cycles in it: random walks with drift -- or, for a
+/// smooth trend, an integrated random walk -- under a VAR(2) cycle with a little
+/// cross dependence, which the own-lags fixture then ignores.
+arma::mat simulate_uc(Lcg &rng, const bool smooth, const bool with_break)
+{
+    arma::mat tau(kUcK, kTT), cycle(kUcK, kTT, arma::fill::zeros);
+    arma::vec last = {10.0, 5.0};
+    arma::vec slope = {0.4, 0.2};
+    for (int t = 0; t < kTT; ++t)
+    {
+        const arma::uword col = static_cast<arma::uword>(t);
+        for (arma::uword i = 0; i < kUcK; ++i)
+        {
+            double c = 0.6 * rng.normal();
+            if (t >= 1)
+            {
+                c += 0.9 * cycle(i, col - 1) + 0.1 * cycle(1 - i, col - 1);
+            }
+            if (t >= 2)
+            {
+                c -= 0.3 * cycle(i, col - 2);
+            }
+            cycle(i, col) = c;
+
+            if (smooth)
+            {
+                slope(i) += 0.05 * rng.normal();
+                last(i) += slope(i);
+            }
+            else
+            {
+                const double drift = (with_break && t >= kTT / 2) ? 0.1 : 0.5;
+                last(i) += drift + 0.3 * rng.normal();
+            }
+            tau(i, col) = last(i);
+        }
+    }
+    return tau + cycle;
+}
+
+/// The drift's deterministic terms over `periods` from `first`: a constant, and
+/// with a break a step dummy from the middle of the sample on.
+arma::mat uc_deterministic(const int first, const int periods, const int n)
+{
+    arma::mat d(static_cast<arma::uword>(periods), static_cast<arma::uword>(n), arma::fill::ones);
+    if (n > 1)
+    {
+        for (int t = 0; t < periods; ++t)
+        {
+            d(static_cast<arma::uword>(t), 1) = (first + t) >= kTT / 2 ? 1.0 : 0.0;
+        }
+    }
+    return d;
+}
+
+void write_uc_normal_gamma(const ModelFile &file, const arma::mat &y, const int h, const bool covar,
+                           const bool smooth, const bool own_cycle, const bool with_break,
+                           const bool stationary)
+{
+    const int n = smooth ? 0 : (with_break ? 2 : 1);
+    const int order = smooth ? 2 : 1;
+    const int n_a = own_cycle ? kUcK * kUcP : kUcK * kUcK * kUcP;
+    const int shocks = 2 * kUcK;
+    const int n_psi = kUcK * (2 * kUcK - 1);
+
+    write_attribute<std::string>(file, "/model", "algorithm", "UcNormalGamma");
+    write_attribute<int>(file, "/model", "k", kUcK);
+    write_attribute<int>(file, "/model", "p", kUcP);
+    write_attribute<int>(file, "/model", "n", n);
+    write_attribute<int>(file, "/model", "iterations", kIterations);
+    write_attribute<int>(file, "/model", "burnin", kBurnin);
+    write_attribute<std::string>(file, "/model", "error", covar ? "gamma+covar" : "gamma");
+    write_attribute<std::string>(file, "/model", "trend", smooth ? "smooth" : "rw");
+    write_attribute<std::string>(file, "/model", "cycle", own_cycle ? "own" : "var");
+    if (stationary)
+    {
+        write_attribute<bool>(file, "/model", "stationary", true);
+    }
+    if (h > 0)
+    {
+        write_attribute<int>(file, "/model", "h", h);
+    }
+
+    ensure_group(file, "/data");
+    ensure_group(file, "/data/train");
+    ensure_group(file, "/priors");
+    ensure_group(file, "/initial");
+
+    // One period per row, one series per column.
+    write_mat(file, "/data/train/y", arma::trans(y));
+    if (n > 0)
+    {
+        write_mat(file, "/data/train/x", uc_deterministic(0, kTT, n));
+        if (h > 0)
+        {
+            ensure_group(file, "/data/forecast");
+            write_mat(file, "/data/forecast/x", uc_deterministic(kTT, h, n));
+        }
+        ensure_group(file, "/priors/c");
+        const arma::uword n_c = static_cast<arma::uword>(kUcK * n);
+        write_row(file, "/priors/c/mu", arma::vec(n_c, arma::fill::zeros));
+        write_mat(file, "/priors/c/v_inv", arma::eye<arma::mat>(n_c, n_c) * 0.1);
+        write_row(file, "/initial/c", arma::vec(n_c, arma::fill::zeros));
+    }
+
+    ensure_group(file, "/priors/a");
+    const arma::uword na = static_cast<arma::uword>(n_a);
+    write_row(file, "/priors/a/mu", arma::vec(na, arma::fill::zeros));
+    write_mat(file, "/priors/a/v_inv", arma::eye<arma::mat>(na, na) * 0.5);
+    write_row(file, "/initial/a", arma::vec(na, arma::fill::zeros));
+
+    // The trend before the sample, centred on the first observation of each
+    // series with a standard deviation of ten.
+    ensure_group(file, "/priors/tau0");
+    const arma::vec first = y.col(0);
+    const arma::vec tau0 = order == 2 ? arma::vec(arma::join_vert(first, first)) : first;
+    const arma::uword nt = tau0.n_elem;
+    write_row(file, "/priors/tau0/mu", tau0);
+    write_mat(file, "/priors/tau0/v_inv", arma::eye<arma::mat>(nt, nt) * 0.01);
+    write_row(file, "/initial/tau0", tau0);
+
+    if (covar)
+    {
+        ensure_group(file, "/priors/psi");
+        const arma::uword np = static_cast<arma::uword>(n_psi);
+        write_row(file, "/priors/psi/mu", arma::vec(np, arma::fill::zeros));
+        write_mat(file, "/priors/psi/v_inv", arma::eye<arma::mat>(np, np));
+        write_row(file, "/initial/psi", arma::vec(np, arma::fill::zeros));
+    }
+
+    ensure_group(file, "/priors/u_sigma");
+    const arma::uword ns = static_cast<arma::uword>(shocks);
+    write_row(file, "/priors/u_sigma/shape", arma::vec(ns, arma::fill::value(3.0)));
+    write_row(file, "/priors/u_sigma/rate", arma::vec(ns, arma::fill::value(1.0)));
+    write_row(file, "/initial/u_omega_inv", arma::vec(ns, arma::fill::ones));
+}
+
+/// What the horizon realised, for `--score`: the series carried on from its
+/// last value by a drift, with noise. From a generator of its own, as
+/// write_test_observations() is, so the flag moves no number already there --
+/// and not that function itself, whose pull towards zero would score a
+/// trending series against a collapse.
+void write_uc_test_observations(const ModelFile &file, const arma::vec &last, const int h)
+{
+    Lcg rng(20260920ULL);
+    arma::mat realised(static_cast<arma::uword>(h), last.n_elem);
+    arma::vec previous = last;
+    for (int t = 0; t < h; ++t)
+    {
+        for (arma::uword i = 0; i < previous.n_elem; ++i)
+        {
+            previous(i) += 0.3 + 0.5 * rng.normal();
+        }
+        realised.row(static_cast<arma::uword>(t)) = arma::trans(previous);
+    }
+    ensure_group(file, "/data/test");
+    write_mat(file, "/data/test/y", realised);
+}
+
 } // namespace
 
 int main(int argc, char *argv[])
@@ -2266,6 +2441,8 @@ int main(int argc, char *argv[])
     bool steady_state = false;
     bool soft = false;
     bool scenario = false;
+    bool smooth = false;
+    bool own_cycle = false;
     bool bare_group_seen = false;
 
     for (int i = 7; i < argc; i++)
@@ -2349,6 +2526,16 @@ int main(int argc, char *argv[])
             // Deterministic terms in a factor model: /model/n and /data/train/x.
             deterministic = true;
         }
+        else if (token == "--smooth")
+        {
+            // An unobserved components trend whose second difference is the shock.
+            smooth = true;
+        }
+        else if (token == "--own-cycle")
+        {
+            // An unobserved components cycle in its own lags only.
+            own_cycle = true;
+        }
         else if (token == "--iid")
         {
             // The first equation carries no coefficients at all: /model/n_iid.
@@ -2400,6 +2587,68 @@ int main(int argc, char *argv[])
 
     // For the messages below: "dest.h5" or "dest.h5:/models/3".
     const std::string group_suffix = group.empty() ? "" : ":" + group;
+
+    // The unobserved components model, handled before everything below: none of
+    // the VAR, VEC or factor flags applies to it, and it takes two of its own.
+    if (model == "UcNormalGamma")
+    {
+        if (varsel != "none" || structural || coint_rho || coint_p_tau || hold_states ||
+            noncentred || iid || mixed || missing || partial_test || !shrinkage.empty() ||
+            draw_theta || quantile_grid || steady_state || soft || scenario ||
+            (smooth && deterministic) || (score && h <= 0))
+        {
+            std::cerr << "UcNormalGamma takes covar, h, a group, --score (with h > 0), "
+                         "--stationary, --deterministic, --smooth and --own-cycle, and not "
+                         "--smooth with --deterministic: a smooth trend has no drift here\n";
+            return 2;
+        }
+        try
+        {
+            if (!dest.parent_path().empty())
+            {
+                std::filesystem::create_directories(dest.parent_path());
+            }
+            if (append && group.empty())
+            {
+                std::cerr << "Error: appending needs a group to write the model under\n";
+                return 2;
+            }
+            const bool add_to_existing = append && std::filesystem::exists(dest);
+            if (!add_to_existing)
+            {
+                std::filesystem::remove(dest);
+            }
+            HighFive::File h5(dest.string(), add_to_existing ? HighFive::File::ReadWrite
+                                                             : HighFive::File::Create);
+            const ModelFile file(h5, group);
+
+            Lcg rng(20260808ULL);
+            const arma::mat y = simulate_uc(rng, smooth, deterministic);
+            write_uc_normal_gamma(file, y, h, covar, smooth, own_cycle, deterministic, stationary);
+            if (score)
+            {
+                write_uc_test_observations(file, y.col(kTT - 1), h);
+            }
+
+            std::cout << "wrote " << dest.string() << group_suffix << " (" << model
+                      << ", covar=" << covar << ", h=" << h << ", k=" << kUcK << ", tt=" << kTT
+                      << ", p=" << kUcP << ", trend=" << (smooth ? "smooth" : "rw")
+                      << ", cycle=" << (own_cycle ? "own" : "var")
+                      << (deterministic ? ", break=1" : "") << (stationary ? ", stationary=1" : "")
+                      << (score ? ", score=1" : "") << ")\n";
+        }
+        catch (const std::exception &e)
+        {
+            std::cerr << "Error: " << e.what() << '\n';
+            return 1;
+        }
+        return 0;
+    }
+    if (smooth || own_cycle)
+    {
+        std::cerr << "--smooth and --own-cycle are UcNormalGamma's\n";
+        return 2;
+    }
 
     const bool is_vec = is_vec_model(model);
     const bool is_dfm = model == "DfmNormalGamma" || model == "DfmNormalStochvol" ||

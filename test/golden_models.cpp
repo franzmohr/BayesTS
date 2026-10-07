@@ -93,6 +93,10 @@ constexpr const char *kOutputs[] = {
     "/posterior/lambda/coeffs",
     "/posterior/lambda/sigma",
     "/posterior/factors/coeffs",
+    // The unobserved components model's two: the drawn trend path, which like
+    // the factors is part of the posterior, and the trend before the sample.
+    "/posterior/trend/coeffs",
+    "/posterior/tau0/coeffs",
     // The coefficients of a factor model's deterministic terms: C of the
     // measurement, and C_obs, the mean a FAVAR's observed factors deviate from.
     // Absent for a factor model without deterministic terms and for every
