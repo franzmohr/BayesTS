@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Franz X. Mohr
 
 // Builds a complete model file for every registered algorithm, so that all
-// twenty-three can be put through the same before/after fingerprint comparison
+// twenty-six can be put through the same before/after fingerprint comparison
 // from a clean clone. No model file is checked in -- *.h5 is gitignored, and a
 // recorded one is mostly posterior draws -- so this tool writes one from
 // scratch.
@@ -17,7 +17,8 @@
 //                 | VecTvpStochvol | VecTvpDiscount
 //                 | DfmNormalGamma | DfmNormalStochvol
 //                 | DfmTvpGamma | DfmTvpStochvol | FavarNormalWishart
-//                 | UcNormalGamma
+//                 | UcNormalGamma | UcNormalWishart | UcNormalStochvol
+//                 | UcNormalSkew
 //     varsel      none | ssvs | bvs        (ssvs reaches the four models with
 //                                           constant coefficients and no
 //                                           stochastic volatility only;
@@ -109,8 +110,17 @@
 //                 whose second difference is the shock, with no drift and a
 //                 tau0 of two periods.
 //     --own-cycle
-//                 UcNormalGamma only: writes /model/cycle = "own", each cycle an
-//                 AR(p) in its own lags.
+//                 The unobserved components models: writes /model/cycle = "own",
+//                 each cycle an AR(p) in its own lags. --smooth is theirs too.
+//     --irregular
+//                 The same four: writes /model/irregular = true, with its gamma
+//                 prior at /priors/irregular and its start at
+//                 /initial/irregular_inv.
+//     --ald, --skew-trend, --skew-index
+//                 UcNormalSkew only: the asymmetric Laplace in place of the skew
+//                 normal, the trend shock skewed rather than the cycle's, and one
+//                 index variable in the scales, /data/train/skew_x and
+//                 /data/forecast/skew_x.
 //     --hold-states
 //                 writes /model/forecast_states = "hold", so the forecast keeps
 //                 the last in-sample states rather than simulating them forward.
@@ -2294,32 +2304,90 @@ arma::mat uc_deterministic(const int first, const int periods, const int n)
     return d;
 }
 
-void write_uc_normal_gamma(const ModelFile &file, const arma::mat &y, const int h, const bool covar,
-                           const bool smooth, const bool own_cycle, const bool with_break,
-                           const bool stationary)
+/// What a UC fixture switches on beyond the model's name.
+struct UcOptions
 {
-    const int n = smooth ? 0 : (with_break ? 2 : 1);
-    const int order = smooth ? 2 : 1;
-    const int n_a = own_cycle ? kUcK * kUcP : kUcK * kUcK * kUcP;
+    std::string model;
+    int h = 0;
+    bool covar = false;
+    bool smooth = false;
+    bool own_cycle = false;
+    bool with_break = false;
+    bool stationary = false;
+    bool irregular = false;
+    bool noncentred = false; ///< UcNormalStochvol: omega_v on the log-volatilities.
+    bool ald = false;        ///< UcNormalSkew: the asymmetric Laplace.
+    bool skew_trend = false; ///< UcNormalSkew: the trend shock skewed.
+    bool skew_index = false; ///< UcNormalSkew: one index variable in the scales.
+};
+
+/// The skew index of the --skew-index fixtures over `periods` from `first`: a
+/// slow wave, centred, the shape an uncertainty index has.
+arma::mat uc_skew_index(const int first, const int periods)
+{
+    arma::mat z(static_cast<arma::uword>(periods), 1);
+    for (int t = 0; t < periods; ++t)
+    {
+        z(static_cast<arma::uword>(t), 0) = 0.5 * std::sin(static_cast<double>(first + t) / 3.0);
+    }
+    return z;
+}
+
+void write_uc_model(const ModelFile &file, const arma::mat &y, const UcOptions &o)
+{
+    const int n = o.smooth ? 0 : (o.with_break ? 2 : 1);
+    const int order = o.smooth ? 2 : 1;
+    const int n_a = o.own_cycle ? kUcK * kUcP : kUcK * kUcK * kUcP;
     const int shocks = 2 * kUcK;
     const int n_psi = kUcK * (2 * kUcK - 1);
+    const bool gamma = o.model == "UcNormalGamma";
+    const bool wishart = o.model == "UcNormalWishart";
+    const bool stochvol = o.model == "UcNormalStochvol";
+    const bool skew = o.model == "UcNormalSkew";
 
-    write_attribute<std::string>(file, "/model", "algorithm", "UcNormalGamma");
+    std::string error = "gamma";
+    if (wishart)
+    {
+        error = "wishart";
+    }
+    else if (stochvol)
+    {
+        error = o.covar ? "sv+covar" : "sv";
+    }
+    else if (skew)
+    {
+        error = "skew";
+    }
+    else if (o.covar)
+    {
+        error = "gamma+covar";
+    }
+
+    write_attribute<std::string>(file, "/model", "algorithm", o.model);
     write_attribute<int>(file, "/model", "k", kUcK);
     write_attribute<int>(file, "/model", "p", kUcP);
     write_attribute<int>(file, "/model", "n", n);
     write_attribute<int>(file, "/model", "iterations", kIterations);
     write_attribute<int>(file, "/model", "burnin", kBurnin);
-    write_attribute<std::string>(file, "/model", "error", covar ? "gamma+covar" : "gamma");
-    write_attribute<std::string>(file, "/model", "trend", smooth ? "smooth" : "rw");
-    write_attribute<std::string>(file, "/model", "cycle", own_cycle ? "own" : "var");
-    if (stationary)
+    write_attribute<std::string>(file, "/model", "error", error);
+    write_attribute<std::string>(file, "/model", "trend", o.smooth ? "smooth" : "rw");
+    write_attribute<std::string>(file, "/model", "cycle", o.own_cycle ? "own" : "var");
+    if (o.stationary)
     {
         write_attribute<bool>(file, "/model", "stationary", true);
     }
-    if (h > 0)
+    if (o.irregular)
     {
-        write_attribute<int>(file, "/model", "h", h);
+        write_attribute<bool>(file, "/model", "irregular", true);
+    }
+    if (skew)
+    {
+        write_attribute<std::string>(file, "/model", "skew", o.ald ? "ald" : "snd");
+        write_attribute<std::string>(file, "/model", "skew_shock", o.skew_trend ? "trend" : "cycle");
+    }
+    if (o.h > 0)
+    {
+        write_attribute<int>(file, "/model", "h", o.h);
     }
 
     ensure_group(file, "/data");
@@ -2332,10 +2400,10 @@ void write_uc_normal_gamma(const ModelFile &file, const arma::mat &y, const int 
     if (n > 0)
     {
         write_mat(file, "/data/train/x", uc_deterministic(0, kTT, n));
-        if (h > 0)
+        if (o.h > 0)
         {
             ensure_group(file, "/data/forecast");
-            write_mat(file, "/data/forecast/x", uc_deterministic(kTT, h, n));
+            write_mat(file, "/data/forecast/x", uc_deterministic(kTT, o.h, n));
         }
         ensure_group(file, "/priors/c");
         const arma::uword n_c = static_cast<arma::uword>(kUcK * n);
@@ -2360,10 +2428,10 @@ void write_uc_normal_gamma(const ModelFile &file, const arma::mat &y, const int 
     write_mat(file, "/priors/tau0/v_inv", arma::eye<arma::mat>(nt, nt) * 0.01);
     write_row(file, "/initial/tau0", tau0);
 
-    if (covar)
+    const arma::uword np = static_cast<arma::uword>(n_psi);
+    if (o.covar && (gamma || stochvol))
     {
         ensure_group(file, "/priors/psi");
-        const arma::uword np = static_cast<arma::uword>(n_psi);
         write_row(file, "/priors/psi/mu", arma::vec(np, arma::fill::zeros));
         write_mat(file, "/priors/psi/v_inv", arma::eye<arma::mat>(np, np));
         write_row(file, "/initial/psi", arma::vec(np, arma::fill::zeros));
@@ -2371,9 +2439,85 @@ void write_uc_normal_gamma(const ModelFile &file, const arma::mat &y, const int 
 
     ensure_group(file, "/priors/u_sigma");
     const arma::uword ns = static_cast<arma::uword>(shocks);
-    write_row(file, "/priors/u_sigma/shape", arma::vec(ns, arma::fill::value(3.0)));
-    write_row(file, "/priors/u_sigma/rate", arma::vec(ns, arma::fill::value(1.0)));
-    write_row(file, "/initial/u_omega_inv", arma::vec(ns, arma::fill::ones));
+    const arma::uword kk = static_cast<arma::uword>(kUcK);
+    if (gamma)
+    {
+        write_row(file, "/priors/u_sigma/shape", arma::vec(ns, arma::fill::value(3.0)));
+        write_row(file, "/priors/u_sigma/rate", arma::vec(ns, arma::fill::value(1.0)));
+        write_row(file, "/initial/u_omega_inv", arma::vec(ns, arma::fill::ones));
+    }
+    else if (wishart)
+    {
+        // df two above the dimension, so the prior has a mean; a scale of half
+        // the identity puts that mean at a variance of one quarter.
+        write_int_scalar(file, "/priors/u_sigma/df", shocks + 2);
+        write_mat(file, "/priors/u_sigma/scale", arma::eye<arma::mat>(ns, ns) * 0.5);
+        write_mat(file, "/initial/u_sigma_inv", arma::eye<arma::mat>(ns, ns));
+    }
+    else if (stochvol)
+    {
+        write_row(file, "/priors/u_sigma/offset", arma::vec(ns, arma::fill::value(1e-4)));
+        write_row(file, "/priors/u_sigma/sigma", arma::vec(ns, arma::fill::value(0.1)));
+        if (o.noncentred)
+        {
+            write_row(file, "/priors/u_sigma/omega_v", arma::vec(ns, arma::fill::value(0.1)));
+        }
+        else
+        {
+            write_row(file, "/priors/u_sigma/shape", arma::vec(ns, arma::fill::value(3.0)));
+            write_row(file, "/priors/u_sigma/rate", arma::vec(ns, arma::fill::value(0.2)));
+        }
+        write_row(file, "/priors/u_sigma/mu", arma::vec(ns, arma::fill::zeros));
+        write_mat(file, "/priors/u_sigma/v_inv", arma::eye<arma::mat>(ns, ns));
+        write_mat(file, "/initial/h", arma::mat(kTT, ns, arma::fill::zeros));
+        write_row(file, "/initial/h_init", arma::vec(ns, arma::fill::zeros));
+    }
+    else if (skew)
+    {
+        // The shock that is not skewed: one gamma prior per series.
+        write_row(file, "/priors/u_sigma/shape", arma::vec(kk, arma::fill::value(3.0)));
+        write_row(file, "/priors/u_sigma/rate", arma::vec(kk, arma::fill::value(1.0)));
+        write_row(file, "/initial/u_omega_inv", arma::vec(kk, arma::fill::ones));
+
+        // The scale coefficients, per series the two log scales each with a
+        // constant and the index's slope: Huang, Luo and Wang's priors, a
+        // standard deviation of about 0.8 on the constants around log 0.3 and
+        // of 3 on the slopes.
+        const arma::uword width = o.skew_index ? 2 : 1;
+        const arma::uword n_skew = kk * 2 * width;
+        arma::vec mu(n_skew, arma::fill::zeros);
+        arma::vec var(n_skew, arma::fill::value(9.0));
+        for (arma::uword i = 0; i < kk; i++)
+        {
+            for (arma::uword j = 0; j < 2; j++)
+            {
+                const arma::uword at = (i * 2 + j) * width;
+                mu(at) = std::log(0.3);
+                var(at) = 0.7;
+            }
+        }
+        ensure_group(file, "/priors/skew");
+        write_row(file, "/priors/skew/mu", mu);
+        write_mat(file, "/priors/skew/v_inv", arma::diagmat(1.0 / var));
+        write_row(file, "/initial/skew", mu);
+        if (o.skew_index)
+        {
+            write_mat(file, "/data/train/skew_x", uc_skew_index(0, kTT));
+            if (o.h > 0)
+            {
+                ensure_group(file, "/data/forecast");
+                write_mat(file, "/data/forecast/skew_x", uc_skew_index(kTT, o.h));
+            }
+        }
+    }
+
+    if (o.irregular)
+    {
+        ensure_group(file, "/priors/irregular");
+        write_row(file, "/priors/irregular/shape", arma::vec(kk, arma::fill::value(3.0)));
+        write_row(file, "/priors/irregular/rate", arma::vec(kk, arma::fill::value(0.5)));
+        write_row(file, "/initial/irregular_inv", arma::vec(kk, arma::fill::value(4.0)));
+    }
 }
 
 /// What the horizon realised, for `--score`: the series carried on from its
@@ -2443,6 +2587,10 @@ int main(int argc, char *argv[])
     bool scenario = false;
     bool smooth = false;
     bool own_cycle = false;
+    bool uc_irregular = false;
+    bool uc_ald = false;
+    bool skew_trend = false;
+    bool skew_index = false;
     bool bare_group_seen = false;
 
     for (int i = 7; i < argc; i++)
@@ -2536,6 +2684,26 @@ int main(int argc, char *argv[])
             // An unobserved components cycle in its own lags only.
             own_cycle = true;
         }
+        else if (token == "--irregular")
+        {
+            // An unobserved components model's irregular component.
+            uc_irregular = true;
+        }
+        else if (token == "--ald")
+        {
+            // UcNormalSkew's asymmetric Laplace in place of the skew normal.
+            uc_ald = true;
+        }
+        else if (token == "--skew-trend")
+        {
+            // UcNormalSkew with the trend shock skewed rather than the cycle's.
+            skew_trend = true;
+        }
+        else if (token == "--skew-index")
+        {
+            // UcNormalSkew's scales moving with an index.
+            skew_index = true;
+        }
         else if (token == "--iid")
         {
             // The first equation carries no coefficients at all: /model/n_iid.
@@ -2588,18 +2756,29 @@ int main(int argc, char *argv[])
     // For the messages below: "dest.h5" or "dest.h5:/models/3".
     const std::string group_suffix = group.empty() ? "" : ":" + group;
 
-    // The unobserved components model, handled before everything below: none of
-    // the VAR, VEC or factor flags applies to it, and it takes two of its own.
-    if (model == "UcNormalGamma")
+    // The unobserved components models, handled before everything below: none
+    // of the VAR, VEC or factor flags applies to them but --noncentred, which
+    // UcNormalStochvol reads, and they take six of their own.
+    const bool is_uc = model == "UcNormalGamma" || model == "UcNormalWishart" ||
+                       model == "UcNormalStochvol" || model == "UcNormalSkew";
+    if (is_uc)
     {
-        if (varsel != "none" || structural || coint_rho || coint_p_tau || hold_states ||
-            noncentred || iid || mixed || missing || partial_test || !shrinkage.empty() ||
-            draw_theta || quantile_grid || steady_state || soft || scenario ||
-            (smooth && deterministic) || (score && h <= 0))
+        const bool covar_model = model == "UcNormalGamma" || model == "UcNormalStochvol";
+        const bool skew_model = model == "UcNormalSkew";
+        if (varsel != "none" || structural || coint_rho || coint_p_tau ||
+            (hold_states && model != "UcNormalStochvol") ||
+            (noncentred && model != "UcNormalStochvol") || iid || mixed || missing ||
+            partial_test || !shrinkage.empty() || draw_theta || quantile_grid || steady_state ||
+            soft || scenario || (smooth && deterministic) || (score && h <= 0) ||
+            (covar && !covar_model) || ((uc_ald || skew_trend || skew_index) && !skew_model) ||
+            (score && skew_model))
         {
-            std::cerr << "UcNormalGamma takes covar, h, a group, --score (with h > 0), "
-                         "--stationary, --deterministic, --smooth and --own-cycle, and not "
-                         "--smooth with --deterministic: a smooth trend has no drift here\n";
+            std::cerr << "The unobserved components models take covar (UcNormalGamma and "
+                         "UcNormalStochvol), h, a group, --score (with h > 0, and not on "
+                         "UcNormalSkew), --stationary, --deterministic, --smooth, --own-cycle, "
+                         "--irregular, --noncentred and --hold-states (UcNormalStochvol), and --ald, --skew-trend "
+                         "and --skew-index (UcNormalSkew); and not --smooth with "
+                         "--deterministic: a smooth trend has no drift here\n";
             return 2;
         }
         try
@@ -2624,7 +2803,25 @@ int main(int argc, char *argv[])
 
             Lcg rng(20260808ULL);
             const arma::mat y = simulate_uc(rng, smooth, deterministic);
-            write_uc_normal_gamma(file, y, h, covar, smooth, own_cycle, deterministic, stationary);
+
+            UcOptions options;
+            options.model = model;
+            options.h = h;
+            options.covar = covar;
+            options.smooth = smooth;
+            options.own_cycle = own_cycle;
+            options.with_break = deterministic;
+            options.stationary = stationary;
+            options.irregular = uc_irregular;
+            options.noncentred = noncentred;
+            options.ald = uc_ald;
+            options.skew_trend = skew_trend;
+            options.skew_index = skew_index;
+            write_uc_model(file, y, options);
+            if (hold_states)
+            {
+                write_attribute<std::string>(file, "/model", "forecast_states", "hold");
+            }
             if (score)
             {
                 write_uc_test_observations(file, y.col(kTT - 1), h);
@@ -2635,7 +2832,11 @@ int main(int argc, char *argv[])
                       << ", p=" << kUcP << ", trend=" << (smooth ? "smooth" : "rw")
                       << ", cycle=" << (own_cycle ? "own" : "var")
                       << (deterministic ? ", break=1" : "") << (stationary ? ", stationary=1" : "")
-                      << (score ? ", score=1" : "") << ")\n";
+                      << (uc_irregular ? ", irregular=1" : "")
+                      << (noncentred ? ", noncentred=1" : "") << (uc_ald ? ", skew=ald" : "")
+                      << (skew_trend ? ", skew_shock=trend" : "")
+                      << (skew_index ? ", skew_index=1" : "") << (score ? ", score=1" : "")
+                      << ")\n";
         }
         catch (const std::exception &e)
         {
@@ -2644,9 +2845,10 @@ int main(int argc, char *argv[])
         }
         return 0;
     }
-    if (smooth || own_cycle)
+    if (smooth || own_cycle || uc_irregular || uc_ald || skew_trend || skew_index)
     {
-        std::cerr << "--smooth and --own-cycle are UcNormalGamma's\n";
+        std::cerr << "--smooth, --own-cycle, --irregular, --ald, --skew-trend and --skew-index "
+                     "are the unobserved components models'\n";
         return 2;
     }
 

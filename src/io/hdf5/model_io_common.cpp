@@ -490,6 +490,10 @@ VarSpec read_spec(const ModelFile &file, const char *covar_error)
     // ignores both.
     spec.trend = uc_trend_from_string(optional_attribute_string(file, "/model", "trend", "rw"));
     spec.cycle = uc_cycle_from_string(optional_attribute_string(file, "/model", "cycle", "var"));
+    spec.irregular = optional_attribute_bool(file, "/model", "irregular", false);
+    spec.skew = uc_skew_from_string(optional_attribute_string(file, "/model", "skew", "snd"));
+    spec.skew_shock =
+        uc_skew_shock_from_string(optional_attribute_string(file, "/model", "skew_shock", "cycle"));
 
     if (covar_error != nullptr)
     {
@@ -758,7 +762,7 @@ bool is_model_attribute(const std::string &name)
         "rank",      "k_beta",    "n_restricted", "n_factors",  "n_obs_factors",
         "varsel",    "structural", "error",     "seed",       "forecast_states",
         "delta_beta", "delta_sigma", "shrinkage", "stationary", "steady_state",
-        "trend",     "cycle",
+        "trend",     "cycle",     "irregular", "skew",       "skew_shock",
     };
     return names.count(name) > 0;
 }

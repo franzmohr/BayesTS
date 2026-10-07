@@ -399,10 +399,12 @@ ModelCheck check_factor_model(const ModelLocation &location, ReadInput read_inpu
 /// having checked them against `h` -- so there is nothing past validate() to
 /// check.
 template <typename ReadInput>
-ModelCheck check_uc_model(const ModelLocation &location, ReadInput read_input)
+ModelCheck check_uc_model(const ModelLocation &location, ReadInput read_input,
+                          const char *posterior_probe = bayests::model_check_detail::kDefaultPosteriorProbe)
 {
     return bayests::model_check_detail::run(location, read_input,
-                                            [](const ModelFile &, const auto &) {});
+                                            [](const ModelFile &, const auto &) {},
+                                            posterior_probe);
 }
 
 /// A quantile model: validate() refuses a horizon, and forecast() does nothing

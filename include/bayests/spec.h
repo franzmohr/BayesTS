@@ -107,6 +107,38 @@ UcCycle uc_cycle_from_string(const std::string &name);
 /// Inverse of uc_cycle_from_string.
 const char *to_string(UcCycle cycle);
 
+/// The asymmetric distribution of UcNormalSkew's skewed shocks, after Huang,
+/// Luo and Wang (2026).
+enum class UcSkew
+{
+    /// "snd": the skew normal, v_t - u_t with v_t ~ N(0, sigma_v^2) and u_t
+    /// half normal of scale sigma_u -- skewed to the left.
+    snd,
+    /// "ald": the asymmetric Laplace, r_t - w_t with r_t and w_t exponential of
+    /// means lambda_r and lambda_w -- skewed to either side.
+    ald
+};
+
+/// "snd" (or empty) or "ald"; throws otherwise.
+UcSkew uc_skew_from_string(const std::string &name);
+
+/// Inverse of uc_skew_from_string.
+const char *to_string(UcSkew skew);
+
+/// Which of UcNormalSkew's shocks is skewed: the cycle's, which is where Huang,
+/// Luo and Wang find the asymmetry of US output, or the trend's.
+enum class UcSkewShock
+{
+    cycle, ///< "cycle"
+    trend  ///< "trend"
+};
+
+/// "cycle" (or empty) or "trend"; throws otherwise.
+UcSkewShock uc_skew_shock_from_string(const std::string &name);
+
+/// Inverse of uc_skew_shock_from_string.
+const char *to_string(UcSkewShock shock);
+
 /// The shape of the model, independent of the data and the priors.
 struct VarSpec
 {
@@ -229,7 +261,7 @@ struct VarSpec
     /// forecasts of every model with something that drifts: VarTvpWishart,
     /// VarTvpGamma, VarTvpStochvol, VarNormalStochvol, VecTvpWishart,
     /// VecTvpGamma, VecTvpStochvol, VecNormalStochvol, DfmNormalStochvol,
-    /// DfmTvpGamma and DfmTvpStochvol. A model whose coefficients and precision
+    /// DfmTvpGamma, DfmTvpStochvol and UcNormalStochvol. A model whose coefficients and precision
     /// are constant has nothing to carry, and the two values coincide for it.
     ForecastStates forecast_states = ForecastStates::simulate;
 
@@ -288,6 +320,20 @@ struct VarSpec
     /// factor counts are all zero.
     UcTrend trend = UcTrend::random_walk;
     UcCycle cycle = UcCycle::var;
+
+    /// Whether an unobserved components model has an irregular component,
+    /// y_t = tau_t + c_t + eps_t with eps_t ~ N(0, diag(sigma_eps^2)) independent
+    /// of the trend and cycle shocks -- the third component of Harvey's (1989)
+    /// basic structural model and of Huang, Luo and Wang (2026). The cycle is
+    /// then a state of its own rather than y minus the trend. It needs a cycle
+    /// with lags: at p = 0 the cycle is white noise too, and the two cannot be
+    /// told apart. Every other model ignores it.
+    bool irregular = false;
+
+    /// UcNormalSkew's distribution and which shock it applies to; every other
+    /// model ignores both.
+    UcSkew skew = UcSkew::snd;
+    UcSkewShock skew_shock = UcSkewShock::cycle;
 
     /// Total length of the chain: the burn-in, then `thin` draws for every one
     /// kept.

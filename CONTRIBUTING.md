@@ -164,7 +164,7 @@ effect you intended or a regression, and it is worth being able to say which
 before opening a pull request.
 
 Every model has a generator: `test/make_model_fixture.cpp` writes a model file
-for all twenty-three — the VAR models from the block at the top, the eight VECs
+for all twenty-six — the VAR models from the block at the top, the eight VECs
 from the block below it, the four DFMs and the FAVAR from the one below that,
 and the unobserved components model from its own branch — so the
 comparison above covers the whole taxonomy from a clean clone.

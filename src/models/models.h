@@ -261,6 +261,48 @@ public:
     ModelCheck check(const ModelLocation &location_arg) override;
 };
 
+class UcNormalWishart : public BaseModel
+{
+private:
+    // Where the model is: file plus the group its tree hangs under
+    ModelLocation location;
+public:
+    UcNormalWishart();
+    ~UcNormalWishart() override;
+    void draw_coefficients(const ModelLocation &location_arg) override;
+    void forecast(const ModelLocation &location_arg) override;
+    void log_likelihood(const ModelLocation &location_arg) override;
+    ModelCheck check(const ModelLocation &location_arg) override;
+};
+
+class UcNormalStochvol : public BaseModel
+{
+private:
+    // Where the model is: file plus the group its tree hangs under
+    ModelLocation location;
+public:
+    UcNormalStochvol();
+    ~UcNormalStochvol() override;
+    void draw_coefficients(const ModelLocation &location_arg) override;
+    void forecast(const ModelLocation &location_arg) override;
+    void log_likelihood(const ModelLocation &location_arg) override;
+    ModelCheck check(const ModelLocation &location_arg) override;
+};
+
+class UcNormalSkew : public BaseModel
+{
+private:
+    // Where the model is: file plus the group its tree hangs under
+    ModelLocation location;
+public:
+    UcNormalSkew();
+    ~UcNormalSkew() override;
+    void draw_coefficients(const ModelLocation &location_arg) override;
+    void forecast(const ModelLocation &location_arg) override;
+    void log_likelihood(const ModelLocation &location_arg) override;
+    ModelCheck check(const ModelLocation &location_arg) override;
+};
+
 class UcNormalGamma : public BaseModel
 {
 private:

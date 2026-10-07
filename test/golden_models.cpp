@@ -97,6 +97,14 @@ constexpr const char *kOutputs[] = {
     // the factors is part of the posterior, and the trend before the sample.
     "/posterior/trend/coeffs",
     "/posterior/tau0/coeffs",
+    // Written where an irregular component separates the cycle from y minus
+    // the trend: the cycle path, and the irregular precisions.
+    "/posterior/cycle/coeffs",
+    "/posterior/irregular_inv/coeffs",
+    // UcNormalSkew's scale coefficients, and the latent variates of its skewed
+    // shocks, which its log likelihood conditions on.
+    "/posterior/skew/coeffs",
+    "/posterior/skew_latent/coeffs",
     // The coefficients of a factor model's deterministic terms: C of the
     // measurement, and C_obs, the mean a FAVAR's observed factors deviate from.
     // Absent for a factor model without deterministic terms and for every

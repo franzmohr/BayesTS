@@ -2306,21 +2306,35 @@ void VecTvpStochvolInput::validate() const
     validate_stochvol_block(u_sigma_prior, initial.h_sigma, initial.h_init, initial.h, k, tt);
 }
 
-void UcNormalGammaInput::validate() const
+namespace
 {
-    core::require_supported_iid_block(spec, false, "UcNormalGamma");
+
+/// What every unobserved components model checks before its error block: the
+/// refusals, the dimensions, the drift's deterministic terms and the three
+/// coefficient blocks, and the irregular component where there is one. Returns
+/// the number of periods.
+arma::uword validate_uc_common(const VarSpec &spec, const TrainData &train,
+                               const ForecastData &forecast, const TestData &test,
+                               const NormalPrior &a_prior, const arma::vec &initial_a,
+                               const NormalPrior &c_prior, const arma::vec &initial_c,
+                               const NormalPrior &tau0_prior, const arma::vec &initial_tau0,
+                               const GammaPrior &irregular_prior,
+                               const arma::vec &initial_irregular_inv, const char *algorithm)
+{
+    const std::string name(algorithm);
+    core::require_supported_iid_block(spec, false, algorithm);
     // Not require_supported_shrinkage(), which refuses /model/stationary along
-    // with the adaptive priors: this model reads the first -- the cycle of Grant
+    // with the adaptive priors: these models read the first -- the cycle of Grant
     // and Chan (2017) is drawn stationary -- and none of the second.
     if (spec.shrinkage != Shrinkage::none)
     {
         throw std::invalid_argument(
-            "UcNormalGamma does not read /model/shrinkage: only the constant-coefficient "
-            "Gaussian VARs -- VarNormalWishart, VarNormalGamma and VarNormalStochvol -- adapt "
-            "their prior that way");
+            name + " does not read /model/shrinkage: only the constant-coefficient Gaussian "
+                   "VARs -- VarNormalWishart, VarNormalGamma and VarNormalStochvol -- adapt "
+                   "their prior that way");
     }
-    core::require_supported_steady_state(spec, false, "UcNormalGamma");
-    core::require_supported_constraints(spec, train, test, false, "UcNormalGamma");
+    core::require_supported_steady_state(spec, false, algorithm);
+    core::require_supported_constraints(spec, train, test, false, algorithm);
     // Before anything that would read a value: a NaN or an infinity here would
     // otherwise surface as a failed factorisation, or as NaN in the output.
     core::require_finite_observations(train, forecast, test);
@@ -2385,7 +2399,7 @@ void UcNormalGammaInput::validate() const
                 std::to_string(n) + ", one row per period and one column per term, got " +
                 std::to_string(train.x.n_rows) + " x " + std::to_string(train.x.n_cols));
         }
-        validate_normal_block(c_prior, initial.c, k * n, "c");
+        validate_normal_block(c_prior, initial_c, k * n, "c");
 
         // A forecast adds C d_t to the trend's increment at every horizon, so it
         // needs d_t there -- refused here, before a chain is spent, rather than
@@ -2402,13 +2416,42 @@ void UcNormalGammaInput::validate() const
         }
     }
 
-    if (use_a())
+    if (spec.p > 0)
     {
-        validate_normal_block(a_prior, initial.a, static_cast<arma::uword>(spec.n_uc_a()), "a");
+        validate_normal_block(a_prior, initial_a, static_cast<arma::uword>(spec.n_uc_a()), "a");
     }
 
-    validate_normal_block(tau0_prior, initial.tau0,
+    validate_normal_block(tau0_prior, initial_tau0,
                           k * static_cast<arma::uword>(spec.uc_trend_order()), "tau0");
+
+    if (spec.irregular)
+    {
+        // A white noise cycle and a white noise irregular component add up to
+        // one white noise, whose variance the two would split however the prior
+        // said.
+        if (spec.p == 0)
+        {
+            throw std::invalid_argument(
+                "an irregular component needs a cycle with lags: at p = 0 the cycle is white "
+                "noise as well, and the two cannot be told apart");
+        }
+        require_length(irregular_prior.shape, k, "gamma prior shape of the irregular precision");
+        require_length(irregular_prior.rate, k, "gamma prior rate of the irregular precision");
+        require_gamma_values(irregular_prior, "the irregular precision");
+        require_length(initial_irregular_inv, k, "initial irregular precision");
+        require_above(initial_irregular_inv, 0.0, true, "initial irregular precision");
+    }
+
+    return tt;
+}
+
+} // namespace
+
+void UcNormalGammaInput::validate() const
+{
+    validate_uc_common(spec, train, forecast, test, a_prior, initial.a, c_prior, initial.c,
+                       tau0_prior, initial.tau0, irregular_prior, initial.irregular_inv,
+                       "UcNormalGamma");
 
     if (use_psi())
     {
@@ -2422,6 +2465,128 @@ void UcNormalGammaInput::validate() const
     require_gamma_values(u_sigma_prior, "the shock precision");
     require_length(initial.u_omega_inv, shocks, "initial shock precision");
     require_above(initial.u_omega_inv, 0.0, true, "initial shock precision");
+}
+
+void UcNormalWishartInput::validate() const
+{
+    const arma::uword tt =
+        validate_uc_common(spec, train, forecast, test, a_prior, initial.a, c_prior, initial.c,
+                           tau0_prior, initial.tau0, irregular_prior, initial.irregular_inv,
+                           "UcNormalWishart");
+
+    if (spec.covar)
+    {
+        throw std::invalid_argument(
+            "UcNormalWishart leaves the shock covariance unrestricted already, so it has no "
+            "covariance block to switch on; expected an error other than gamma+covar, or use "
+            "UcNormalGamma for the block");
+    }
+
+    const arma::uword shocks = static_cast<arma::uword>(spec.n_uc_shocks());
+    validate_wishart_block(u_sigma_prior, initial.u_sigma_inv, shocks);
+    require_symmetric(initial.u_sigma_inv, "initial shock precision");
+    // Not require_positive_definite(), whose message is about a state before the
+    // sample: this is where the chain starts, and the first path draw factorises
+    // a band built from it.
+    arma::vec eigenvalues;
+    if (!arma::eig_sym(eigenvalues, initial.u_sigma_inv) || !(eigenvalues.min() > 0.0))
+    {
+        throw std::invalid_argument("the initial shock precision must be positive definite");
+    }
+
+    // The posterior is Wishart with df + tt degrees of freedom on a 2k-square
+    // matrix, which has a density only from 2k on.
+    if (static_cast<arma::uword>(u_sigma_prior.df) + tt < shocks)
+    {
+        throw std::invalid_argument(
+            "the Wishart prior's " + std::to_string(u_sigma_prior.df) + " degrees of freedom and " +
+            std::to_string(tt) + " periods leave the posterior of the " + std::to_string(shocks) +
+            " x " + std::to_string(shocks) + " shock precision improper; it needs at least " +
+            std::to_string(shocks) + " between them");
+    }
+}
+
+void UcNormalStochvolInput::validate() const
+{
+    const arma::uword tt =
+        validate_uc_common(spec, train, forecast, test, a_prior, initial.a, c_prior, initial.c,
+                           tau0_prior, initial.tau0, irregular_prior, initial.irregular_inv,
+                           "UcNormalStochvol");
+
+    // The log-volatility random walk differences its path against its own lag.
+    if (tt < 2)
+    {
+        throw std::invalid_argument("a stochastic volatility model needs at least two periods");
+    }
+
+    if (use_psi())
+    {
+        validate_normal_block(psi_prior, initial.psi, static_cast<arma::uword>(spec.n_uc_psi()),
+                              "psi");
+    }
+
+    validate_stochvol_block(u_sigma_prior, initial.h_sigma, initial.h_init, initial.h,
+                            static_cast<arma::uword>(spec.n_uc_shocks()), tt);
+}
+
+void UcNormalSkewInput::validate() const
+{
+    const arma::uword tt =
+        validate_uc_common(spec, train, forecast, test, a_prior, initial.a, c_prior, initial.c,
+                           tau0_prior, initial.tau0, irregular_prior, initial.irregular_inv,
+                           "UcNormalSkew");
+
+    if (spec.covar)
+    {
+        throw std::invalid_argument(
+            "UcNormalSkew takes no covariance block: the skewed shock's density is the model, "
+            "and rotating the shocks into each other would make it a different one");
+    }
+
+    // The score of a horizon would need the skewed shocks' latents integrated
+    // out of a filter, which is not a Kalman filter any more. Refused here,
+    // before a chain is spent, rather than by the forecast stage after one.
+    if (test.y.n_elem > 0)
+    {
+        throw std::invalid_argument(
+            "UcNormalSkew cannot score a forecast against /data/test/y: its predictive density "
+            "integrates the skewed shocks' latent variates out of the filter, which is not "
+            "written; remove /data/test/y");
+    }
+
+    core::require_finite(train_skew_x, "the skew index /data/train/skew_x");
+    core::require_finite(forecast_skew_x, "the skew index /data/forecast/skew_x");
+    const arma::uword n_skew = train_skew_x.n_cols;
+    if (n_skew > 0 && train_skew_x.n_rows != tt)
+    {
+        throw std::invalid_argument("the skew index /data/train/skew_x must have one row per "
+                                    "period, " + std::to_string(tt) + ", got " +
+                                    std::to_string(train_skew_x.n_rows));
+    }
+    if (n_skew == 0 && forecast_skew_x.n_elem > 0)
+    {
+        throw std::invalid_argument("the file carries /data/forecast/skew_x but no "
+                                    "/data/train/skew_x to estimate the scales on");
+    }
+    if (n_skew > 0 && spec.h > 0 &&
+        (forecast_skew_x.n_rows != static_cast<arma::uword>(spec.h) ||
+         forecast_skew_x.n_cols != n_skew))
+    {
+        throw std::invalid_argument(
+            "h = " + std::to_string(spec.h) + " asks for a forecast, and the skew index has to be "
+            "continued over it: /data/forecast/skew_x must be " + std::to_string(spec.h) + " x " +
+            std::to_string(n_skew) + ", got " + std::to_string(forecast_skew_x.n_rows) + " x " +
+            std::to_string(forecast_skew_x.n_cols));
+    }
+
+    const arma::uword k = static_cast<arma::uword>(spec.k);
+    validate_normal_block(skew_prior, initial.skew, k * 2 * (1 + n_skew), "skew");
+
+    require_length(u_sigma_prior.shape, k, "gamma prior shape of the normal shock's precision");
+    require_length(u_sigma_prior.rate, k, "gamma prior rate of the normal shock's precision");
+    require_gamma_values(u_sigma_prior, "the normal shock's precision");
+    require_length(initial.u_omega_inv, k, "initial precision of the normal shock");
+    require_above(initial.u_omega_inv, 0.0, true, "initial precision of the normal shock");
 }
 
 } // namespace bayests

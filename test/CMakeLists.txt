@@ -759,6 +759,40 @@ bayests_add_model_fixture(UcNormalGamma-own         UcNormalGamma none 1 0 4 --o
 bayests_add_model_fixture(UcNormalGamma-stationary  UcNormalGamma none 0 0 4 --stationary)
 bayests_add_model_fixture(UcNormalGamma-break-score UcNormalGamma none 1 0 4 --deterministic --score)
 bayests_add_model_fixture(UcNormalGamma-group       UcNormalGamma none 1 0 4 /models/2)
+# An irregular component beside the trend and the cycle: the cycle a state of
+# its own, drawn with the trend as one band, and a measurement error in the
+# filter. Without --irregular every row above is bit-identical to what it was
+# before the component existed.
+bayests_add_model_fixture(UcNormalGamma-irregular       UcNormalGamma none 1 0 4 --irregular)
+bayests_add_model_fixture(UcNormalGamma-irregular-score UcNormalGamma none 0 0 4 --irregular --deterministic --score)
+
+# UcNormalWishart: the same model with the 2k x 2k shock precision drawn whole.
+bayests_add_model_fixture(UcNormalWishart-plain       UcNormalWishart none 0 0 4)
+bayests_add_model_fixture(UcNormalWishart-nofcst      UcNormalWishart none 0 0 0)
+bayests_add_model_fixture(UcNormalWishart-smooth-own  UcNormalWishart none 0 0 4 --smooth --own-cycle)
+bayests_add_model_fixture(UcNormalWishart-irregular   UcNormalWishart none 0 0 4 --irregular --stationary)
+bayests_add_model_fixture(UcNormalWishart-break-score UcNormalWishart none 0 0 4 --deterministic --score)
+
+# UcNormalStochvol: a log-volatility per shock, centred and non-centred, with
+# and without the covariance block, and the forecast and score carrying the
+# volatilities forward or holding them.
+bayests_add_model_fixture(UcNormalStochvol-plain            UcNormalStochvol none 0 0 4)
+bayests_add_model_fixture(UcNormalStochvol-nofcst           UcNormalStochvol none 0 0 0)
+bayests_add_model_fixture(UcNormalStochvol-covar            UcNormalStochvol none 1 0 4)
+bayests_add_model_fixture(UcNormalStochvol-noncentred       UcNormalStochvol none 0 0 4 --noncentred)
+bayests_add_model_fixture(UcNormalStochvol-noncentred-covar UcNormalStochvol none 1 0 4 --noncentred --irregular)
+bayests_add_model_fixture(UcNormalStochvol-smooth-own       UcNormalStochvol none 0 0 4 --smooth --own-cycle --stationary)
+bayests_add_model_fixture(UcNormalStochvol-hold             UcNormalStochvol none 0 0 4 --hold-states)
+bayests_add_model_fixture(UcNormalStochvol-break-score      UcNormalStochvol none 1 0 4 --deterministic --score)
+
+# UcNormalSkew: the skew normal and the asymmetric Laplace, on the cycle's
+# shock and on the trend's, with and without an index in the scales.
+bayests_add_model_fixture(UcNormalSkew-plain          UcNormalSkew none 0 0 4)
+bayests_add_model_fixture(UcNormalSkew-nofcst         UcNormalSkew none 0 0 0)
+bayests_add_model_fixture(UcNormalSkew-index          UcNormalSkew none 0 0 4 --skew-index --irregular)
+bayests_add_model_fixture(UcNormalSkew-ald            UcNormalSkew none 0 0 4 --ald --skew-index)
+bayests_add_model_fixture(UcNormalSkew-ald-trend      UcNormalSkew none 0 0 4 --ald --skew-trend --deterministic)
+bayests_add_model_fixture(UcNormalSkew-trend-smooth   UcNormalSkew none 0 0 4 --skew-trend --smooth --stationary)
 bayests_add_model_fixture(FavarNormalWishart-deterministic-score FavarNormalWishart none 0 0 4 --deterministic --score)
 
 # The VECs. All seven have a generator, VecKlgs2010 and VecNormalWishart

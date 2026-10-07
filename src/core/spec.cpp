@@ -135,6 +135,42 @@ const char *to_string(UcCycle cycle)
     return cycle == UcCycle::own ? "own" : "var";
 }
 
+UcSkew uc_skew_from_string(const std::string &name)
+{
+    if (name == "snd" || name.empty())
+    {
+        return UcSkew::snd;
+    }
+    if (name == "ald")
+    {
+        return UcSkew::ald;
+    }
+    throw std::invalid_argument("unknown skew '" + name + "'; expected one of snd, ald");
+}
+
+const char *to_string(UcSkew skew)
+{
+    return skew == UcSkew::ald ? "ald" : "snd";
+}
+
+UcSkewShock uc_skew_shock_from_string(const std::string &name)
+{
+    if (name == "cycle" || name.empty())
+    {
+        return UcSkewShock::cycle;
+    }
+    if (name == "trend")
+    {
+        return UcSkewShock::trend;
+    }
+    throw std::invalid_argument("unknown skew_shock '" + name + "'; expected one of cycle, trend");
+}
+
+const char *to_string(UcSkewShock shock)
+{
+    return shock == UcSkewShock::trend ? "trend" : "cycle";
+}
+
 void VarSpec::validate() const
 {
     if (k <= 0)

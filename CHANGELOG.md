@@ -29,6 +29,71 @@ heading, and move down into a version section when one is cut.
 
 ### Added
 
+* **`UcNormalWishart`, `UcNormalStochvol` and `UcNormalSkew`: the rest of the
+  unobserved components row, and an irregular component for all four.** The
+  three keep `UcNormalGamma`'s trend, cycle, drift and `tau0` and change only
+  the error block:
+
+  - `UcNormalWishart` leaves the `2k`-square shock covariance unrestricted under
+    an inverse Wishart prior (`/priors/u_sigma/df`, `scale`), as Grant and Chan
+    (2017, sec. 3.3) estimate the bivariate correlated model.
+  - `UcNormalStochvol` gives each of the `2k` shocks a log-volatility random
+    walk, behind a constant covariance block with `error = "sv+covar"`, centred
+    or -- with `/priors/u_sigma/omega_v` -- non-centred, writing the
+    Savage-Dickey ordinates under `/posterior/u_sigma_inv`. At one series and no
+    cycle lags it is the UCSV model of Stock and Watson (2007). Its forecast and
+    score carry the volatilities over the horizon under `forecast_states`.
+  - `UcNormalSkew` is Huang, Luo and Wang (2026): one shock per series -- the
+    cycle's, or with `/model/skew_shock = "trend"` the trend's -- skew normal or
+    asymmetric Laplace (`/model/skew`), its two log scales linear in an index
+    at `/data/train/skew_x` and `/data/forecast/skew_x`, the other shock normal.
+    Given each skewed shock's latent half normal or exponential variate the
+    model is Gaussian with a shock mean and variance that move with the period,
+    which is how the path and the coefficients are drawn; the scale
+    coefficients are drawn by a random walk Metropolis-Hastings step against the
+    closed form marginal density with the latents integrated out, its proposal
+    adapted over the burn-in by Andrieu and Thoms (2008, alg. 4) and held after
+    it, and the latents then from their truncated normal or generalised inverse
+    Gaussian conditionals. Its log likelihood conditions on the latents, which
+    it writes to `/posterior/skew_latent/coeffs`, and it refuses `/data/test/y`:
+    a score would have to integrate them out of the filter.
+
+  `/model/irregular = true` adds measurement noise to any of the four, `y_t =
+  tau_t + c_t + eps_t`, with a gamma prior on its precisions at
+  `/priors/irregular`; the trend and the cycle are then drawn together as one
+  band (`uc_state_band()`) and the cycle written to `/posterior/cycle/coeffs`.
+  It needs `p >= 1`. Huang, Luo and Wang's model has one.
+
+  The shared machinery moved into the support headers rather than being copied:
+  `uc_support.h` now takes the shock precision as one matrix or a stack of one
+  per period and the shock means as a matrix or nothing, `UcCoefficients` there
+  is the coefficient block, `uc_constant_support.h` is the forecast,
+  likelihood and score of the two models with one precision per draw,
+  `uc_skew_support.h` the skewed shocks' densities and latent draws, and
+  `io/hdf5/uc_io_common.h` reads and writes the shared datasets.
+
+  `unit.uc_normal_gamma` adds six cases of the general path -- an irregular
+  component, a precision that moves, shock means, and all three, with one and
+  two series -- each against the dense joint normal as before, to rounding; and
+  the skewed shocks: both closed form densities against their mixtures
+  integrated numerically, to 1e-13, and the latent draws' means against their
+  conditional means by quadrature, within five Monte Carlo standard errors.
+  Twenty-one new fixtures, two of them `UcNormalGamma` with an irregular
+  component. On simulated series of 1000 periods: `UcNormalWishart` with `k = 1`
+  on the correlated series of the `UcNormalGamma` entry lands within 0.05 of the
+  exact maximum likelihood estimates everywhere; `UcNormalStochvol`'s
+  Savage-Dickey log Bayes factors are +78 for time variation in a cycle
+  volatility that drifts and -3 in a trend volatility that does not; and
+  `UcNormalSkew` recovers the four scale coefficients of a skew normal cycle
+  shock whose skew scale moves with an index, each within one posterior
+  standard deviation, at an acceptance rate of 27%.
+
+  *Draws are unchanged for every other algorithm, `UcNormalGamma` included.*
+  Fingerprints recorded on the same machine and build before and after, over
+  all 173 fixtures that existed: 173 unchanged, 0 moved, once the four `absent`
+  lines the golden harness now prints for `/posterior/cycle`, `irregular_inv`,
+  `skew` and `skew_latent` are set aside. The full suite passes, 635 of 635.
+
 * **`UcNormalGamma`: an unobserved components model.** Each of `k` series is a
   trend plus a stationary cycle, `y_t = tau_t + c_t`. The cycle is a VAR(p) or,
   with `/model/cycle = "own"`, `k` separate AR(p)s; the trend is a random walk
@@ -112,6 +177,12 @@ heading, and move down into a version section when one is cut.
   coefficients.
 
 ### Fixed
+
+* **`bayests check` said a `UcNormalGamma` file carrying `/data/test/y` could not
+  be scored.** `src/check.cpp` keeps its own list of the algorithms a forecast
+  can be scored for, and `UcNormalGamma` was not added to it with the model,
+  although `bayests forecasts` scored it. It is there now, with
+  `UcNormalWishart` and `UcNormalStochvol`. *No draws are involved.*
 
 * **`bayests check` no longer says that no selection over the covariance block
   will be made when some is.** The warning for an unread `/model/priors/psi`

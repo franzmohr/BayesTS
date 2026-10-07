@@ -1592,6 +1592,10 @@ struct UcNormalGammaInitial
     /// block has orthogonalised them -- of the shocks themselves without one.
     /// Cycle shocks first, then trend shocks.
     arma::vec u_omega_inv;
+
+    /// k, the precision of each series' irregular component. Empty without
+    /// one (VarSpec::irregular).
+    arma::vec irregular_inv;
 };
 
 /// Unobserved components model with a normal prior on the cycle, the drift and
@@ -1636,14 +1640,209 @@ struct UcNormalGammaInput
     /// 2k independent priors on the diagonal of Omega, cycle shocks first.
     GammaPrior u_sigma_prior;
 
+    /// k independent gamma priors on the irregular component's precisions.
+    /// Unused without one.
+    GammaPrior irregular_prior;
+
     UcNormalGammaInitial initial;
 
     bool use_a() const { return spec.p > 0; }
     bool use_c() const { return spec.n > 0; }
     bool use_psi() const { return spec.covar; }
+    bool use_irregular() const { return spec.irregular; }
 
     /// Throws std::invalid_argument describing the first inconsistency it
     /// finds. Called by the sampler before the first draw.
+    void validate() const;
+};
+
+/// Where the UcNormalWishart chain starts. UcNormalGammaInitial, with the shock
+/// precision a whole matrix rather than a diagonal and a covariance block.
+struct UcNormalWishartInitial
+{
+    arma::vec a;    ///< The free cycle coefficients; see UcNormalGammaInitial::a.
+    arma::vec c;    ///< vec(C), k x n. Empty without deterministic terms.
+    arma::vec tau0; ///< k * uc_trend_order(): tau_0, then tau_{-1} for a smooth trend.
+
+    /// 2k x 2k, the precision of the shocks, cycle shocks first.
+    arma::mat u_sigma_inv;
+
+    /// k, the irregular component's precisions. Empty without one.
+    arma::vec irregular_inv;
+};
+
+/// Unobserved components model with a Wishart prior on the precision of its
+/// 2k shocks: UcNormalGammaInput's model with the shock covariance Sigma
+/// unrestricted, as Grant and Chan (2017) and Sinclair (2009) estimate the
+/// bivariate correlated model, rather than independent shocks or a covariance
+/// block in a fixed order. The prior is inverse Wishart on Sigma, df degrees of
+/// freedom and scale S_0, 2k x 2k, cycle shocks first.
+struct UcNormalWishartInput
+{
+    VarSpec spec;
+    TrainData train;
+    TestData test; ///< `y` empty unless the file carries realised values.
+    /// `x` holds the deterministic terms of the forecast horizon, h x n.
+    ForecastData forecast;
+
+    NormalPrior a_prior;    ///< Over the free cycle coefficients. Unused when p is zero.
+    NormalPrior c_prior;    ///< Over vec(C). Unused when n is zero.
+    NormalPrior tau0_prior; ///< Over the k * uc_trend_order() starting values.
+
+    WishartPrior u_sigma_prior; ///< df and the 2k x 2k scale.
+
+    /// k independent gamma priors on the irregular component's precisions.
+    GammaPrior irregular_prior;
+
+    UcNormalWishartInitial initial;
+
+    bool use_a() const { return spec.p > 0; }
+    bool use_c() const { return spec.n > 0; }
+    bool use_irregular() const { return spec.irregular; }
+
+    void validate() const;
+};
+
+/// Where the UcNormalStochvol chain starts.
+struct UcNormalStochvolInitial
+{
+    arma::vec a;    ///< The free cycle coefficients; see UcNormalGammaInitial::a.
+    arma::vec c;    ///< vec(C), k x n. Empty without deterministic terms.
+    arma::vec tau0; ///< k * uc_trend_order().
+    arma::vec psi;  ///< The k(2k-1) free elements of Psi. Ignored without one.
+
+    arma::mat h;       ///< tt x 2k log-volatilities, one column per shock.
+    arma::vec h_init;  ///< 2k; the log-volatility before the first period.
+    /// 2k; variance of the log-volatility innovations. A state rather than a
+    /// prior: the sampler redraws it every iteration.
+    arma::vec h_sigma;
+
+    /// k, the irregular component's precisions. Empty without one.
+    arma::vec irregular_inv;
+};
+
+/// Unobserved components model with stochastic volatility on each of its 2k
+/// shocks: UcNormalGammaInput's model with Omega moving,
+///
+///     Psi e_t ~ N(0, diag(exp(h_t))),   h_t = h_{t-1} + eta_t,
+///
+/// each log-volatility a random walk of its own, in the centred
+/// parameterisation or the non-centred one of Fruhwirth-Schnatter and Wagner
+/// (2010) where `u_sigma_prior.state.omega_v` is set -- and then the
+/// Savage-Dickey test of Chan (2018) for whether each shock's variance moves at
+/// all. Over the trend and the irregular shocks alone, k = 1 and p = 0, this is
+/// the UCSV model of Stock and Watson (2007). The error is "sv" or "sv+covar",
+/// the second putting a constant covariance block in front of the volatilities.
+/// The irregular component, where there is one, has a constant precision.
+struct UcNormalStochvolInput
+{
+    VarSpec spec;
+    TrainData train;
+    TestData test; ///< `y` empty unless the file carries realised values.
+    ForecastData forecast;
+
+    NormalPrior a_prior;
+    NormalPrior c_prior;
+    NormalPrior tau0_prior;
+    NormalPrior psi_prior; ///< Unused without a covariance block.
+
+    /// Over the 2k log-volatilities, cycle shocks first.
+    StochvolPrior u_sigma_prior;
+
+    GammaPrior irregular_prior;
+
+    UcNormalStochvolInitial initial;
+
+    bool use_a() const { return spec.p > 0; }
+    bool use_c() const { return spec.n > 0; }
+    bool use_psi() const { return spec.covar; }
+    bool use_irregular() const { return spec.irregular; }
+
+    void validate() const;
+};
+
+/// Where the UcNormalSkew chain starts.
+struct UcNormalSkewInitial
+{
+    arma::vec a;    ///< The free cycle coefficients; see UcNormalGammaInitial::a.
+    arma::vec c;    ///< vec(C), k x n. Empty without deterministic terms.
+    arma::vec tau0; ///< k * uc_trend_order().
+
+    /// k * 2 (1 + n_skew): per series, the coefficients of the two log scales
+    /// on the skew index -- gamma_v then gamma_u for the skew normal, rho_r then
+    /// rho_w for the asymmetric Laplace, each a constant followed by n_skew
+    /// slopes. See UcNormalSkewInput.
+    arma::vec skew;
+
+    /// k, the precision of the shock that is not skewed.
+    arma::vec u_omega_inv;
+
+    /// k, the irregular component's precisions. Empty without one.
+    arma::vec irregular_inv;
+};
+
+/// Unobserved components model whose cycle -- or trend -- shocks are skewed,
+/// with a scale that moves with an index such as macroeconomic uncertainty,
+/// after Huang, Luo and Wang (2026). One of each series' two shocks
+/// (VarSpec::skew_shock) is
+///
+///     skew normal (VarSpec::skew "snd"):   v_t - u_t,
+///         v_t ~ N(0, sigma_v,t^2),  u_t ~ N+(0, sigma_u,t^2),
+///         log sigma_j,t = gamma_j0 + gamma_j' z_t,   j = v, u;
+///     asymmetric Laplace ("ald"):          r_t - w_t,
+///         r_t, w_t exponential of means lambda_r,t and lambda_w,t,
+///         log lambda_j,t = rho_j0 + rho_j' z_t,      j = r, w,
+///
+/// and the other is normal with a gamma prior on its precision. z_t is the
+/// n_skew-vector of the index, `train.skew_x`, tt x n_skew, and over the horizon
+/// `forecast.skew_x`, h x n_skew; with n_skew zero the scales are constant.
+/// The skew normal is skewed to the left, as in the paper; the asymmetric
+/// Laplace to whichever side the data say.
+///
+/// Both have a normal mixture representation -- the skewed shock is normal
+/// given a latent half normal or exponential variate -- so given those latents
+/// the model is the Gaussian one every member of the family is, with a shock
+/// mean and a variance that move with the period. The scale coefficients are
+/// updated by a random walk Metropolis-Hastings step against the shocks'
+/// closed form marginal density, the latents integrated out, and the latents
+/// are then drawn given them: a truncated normal for the skew normal, a
+/// generalised inverse Gaussian for the asymmetric Laplace.
+///
+/// No covariance block: the skewed shock's density is the model, and rotating
+/// the shocks into each other would make it a different one.
+struct UcNormalSkewInput
+{
+    VarSpec spec;
+    TrainData train;
+    TestData test; ///< `y` empty unless the file carries realised values.
+    ForecastData forecast;
+
+    /// The skew index over the sample, tt x n_skew, and over the horizon, h x
+    /// n_skew. Empty for constant scales.
+    arma::mat train_skew_x;
+    arma::mat forecast_skew_x;
+
+    NormalPrior a_prior;
+    NormalPrior c_prior;
+    NormalPrior tau0_prior;
+
+    /// Over the k * 2 (1 + n_skew) scale coefficients, laid out as
+    /// UcNormalSkewInitial::skew.
+    NormalPrior skew_prior;
+
+    /// k gamma priors on the precision of the shock that is not skewed.
+    GammaPrior u_sigma_prior;
+
+    GammaPrior irregular_prior;
+
+    UcNormalSkewInitial initial;
+
+    bool use_a() const { return spec.p > 0; }
+    bool use_c() const { return spec.n > 0; }
+    bool use_irregular() const { return spec.irregular; }
+    /// The width of the skew index.
+    arma::uword n_skew() const { return train_skew_x.n_cols; }
+
     void validate() const;
 };
 

@@ -33,7 +33,11 @@ add_library(bayests_hdf5_helper
             vec_tvp_gamma_io.cpp vec_tvp_gamma_io.h
             vec_tvp_stochvol_io.cpp vec_tvp_stochvol_io.h
             vec_tvp_wishart_io.cpp vec_tvp_wishart_io.h
-            uc_normal_gamma_io.cpp uc_normal_gamma_io.h)
+            uc_io_common.h
+            uc_normal_gamma_io.cpp uc_normal_gamma_io.h
+            uc_normal_wishart_io.cpp uc_normal_wishart_io.h
+            uc_normal_stochvol_io.cpp uc_normal_stochvol_io.h
+            uc_normal_skew_io.cpp uc_normal_skew_io.h)
 
 add_library(BayesTS::hdf5_helper ALIAS bayests_hdf5_helper)
 target_link_libraries(bayests_hdf5_helper PRIVATE bayests_warnings)
