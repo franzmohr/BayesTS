@@ -181,7 +181,10 @@ void print_report(const std::string &algorithm, const ModelCheck &check)
 		 algorithm == "VecTvpStochvol" || algorithm == "VarTvpDiscount" ||
 		 algorithm == "VecTvpDiscount" || algorithm == "DfmNormalGamma" ||
 		 algorithm == "DfmNormalStochvol" || algorithm == "DfmTvpGamma" ||
-		 algorithm == "DfmTvpStochvol" || algorithm == "FavarNormalWishart");
+		 algorithm == "DfmTvpStochvol" || algorithm == "FavarNormalWishart" ||
+		 algorithm == "UcNormalGamma" ||
+		 algorithm == "UcNormalStochvol" ||
+		 algorithm == "UcNormalWishart");
 	if (check.test_periods > 0)
 	{
 		std::cout << "  realised: " << check.test_periods << " period(s) in /data/test/y";

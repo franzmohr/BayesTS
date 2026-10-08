@@ -31,7 +31,11 @@ const std::unordered_map<std::string, std::function<std::unique_ptr<BaseModel>()
 		{"VecTvpDiscount", []() { return std::make_unique<VecTvpDiscount>(); }},
 		{"VecTvpGamma", []() { return std::make_unique<VecTvpGamma>(); }},
 		{"VecTvpStochvol", []() { return std::make_unique<VecTvpStochvol>(); }},
-		{"VecTvpWishart", []() { return std::make_unique<VecTvpWishart>(); }}
+		{"VecTvpWishart", []() { return std::make_unique<VecTvpWishart>(); }},
+		{"UcNormalGamma", []() { return std::make_unique<UcNormalGamma>(); }},
+		{"UcNormalSkew", []() { return std::make_unique<UcNormalSkew>(); }},
+		{"UcNormalStochvol", []() { return std::make_unique<UcNormalStochvol>(); }},
+		{"UcNormalWishart", []() { return std::make_unique<UcNormalWishart>(); }}
 	};
 	return factory;
 }

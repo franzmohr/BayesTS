@@ -38,9 +38,9 @@ Requires a C++20 compiler and Fortran (for LAPACK). Built on
 ## Models
 
 The `/model/algorithm` attribute in the model file selects the sampler; it is
-the only thing that decides which one runs. Twenty-two are registered — nine
-VARs, seven VECs, one alternative implementation of a VEC, four dynamic factor
-models and one factor augmented VAR:
+the only thing that decides which one runs. Twenty-six are registered —
+nine VARs, seven VECs, one alternative implementation of a VEC, four dynamic
+factor models, one factor augmented VAR and four unobserved components models:
 
 | `algorithm` | Coefficients | Error precision | Variable selection |
 | --- | --- | --- | --- |
@@ -66,6 +66,10 @@ models and one factor augmented VAR:
 | `DfmTvpGamma` | Random walk, the free loadings and the factor transition both | Independent gamma, on the idiosyncratic errors and the factor innovations | none |
 | `DfmTvpStochvol` | Random walk, the free loadings and the factor transition both | Stochastic volatility, on the idiosyncratic errors and the factor innovations | none |
 | `FavarNormalWishart` | Constant, normal prior on the loadings and on the state transition | Wishart on the state innovations; independent gamma on the idiosyncratic errors | none |
+| `UcNormalGamma` | Constant, normal prior on the cycle; a random walk or smooth trend per series, drawn whole | Independent gamma on the trend and cycle shocks, optional constant covariance block over them | none |
+| `UcNormalWishart` | The same | Wishart on the trend and cycle shocks | none |
+| `UcNormalStochvol` | The same | Stochastic volatility on each trend and cycle shock, centred or non-centred, optional covariance block | none |
+| `UcNormalSkew` | The same | Skew normal or asymmetric Laplace on the cycle (or trend) shocks, their scales moving with an index; gamma on the others | none |
 
 The seventeen VARs and VECs support exogenous regressors, deterministic terms
 and a pointwise log likelihood — laid out for WAIC and PSIS-LOO except on the
@@ -76,8 +80,25 @@ forecast; those two refuse, for the reason below. Ten of them take a structural
 discounted ones leave the error covariance unrestricted, which leaves `A_0`
 unidentified, so they refuse it — see the structural paragraph at the end of
 this section. `VecKlgs2010`, the two `*TvpDiscount` entries, the four `Dfm*`
-entries and `FavarNormalWishart` are the exceptions to the rest, each in its own
-way — see below.
+entries, `FavarNormalWishart` and the four `Uc*` entries are the exceptions to
+the rest, each in its own way — see below.
+
+`UcNormalGamma` decomposes each of `k` series into a trend and a stationary
+cycle, `y_t = tau_t + c_t`, with the cycle a VAR (or `k` own-lag ARs) of order
+`p` and the trend a random walk whose drift is `C d_t` — a constant, or one that
+breaks at a known date — or, with `/model/trend = "smooth"`, an integrated
+random walk. The `2k` shocks carry gamma priors on their precisions and, with
+`gamma+covar`, a covariance block that correlates the trend and the cycle. That
+nests Clark (1987), Morley, Nelson and Zivot (2003), the break models Grant and
+Chan (2017) compare, and Sinclair's (2009) bivariate model; the trend path is
+drawn whole by the band sampler, as Grant and Chan do, and the pointwise log
+likelihood integrates it out with a Kalman filter. `UcNormalWishart` leaves the
+shock covariance unrestricted, `UcNormalStochvol` gives each shock a
+log-volatility -- non-centred, its Savage–Dickey test says whether the variance
+moves at all, and with one series and no cycle lags it is the UCSV model of
+Stock and Watson (2007) -- and `UcNormalSkew` is the skewed model of Huang, Luo
+and Wang (2026), whose cycle shocks' asymmetry moves with an uncertainty index.
+Each of the four can add an irregular component, `y_t = tau_t + c_t + eps_t`.
 
 **An equation can be restricted to carry no coefficients.** `/model/n_iid`
 names endogenous variables, ordered first, whose equations have no lags, no
@@ -823,7 +844,7 @@ cannot be asked until it is pushed. A fingerprint recorded in the container is
 comparable to another recorded in the container and to nothing else, the same
 rule that governs any two machines. See [docker/README.md](docker/README.md).
 
-**Coverage.** All twenty-two algorithms are covered from a clean clone:
+**Coverage.** All twenty-six algorithms are covered from a clean clone:
 `test/make_model_fixture.cpp` writes a model file for every one of them, and the
 suite depends on no data outside the repository.
 

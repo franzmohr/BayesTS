@@ -157,6 +157,10 @@ add_executable(bayests_unit_factor_score unit_factor_score.cpp)
 # simulated samples, whose Bayes factors have to land on the side of zero the
 # data were generated on, per state and by margins read off eight seeds.
 add_executable(bayests_unit_noncentred unit_noncentred.cpp)
+# The unobserved components model against the Gaussian it is, given everything
+# but the trend: the trend's band posterior, its draw, the integrated likelihood
+# and the score, each against the dense joint normal. Identities, to rounding.
+add_executable(bayests_unit_uc_normal_gamma unit_uc_normal_gamma.cpp)
 
 foreach(_core_unit bayests_unit_identification bayests_unit_vec_klgs_2010 bayests_unit_coint_jacobian
                    bayests_unit_coint_dees_us bayests_unit_tvp_initial_state bayests_unit_forecast_states
@@ -171,7 +175,7 @@ foreach(_core_unit bayests_unit_identification bayests_unit_vec_klgs_2010 bayest
                    bayests_unit_input_values bayests_unit_var_normal_stochvol
                    bayests_unit_var_tvp_discount bayests_unit_vec_tvp_discount
                    bayests_unit_predictive_score bayests_unit_factor_score
-                   bayests_unit_noncentred)
+                   bayests_unit_noncentred bayests_unit_uc_normal_gamma)
     target_link_libraries(${_core_unit} PRIVATE bayests_core)
     target_link_libraries(${_core_unit} PRIVATE bayests_warnings)
 
@@ -351,7 +355,8 @@ foreach(_unit vec_to_var forecast_lags forecast_regressors_io forecast_group_io 
               vec_klgs_2010 vec_tvp_coint coint_prior_symmetry coint_klgs_prior coint_jacobian coint_dees_us dfm_normal_gamma dfm_normal_stochvol
               dfm_tvp_gamma dfm_tvp_stochvol favar_normal_wishart var_ald thin model_group bvs ssvs
               input_values var_normal_stochvol var_tvp_discount vec_tvp_discount read_path bool_attributes tvp_initial_state
-              forecast_states noncentred iid_block constraints constraints_io var_mixed_frequency shrinkage steady_state var_quantile_grid)
+              forecast_states noncentred iid_block constraints constraints_io var_mixed_frequency shrinkage steady_state var_quantile_grid
+              uc_normal_gamma)
     add_test(NAME "unit.${_unit}" COMMAND "bayests_unit_${_unit}")
     set_tests_properties("unit.${_unit}" PROPERTIES
         ENVIRONMENT_MODIFICATION "${_bayests_test_env_mod}")
@@ -738,6 +743,56 @@ bayests_add_model_fixture(FavarNormalWishart-deterministic FavarNormalWishart no
 bayests_add_model_fixture(DfmNormalGamma-deterministic-score DfmNormalGamma   none 0 0 4 --deterministic --score)
 bayests_add_model_fixture(DfmTvpStochvol-deterministic-score DfmTvpStochvol   none 0 0 4 --deterministic --score)
 bayests_add_model_fixture(FavarNormalWishart-score         FavarNormalWishart none 0 0 4 --score)
+
+# The unobserved components model: two series, a trend and a cycle of order two
+# each. The plain row has a random walk trend with a constant drift and a VAR
+# cycle; the others turn on, one at a time, the covariance block over the four
+# shocks, a break in the drift, the smooth trend, a cycle in own lags only, the
+# stationarity restriction on the cycle, and the score -- the last over a drift
+# with a break, so the filter continues the deterministic terms past the sample.
+bayests_add_model_fixture(UcNormalGamma-plain       UcNormalGamma none 0 0 4)
+bayests_add_model_fixture(UcNormalGamma-nofcst      UcNormalGamma none 0 0 0)
+bayests_add_model_fixture(UcNormalGamma-covar       UcNormalGamma none 1 0 4)
+bayests_add_model_fixture(UcNormalGamma-break       UcNormalGamma none 0 0 4 --deterministic)
+bayests_add_model_fixture(UcNormalGamma-smooth      UcNormalGamma none 1 0 4 --smooth)
+bayests_add_model_fixture(UcNormalGamma-own         UcNormalGamma none 1 0 4 --own-cycle)
+bayests_add_model_fixture(UcNormalGamma-stationary  UcNormalGamma none 0 0 4 --stationary)
+bayests_add_model_fixture(UcNormalGamma-break-score UcNormalGamma none 1 0 4 --deterministic --score)
+bayests_add_model_fixture(UcNormalGamma-group       UcNormalGamma none 1 0 4 /models/2)
+# An irregular component beside the trend and the cycle: the cycle a state of
+# its own, drawn with the trend as one band, and a measurement error in the
+# filter. Without --irregular every row above is bit-identical to what it was
+# before the component existed.
+bayests_add_model_fixture(UcNormalGamma-irregular       UcNormalGamma none 1 0 4 --irregular)
+bayests_add_model_fixture(UcNormalGamma-irregular-score UcNormalGamma none 0 0 4 --irregular --deterministic --score)
+
+# UcNormalWishart: the same model with the 2k x 2k shock precision drawn whole.
+bayests_add_model_fixture(UcNormalWishart-plain       UcNormalWishart none 0 0 4)
+bayests_add_model_fixture(UcNormalWishart-nofcst      UcNormalWishart none 0 0 0)
+bayests_add_model_fixture(UcNormalWishart-smooth-own  UcNormalWishart none 0 0 4 --smooth --own-cycle)
+bayests_add_model_fixture(UcNormalWishart-irregular   UcNormalWishart none 0 0 4 --irregular --stationary)
+bayests_add_model_fixture(UcNormalWishart-break-score UcNormalWishart none 0 0 4 --deterministic --score)
+
+# UcNormalStochvol: a log-volatility per shock, centred and non-centred, with
+# and without the covariance block, and the forecast and score carrying the
+# volatilities forward or holding them.
+bayests_add_model_fixture(UcNormalStochvol-plain            UcNormalStochvol none 0 0 4)
+bayests_add_model_fixture(UcNormalStochvol-nofcst           UcNormalStochvol none 0 0 0)
+bayests_add_model_fixture(UcNormalStochvol-covar            UcNormalStochvol none 1 0 4)
+bayests_add_model_fixture(UcNormalStochvol-noncentred       UcNormalStochvol none 0 0 4 --noncentred)
+bayests_add_model_fixture(UcNormalStochvol-noncentred-covar UcNormalStochvol none 1 0 4 --noncentred --irregular)
+bayests_add_model_fixture(UcNormalStochvol-smooth-own       UcNormalStochvol none 0 0 4 --smooth --own-cycle --stationary)
+bayests_add_model_fixture(UcNormalStochvol-hold             UcNormalStochvol none 0 0 4 --hold-states)
+bayests_add_model_fixture(UcNormalStochvol-break-score      UcNormalStochvol none 1 0 4 --deterministic --score)
+
+# UcNormalSkew: the skew normal and the asymmetric Laplace, on the cycle's
+# shock and on the trend's, with and without an index in the scales.
+bayests_add_model_fixture(UcNormalSkew-plain          UcNormalSkew none 0 0 4)
+bayests_add_model_fixture(UcNormalSkew-nofcst         UcNormalSkew none 0 0 0)
+bayests_add_model_fixture(UcNormalSkew-index          UcNormalSkew none 0 0 4 --skew-index --irregular)
+bayests_add_model_fixture(UcNormalSkew-ald            UcNormalSkew none 0 0 4 --ald --skew-index)
+bayests_add_model_fixture(UcNormalSkew-ald-trend      UcNormalSkew none 0 0 4 --ald --skew-trend --deterministic)
+bayests_add_model_fixture(UcNormalSkew-trend-smooth   UcNormalSkew none 0 0 4 --skew-trend --smooth --stationary)
 bayests_add_model_fixture(FavarNormalWishart-deterministic-score FavarNormalWishart none 0 0 4 --deterministic --score)
 
 # The VECs. All seven have a generator, VecKlgs2010 and VecNormalWishart
