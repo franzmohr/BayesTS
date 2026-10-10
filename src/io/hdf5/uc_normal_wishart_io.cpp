@@ -34,6 +34,7 @@ UcNormalWishartDraws read_coefficients(const ModelFile &file)
     UcNormalWishartDraws draws;
     uc_common::read_coefficients(file, draws);
     read_draws_if_present(file, "/posterior/u_sigma_inv/coeffs", draws.u_sigma_inv);
+    read_draws_if_present(file, "/posterior/cycle0/coeffs", draws.cycle0);
     return draws;
 }
 
@@ -42,6 +43,11 @@ void write_coefficients(const ModelFile &file, const UcNormalWishartDraws &draws
     ensure_group(file, "/posterior");
     uc_common::write_coefficients(file, draws);
     write_draws(file, "/posterior/u_sigma_inv/coeffs", draws.u_sigma_inv);
+    // The cycle before the sample, under /model/cycle_init stationary only.
+    if (draws.cycle0.n_elem > 0)
+    {
+        write_draws(file, "/posterior/cycle0/coeffs", draws.cycle0);
+    }
 }
 
 } // namespace bayests::hdf5_io::uc_normal_wishart

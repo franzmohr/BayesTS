@@ -757,6 +757,11 @@ bayests_add_model_fixture(UcNormalGamma-break       UcNormalGamma none 0 0 4 --d
 bayests_add_model_fixture(UcNormalGamma-smooth      UcNormalGamma none 1 0 4 --smooth)
 bayests_add_model_fixture(UcNormalGamma-own         UcNormalGamma none 1 0 4 --own-cycle)
 bayests_add_model_fixture(UcNormalGamma-stationary  UcNormalGamma none 0 0 4 --stationary)
+# The cycle before the sample drawn from its stationary distribution: with the
+# covariance block, whose psi and Omega steps then accept or reject, and with an
+# irregular component, a break and a score, which the filter starts from Gamma.
+bayests_add_model_fixture(UcNormalGamma-stationary-init UcNormalGamma none 1 0 4 --stationary-init)
+bayests_add_model_fixture(UcNormalGamma-stationary-init-irregular-score UcNormalGamma none 0 0 4 --stationary-init --irregular --deterministic --score)
 bayests_add_model_fixture(UcNormalGamma-break-score UcNormalGamma none 1 0 4 --deterministic --score)
 bayests_add_model_fixture(UcNormalGamma-group       UcNormalGamma none 1 0 4 /models/2)
 # An irregular component beside the trend and the cycle: the cycle a state of
@@ -772,6 +777,7 @@ bayests_add_model_fixture(UcNormalWishart-nofcst      UcNormalWishart none 0 0 0
 bayests_add_model_fixture(UcNormalWishart-smooth-own  UcNormalWishart none 0 0 4 --smooth --own-cycle)
 bayests_add_model_fixture(UcNormalWishart-irregular   UcNormalWishart none 0 0 4 --irregular --stationary)
 bayests_add_model_fixture(UcNormalWishart-break-score UcNormalWishart none 0 0 4 --deterministic --score)
+bayests_add_model_fixture(UcNormalWishart-stationary-init-score UcNormalWishart none 0 0 4 --stationary-init --deterministic --score)
 
 # UcNormalStochvol: a log-volatility per shock, centred and non-centred, with
 # and without the covariance block, and the forecast and score carrying the

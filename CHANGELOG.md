@@ -29,6 +29,41 @@ heading, and move down into a version section when one is cut.
 
 ### Added
 
+* **`/model/cycle_init = "stationary"`: an unobserved components cycle started
+  from its stationary distribution.** The cycle has been zero before the sample,
+  as in Grant and Chan (2017), which pins its first estimates near zero whatever
+  the data say: on US GDP the output gap of the first quarter of a sample is
+  close to zero for every start date. Under the new value `UcNormalGamma` and
+  `UcNormalWishart` treat the `p` values before the sample,
+  `s_0 = (c_0', .., c_1-p')'`, as a parameter with the cycle's stationary
+  distribution `N(0, Gamma)` as its prior -- `Gamma` the covariance of `p`
+  consecutive values of the VAR(p) cycle under the draw's coefficients and the
+  cycle block of its shock covariance, solved from its Lyapunov equation by
+  `cycle_stationary_covariance()` in `src/core/models/uc_support.h`. A Gibbs
+  block draws `s_0` from its normal conditional (`cycle_presample_posterior()`),
+  and given `s_0` the path and the coefficients are drawn as before with `s_0`
+  in place of the zeros: in the band's right hand side
+  (`cycle_presample_term()`) and in the coefficient regression. `Gamma` depends
+  on the cycle coefficients and the shock covariance, so their blocks keep
+  their proposals and accept by the ratio of `N(s_0; 0, Gamma)` under the new
+  and the old values (`UcCyclePresample`), a Metropolis-Hastings step with the
+  conditional as proposal: the joint coefficient block, `psi` and `Omega` in
+  `UcNormalGamma`, the Wishart draw in `UcNormalWishart`. The log likelihood and
+  the score integrate `s_0` out, starting the filter's cycle block at
+  `P_0 = Gamma`. `s_0` is written to `/posterior/cycle0/coeffs`, `kp` rows.
+  It needs `/model/stationary` and a cycle with lags, and `UcNormalStochvol` and
+  `UcNormalSkew` refuse it: the stationary distribution is taken under one
+  shock covariance per draw, which they do not have. `unit.uc_normal_gamma`
+  checks `Gamma` against its Lyapunov equation and, over three shapes, the band
+  given `s_0`, the regression, the filter from `Gamma` and the posterior of
+  `s_0` against the dense joint normal of the shocks and `s_0`, and the four
+  refusals; fixtures `UcNormalGamma-stationary-init`,
+  `UcNormalGamma-stationary-init-irregular-score` and
+  `UcNormalWishart-stationary-init-score` run it through the command line.
+  *Draws are unchanged* for every file without the attribute: under `zero` the
+  new block is inactive and consumes no random numbers. Fingerprints of all 194
+  fixtures before against after, 0 moved (local release build, single thread).
+
 * **`UcNormalWishart`, `UcNormalStochvol` and `UcNormalSkew`: the rest of the
   unobserved components row, and an irregular component for all four.** The
   three keep `UcNormalGamma`'s trend, cycle, drift and `tau0` and change only
