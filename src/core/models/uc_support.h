@@ -1264,33 +1264,6 @@ private:
     UcSignalTerms terms_;
 };
 
-/// Refuses signal data that does not have the shape the spec gives it: tt x
-/// n_signals, and tt x n_signal_x regressors where there are any.
-inline void require_uc_signal_data(const VarSpec &spec, const arma::mat &s, const arma::mat &x,
-                                   const arma::uword tt)
-{
-    if (spec.n_signals <= 0)
-    {
-        return;
-    }
-    const arma::uword m = static_cast<arma::uword>(spec.n_signals);
-    const arma::uword r = static_cast<arma::uword>(spec.n_signal_x);
-    if (s.n_rows != tt || s.n_cols != m)
-    {
-        throw std::invalid_argument("the signals /data/train/signal must be " + std::to_string(tt) +
-                                    " x " + std::to_string(m) +
-                                    ", one row per period and one column per signal, got " +
-                                    std::to_string(s.n_rows) + " x " + std::to_string(s.n_cols));
-    }
-    if (r > 0 ? (x.n_rows != tt || x.n_cols != r) : x.n_elem > 0)
-    {
-        throw std::invalid_argument("the signals' regressors /data/train/signal_x must be " +
-                                    std::to_string(tt) + " x " + std::to_string(r) +
-                                    " (n_signal_x), got " + std::to_string(x.n_rows) + " x " +
-                                    std::to_string(x.n_cols));
-    }
-}
-
 /// The signal terms of posterior draw i: vec(Gamma) in column i of `signal`,
 /// the precisions in column i of `noise_inv`, over the signals `s` (tt x m) and
 /// their regressors `x` (tt x r, or empty) of the sample.

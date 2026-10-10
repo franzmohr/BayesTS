@@ -8,7 +8,6 @@
 #include "core/models/model_support.h"
 #include "core/models/shrinkage_support.h"
 #include "core/models/steady_state_support.h"
-#include "core/models/uc_support.h"
 
 #include <algorithm>
 #include <cmath>

@@ -265,6 +265,15 @@ heading, and move down into a version section when one is cut.
 
 ### Fixed
 
+* **`src/core/inputs.cpp` no longer includes `uc_support.h`.** The signal
+  equations made it include the unobserved components support header for one
+  shape check, `require_uc_signal_data()`, which pulled the whole of that
+  header into every package that vendors `inputs.cpp` -- including those that
+  leave the `Uc*` samplers out, where it does not exist and the build fails.
+  The check moves to `model_support.h`, which both files already include.
+  *Draws are unchanged*: 202 fixtures fingerprinted before and after, none
+  moved.
+
 * **The golden test fingerprints `/posterior/cycle0/coeffs`.** It was missing
   from `bayests_golden`'s list of outputs, so a rerun left the previous run's
   draws in place and nothing fingerprinted them. It is listed now, beside the
