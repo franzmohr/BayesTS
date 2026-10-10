@@ -17,6 +17,7 @@ UcNormalGammaInput read_input(const ModelFile &file)
     // spelling the gamma VARs use for theirs.
     input.spec = read_spec(file, "gamma+covar");
     uc_common::read_input(file, input, "UcNormalGamma");
+    uc_common::read_extension(file, input);
 
     if (input.use_psi())
     {
@@ -40,6 +41,7 @@ UcNormalGammaDraws read_coefficients(const ModelFile &file)
     read_draws_if_present(file, "/posterior/u_omega_inv/coeffs", draws.u_omega_inv);
     read_draws_if_present(file, "/posterior/u_sigma_inv/coeffs", draws.u_sigma_inv);
     read_draws_if_present(file, "/posterior/cycle0/coeffs", draws.cycle0);
+    uc_common::read_extension_draws(file, draws);
     return draws;
 }
 
@@ -58,6 +60,7 @@ void write_coefficients(const ModelFile &file, const UcNormalGammaDraws &draws)
     {
         write_draws(file, "/posterior/cycle0/coeffs", draws.cycle0);
     }
+    uc_common::write_extension_draws(file, draws);
 }
 
 } // namespace bayests::hdf5_io::uc_normal_gamma

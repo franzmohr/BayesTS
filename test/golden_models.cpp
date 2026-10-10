@@ -97,6 +97,14 @@ constexpr const char *kOutputs[] = {
     // the factors is part of the posterior, and the trend before the sample.
     "/posterior/trend/coeffs",
     "/posterior/tau0/coeffs",
+    // The cycle before the sample under /model/cycle_init stationary, the
+    // damped trend's slope coefficients, and the signal equations'
+    // coefficients and noise precisions -- the two constant-precision models'
+    // own, absent everywhere the file does not ask for them.
+    "/posterior/cycle0/coeffs",
+    "/posterior/rho/coeffs",
+    "/posterior/signal/coeffs",
+    "/posterior/signal_noise_inv/coeffs",
     // Written where an irregular component separates the cycle from y minus
     // the trend: the cycle path, and the irregular precisions.
     "/posterior/cycle/coeffs",

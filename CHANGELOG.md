@@ -29,6 +29,58 @@ heading, and move down into a version section when one is cut.
 
 ### Added
 
+* **A damped trend and signal equations for `UcNormalGamma` and
+  `UcNormalWishart`: the European Commission's output gap models, nested.** The
+  production function method (Havik et al. 2014) estimates trend TFP and the
+  NAWRU with bivariate trend-cycle models. In each, a second observed series
+  loads on the cycle: the capacity utilisation indicator on the TFP cycle, a
+  wage Phillips curve on the unemployment gap. The TFP trend is a damped one.
+  Both are now available:
+
+  - `/model/trend = "damped"`: `Delta tau_t = rho Delta tau_{t-1} + C d_t +
+    u_t`, one `rho` per series under a normal prior at `/priors/rho`,
+    truncated to (-1, 1) by rejection as the stationary cycle is, and drawn
+    from the regression of the shocks on it under the whole shock precision
+    (`damped_rho_regression()`, `draw_damped_rho()`). Its trend order is two,
+    like the smooth trend's, and `rho = 1` would be that trend. The trend's lag
+    polynomial is now one function, `trend_lag_weights()`, read by the band,
+    the coefficient regression, the state space and the forecast. Written to
+    `/posterior/rho/coeffs`.
+  - Signal equations, `/model/n_signals`, `signal_lags` and `n_signal_x`:
+    `s_t = B x^s_t + sum_{j=0..q} Lambda_j c_{t-j} + v_t`, `v_t` independent
+    normal noise. Given the parameters a signal is a Gaussian measurement of the
+    path at lags 0 to `q`. It adds to the band without changing its structure
+    (`add_signal_measurement()`), and the bandwidth becomes
+    `max(p, trend order, q)`. Given the cycle, `vec([B Lambda_0 .. Lambda_q])`
+    is a conjugate regression and the noise precisions are gamma
+    (`UcSignalBlock`). The filter stacks the signals under the series
+    (`UcFilterTerms::signal_offset`, `UcStateSpace::z_signal`), so the
+    pointwise log likelihood of a sample period is the density of the series
+    and the signals jointly. A scored period sees the series alone. Data at
+    `/data/train/signal` and `/data/train/signal_x`, priors at
+    `/priors/signal` and `/priors/signal_noise`, draws at
+    `/posterior/signal/coeffs` and `/posterior/signal_noise_inv/coeffs`.
+    Signals are not forecast.
+
+  Both pass through `UcExtension`, which every shared function in
+  `uc_support.h` takes as an optional last argument; default constructed, it
+  changes nothing. `UcNormalStochvol` and `UcNormalSkew` refuse both by name,
+  and signals refuse `/model/cycle_init stationary`, since they read the cycle
+  before the sample as zero. `unit.uc_normal_gamma` puts both against the dense
+  joint normal of the shocks, the irregular component and the signal noise,
+  over nine shapes (one and two series, signals on up to three cycle lags, with
+  and without an irregular component and a damped trend). It checks the path's
+  precision and mean, the shocks rebuilt by the coefficient regression and by
+  `rho`'s, the signal noise rebuilt from its regressors, the filtered
+  likelihood through `log_likelihood()`, and the score of a held-back stretch,
+  plus six refusals. New fixtures: `UcNormalGamma-damped`,
+  `UcNormalGamma-signals`, `UcNormalGamma-ec` (both, with an own-lags
+  stationary cycle and a covariance block),
+  `UcNormalGamma-signals-irregular-score` and `UcNormalWishart-ec` (both,
+  scored). *Draws are unchanged* for every file without the new attributes:
+  fingerprints of all 197 fixtures before against after, 0 moved (local
+  release build, single thread, the four new golden paths filtered out).
+
 * **`/model/cycle_init = "stationary"`: an unobserved components cycle started
   from its stationary distribution.** The cycle has been zero before the sample,
   as in Grant and Chan (2017), which pins its first estimates near zero whatever
@@ -212,6 +264,11 @@ heading, and move down into a version section when one is cut.
   coefficients.
 
 ### Fixed
+
+* **The golden test fingerprints `/posterior/cycle0/coeffs`.** It was missing
+  from `bayests_golden`'s list of outputs, so a rerun left the previous run's
+  draws in place and nothing fingerprinted them. It is listed now, beside the
+  damped trend's and the signal equations' three.
 
 * **`bayests check` said a `UcNormalGamma` file carrying `/data/test/y` could not
   be scored.** `src/check.cpp` keeps its own list of the algorithms a forecast

@@ -18,6 +18,7 @@ UcNormalWishartInput read_input(const ModelFile &file)
     // needs to know.
     input.spec = read_spec(file, nullptr);
     uc_common::read_input(file, input, "UcNormalWishart");
+    uc_common::read_extension(file, input);
 
     if (file.exist("/priors/u_sigma/df"))
     {
@@ -35,6 +36,7 @@ UcNormalWishartDraws read_coefficients(const ModelFile &file)
     uc_common::read_coefficients(file, draws);
     read_draws_if_present(file, "/posterior/u_sigma_inv/coeffs", draws.u_sigma_inv);
     read_draws_if_present(file, "/posterior/cycle0/coeffs", draws.cycle0);
+    uc_common::read_extension_draws(file, draws);
     return draws;
 }
 
@@ -48,6 +50,7 @@ void write_coefficients(const ModelFile &file, const UcNormalWishartDraws &draws
     {
         write_draws(file, "/posterior/cycle0/coeffs", draws.cycle0);
     }
+    uc_common::write_extension_draws(file, draws);
 }
 
 } // namespace bayests::hdf5_io::uc_normal_wishart

@@ -771,12 +771,25 @@ bayests_add_model_fixture(UcNormalGamma-group       UcNormalGamma none 1 0 4 /mo
 bayests_add_model_fixture(UcNormalGamma-irregular       UcNormalGamma none 1 0 4 --irregular)
 bayests_add_model_fixture(UcNormalGamma-irregular-score UcNormalGamma none 0 0 4 --irregular --deterministic --score)
 
+# The European Commission's production function method, nested: the damped
+# trend of its TFP model, signal equations on the cycle as its capacity
+# utilisation indicator and Phillips curve are, the two together, and the
+# signals beside an irregular component -- where the cycle is a state of its own
+# and the signals measure it -- and scored, where the score sees the series
+# alone after the sample. Without --damped and --signals every row above is
+# bit-identical to what it was before either existed.
+bayests_add_model_fixture(UcNormalGamma-damped          UcNormalGamma none 0 0 4 --damped)
+bayests_add_model_fixture(UcNormalGamma-signals         UcNormalGamma none 0 0 4 --signals)
+bayests_add_model_fixture(UcNormalGamma-ec              UcNormalGamma none 1 0 4 --damped --signals --own-cycle --stationary)
+bayests_add_model_fixture(UcNormalGamma-signals-irregular-score UcNormalGamma none 0 0 4 --signals --irregular --deterministic --score)
+
 # UcNormalWishart: the same model with the 2k x 2k shock precision drawn whole.
 bayests_add_model_fixture(UcNormalWishart-plain       UcNormalWishart none 0 0 4)
 bayests_add_model_fixture(UcNormalWishart-nofcst      UcNormalWishart none 0 0 0)
 bayests_add_model_fixture(UcNormalWishart-smooth-own  UcNormalWishart none 0 0 4 --smooth --own-cycle)
 bayests_add_model_fixture(UcNormalWishart-irregular   UcNormalWishart none 0 0 4 --irregular --stationary)
 bayests_add_model_fixture(UcNormalWishart-break-score UcNormalWishart none 0 0 4 --deterministic --score)
+bayests_add_model_fixture(UcNormalWishart-ec          UcNormalWishart none 0 0 4 --damped --signals --deterministic --score)
 bayests_add_model_fixture(UcNormalWishart-stationary-init-score UcNormalWishart none 0 0 4 --stationary-init --deterministic --score)
 
 # UcNormalStochvol: a log-volatility per shock, centred and non-centred, with

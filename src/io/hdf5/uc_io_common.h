@@ -51,6 +51,59 @@ void read_input(const ModelFile &file, Input &input, const char *algorithm)
     }
 }
 
+/// Reads what UcNormalGamma and UcNormalWishart add to the family: the damped
+/// trend's rho and the signal equations -- their data, prior and start -- each
+/// only where the spec asks for it.
+template <typename Input>
+void read_extension(const ModelFile &file, Input &input)
+{
+    if (input.spec.trend == UcTrend::damped)
+    {
+        read_normal_block_if_present(file, "rho", input.rho_prior, input.initial.rho);
+    }
+    if (input.spec.n_signals > 0)
+    {
+        // tt x n_signals and tt x n_signal_x, in the layout of /data/train/y.
+        read_mat_if_present(file, "/data/train/signal", input.train_signal);
+        read_mat_if_present(file, "/data/train/signal_x", input.train_signal_x);
+        read_normal_block_if_present(file, "signal", input.signal_prior, input.initial.signal);
+        if (file.exist("/priors/signal_noise/shape"))
+        {
+            input.signal_noise_prior = read_gamma_prior(file, "/priors/signal_noise");
+        }
+        read_vec_if_present(file, "/initial/signal_noise_inv", input.initial.signal_noise_inv);
+    }
+    else if (file.exist("/data/train/signal"))
+    {
+        // Read so that validate() can say the file carries signals nothing
+        // reads, rather than ignore them.
+        read_mat_if_present(file, "/data/train/signal", input.train_signal);
+    }
+}
+
+/// Reads back and writes the datasets read_extension()'s blocks produce.
+template <typename Draws>
+void read_extension_draws(const ModelFile &file, Draws &draws)
+{
+    read_draws_if_present(file, "/posterior/rho/coeffs", draws.rho);
+    read_draws_if_present(file, "/posterior/signal/coeffs", draws.signal);
+    read_draws_if_present(file, "/posterior/signal_noise_inv/coeffs", draws.signal_noise_inv);
+}
+
+template <typename Draws>
+void write_extension_draws(const ModelFile &file, const Draws &draws)
+{
+    if (draws.rho.n_elem > 0)
+    {
+        write_draws(file, "/posterior/rho/coeffs", draws.rho);
+    }
+    if (draws.signal.n_elem > 0)
+    {
+        write_draws(file, "/posterior/signal/coeffs", draws.signal);
+        write_draws(file, "/posterior/signal_noise_inv/coeffs", draws.signal_noise_inv);
+    }
+}
+
 /// Reads back the datasets every member of the family writes.
 template <typename Draws>
 void read_coefficients(const ModelFile &file, Draws &draws)
