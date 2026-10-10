@@ -492,6 +492,11 @@ VarSpec read_spec(const ModelFile &file, const char *covar_error)
     spec.cycle = uc_cycle_from_string(optional_attribute_string(file, "/model", "cycle", "var"));
     spec.cycle_init =
         uc_cycle_init_from_string(optional_attribute_string(file, "/model", "cycle_init", "zero"));
+    // The signal equations of the two constant-precision unobserved components
+    // models. Absent everywhere else, and zero means none.
+    spec.n_signals = optional_attribute_int(file, "/model", "n_signals", 0);
+    spec.signal_lags = optional_attribute_int(file, "/model", "signal_lags", 0);
+    spec.n_signal_x = optional_attribute_int(file, "/model", "n_signal_x", 0);
     spec.irregular = optional_attribute_bool(file, "/model", "irregular", false);
     spec.skew = uc_skew_from_string(optional_attribute_string(file, "/model", "skew", "snd"));
     spec.skew_shock =
@@ -765,6 +770,7 @@ bool is_model_attribute(const std::string &name)
         "varsel",    "structural", "error",     "seed",       "forecast_states",
         "delta_beta", "delta_sigma", "shrinkage", "stationary", "steady_state",
         "trend",     "cycle",     "irregular", "skew",       "skew_shock", "cycle_init",
+        "n_signals", "signal_lags", "n_signal_x",
     };
     return names.count(name) > 0;
 }

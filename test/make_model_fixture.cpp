@@ -109,6 +109,17 @@
 //                 UcNormalGamma only: writes /model/trend = "smooth", the trend
 //                 whose second difference is the shock, with no drift and a
 //                 tau0 of two periods.
+//     --damped
+//                 UcNormalGamma and UcNormalWishart: writes /model/trend =
+//                 "damped", the slope an AR(1) around its mean, with a normal
+//                 prior at /priors/rho and its start at /initial/rho, and a tau0
+//                 of two periods. The drift is the one the rw trend has.
+//     --signals
+//                 UcNormalGamma and UcNormalWishart: two signal equations, one
+//                 per series, each on a constant and the cycles at lags zero and
+//                 one -- /model/n_signals, signal_lags and n_signal_x, the data
+//                 at /data/train/signal and signal_x, the priors at
+//                 /priors/signal and /priors/signal_noise.
 //     --stationary-init
 //                 UcNormalGamma and UcNormalWishart: writes /model/cycle_init =
 //                 "stationary" together with /model/stationary, the cycle
@@ -2319,6 +2330,8 @@ struct UcOptions
     bool with_break = false;
     bool stationary = false;
     bool stationary_init = false; ///< /model/cycle_init stationary, which needs stationary.
+    bool damped = false;          ///< /model/trend damped.
+    bool signals = false;         ///< Two signal equations, one per series.
     bool irregular = false;
     bool noncentred = false; ///< UcNormalStochvol: omega_v on the log-volatilities.
     bool ald = false;        ///< UcNormalSkew: the asymmetric Laplace.
@@ -2341,7 +2354,7 @@ arma::mat uc_skew_index(const int first, const int periods)
 void write_uc_model(const ModelFile &file, const arma::mat &y, const UcOptions &o)
 {
     const int n = o.smooth ? 0 : (o.with_break ? 2 : 1);
-    const int order = o.smooth ? 2 : 1;
+    const int order = (o.smooth || o.damped) ? 2 : 1;
     const int n_a = o.own_cycle ? kUcK * kUcP : kUcK * kUcK * kUcP;
     const int shocks = 2 * kUcK;
     const int n_psi = kUcK * (2 * kUcK - 1);
@@ -2375,7 +2388,8 @@ void write_uc_model(const ModelFile &file, const arma::mat &y, const UcOptions &
     write_attribute<int>(file, "/model", "iterations", kIterations);
     write_attribute<int>(file, "/model", "burnin", kBurnin);
     write_attribute<std::string>(file, "/model", "error", error);
-    write_attribute<std::string>(file, "/model", "trend", o.smooth ? "smooth" : "rw");
+    write_attribute<std::string>(file, "/model", "trend",
+                                 o.smooth ? "smooth" : (o.damped ? "damped" : "rw"));
     write_attribute<std::string>(file, "/model", "cycle", o.own_cycle ? "own" : "var");
     if (o.stationary || o.stationary_init)
     {
@@ -2527,6 +2541,56 @@ void write_uc_model(const ModelFile &file, const arma::mat &y, const UcOptions &
         write_row(file, "/priors/irregular/rate", arma::vec(kk, arma::fill::value(0.5)));
         write_row(file, "/initial/irregular_inv", arma::vec(kk, arma::fill::value(4.0)));
     }
+
+    // The damped trend's slope coefficients: a prior around one half with a
+    // standard deviation of about 0.3, inside the interval it is truncated to.
+    if (o.damped)
+    {
+        ensure_group(file, "/priors/rho");
+        write_row(file, "/priors/rho/mu", arma::vec(kk, arma::fill::value(0.5)));
+        write_mat(file, "/priors/rho/v_inv", arma::eye<arma::mat>(kk, kk) * 10.0);
+        write_row(file, "/initial/rho", arma::vec(kk, arma::fill::value(0.5)));
+    }
+
+    // Two signals, as the European Commission hangs a capacity utilisation
+    // indicator on the TFP cycle and a Phillips curve on the unemployment gap:
+    // each series' deviation from the line through its first and last value,
+    // scaled and shifted, plus noise from a generator of its own -- so the flag
+    // moves no number already there. Each loads on a constant and on both
+    // cycles at lags zero and one.
+    if (o.signals)
+    {
+        const arma::uword m = kk;
+        const arma::uword lags = 1;
+        const arma::uword n_z = 1 + kk * (lags + 1);
+        write_attribute<int>(file, "/model", "n_signals", static_cast<int>(m));
+        write_attribute<int>(file, "/model", "signal_lags", static_cast<int>(lags));
+        write_attribute<int>(file, "/model", "n_signal_x", 1);
+
+        Lcg rng(20261010ULL);
+        arma::mat s(kTT, m);
+        for (arma::uword i = 0; i < m; ++i)
+        {
+            const double a = y(i, 0);
+            const double b = (y(i, kTT - 1) - y(i, 0)) / static_cast<double>(kTT - 1);
+            for (int t = 0; t < kTT; ++t)
+            {
+                const arma::uword col = static_cast<arma::uword>(t);
+                s(col, i) = 1.0 + 0.8 * (y(i, col) - a - b * t) + 0.3 * rng.normal();
+            }
+        }
+        write_mat(file, "/data/train/signal", s);
+        write_mat(file, "/data/train/signal_x", arma::mat(kTT, 1, arma::fill::ones));
+
+        ensure_group(file, "/priors/signal");
+        write_row(file, "/priors/signal/mu", arma::vec(m * n_z, arma::fill::zeros));
+        write_mat(file, "/priors/signal/v_inv", arma::eye<arma::mat>(m * n_z, m * n_z) * 0.1);
+        write_row(file, "/initial/signal", arma::vec(m * n_z, arma::fill::zeros));
+        ensure_group(file, "/priors/signal_noise");
+        write_row(file, "/priors/signal_noise/shape", arma::vec(m, arma::fill::value(3.0)));
+        write_row(file, "/priors/signal_noise/rate", arma::vec(m, arma::fill::value(0.5)));
+        write_row(file, "/initial/signal_noise_inv", arma::vec(m, arma::fill::ones));
+    }
 }
 
 /// What the horizon realised, for `--score`: the series carried on from its
@@ -2597,6 +2661,8 @@ int main(int argc, char *argv[])
     bool smooth = false;
     bool own_cycle = false;
     bool stationary_init = false;
+    bool uc_damped = false;
+    bool uc_signals = false;
     bool uc_irregular = false;
     bool uc_ald = false;
     bool skew_trend = false;
@@ -2699,6 +2765,16 @@ int main(int argc, char *argv[])
             // An unobserved components cycle started from its stationary
             // distribution rather than from zero.
             stationary_init = true;
+        }
+        else if (token == "--damped")
+        {
+            // An unobserved components trend whose slope is a stationary AR(1).
+            uc_damped = true;
+        }
+        else if (token == "--signals")
+        {
+            // Signal equations on an unobserved components cycle.
+            uc_signals = true;
         }
         else if (token == "--irregular")
         {
@@ -2829,6 +2905,8 @@ int main(int argc, char *argv[])
             options.with_break = deterministic;
             options.stationary = stationary;
             options.stationary_init = stationary_init;
+            options.damped = uc_damped;
+            options.signals = uc_signals;
             options.irregular = uc_irregular;
             options.noncentred = noncentred;
             options.ald = uc_ald;
@@ -2846,11 +2924,13 @@ int main(int argc, char *argv[])
 
             std::cout << "wrote " << dest.string() << group_suffix << " (" << model
                       << ", covar=" << covar << ", h=" << h << ", k=" << kUcK << ", tt=" << kTT
-                      << ", p=" << kUcP << ", trend=" << (smooth ? "smooth" : "rw")
+                      << ", p=" << kUcP
+                      << ", trend=" << (smooth ? "smooth" : (uc_damped ? "damped" : "rw"))
                       << ", cycle=" << (own_cycle ? "own" : "var")
                       << (deterministic ? ", break=1" : "") << (stationary ? ", stationary=1" : "")
                       << (stationary_init ? ", cycle_init=stationary" : "")
                       << (uc_irregular ? ", irregular=1" : "")
+                      << (uc_signals ? ", signals=2" : "")
                       << (noncentred ? ", noncentred=1" : "") << (uc_ald ? ", skew=ald" : "")
                       << (skew_trend ? ", skew_shock=trend" : "")
                       << (skew_index ? ", skew_index=1" : "") << (score ? ", score=1" : "")
@@ -2863,10 +2943,11 @@ int main(int argc, char *argv[])
         }
         return 0;
     }
-    if (smooth || own_cycle || stationary_init || uc_irregular || uc_ald || skew_trend || skew_index)
+    if (smooth || own_cycle || stationary_init || uc_damped || uc_signals || uc_irregular ||
+        uc_ald || skew_trend || skew_index)
     {
-        std::cerr << "--smooth, --own-cycle, --stationary-init, --irregular, --ald, --skew-trend and --skew-index "
-                     "are the unobserved components models'\n";
+        std::cerr << "--smooth, --own-cycle, --stationary-init, --damped, --signals, --irregular, "
+                     "--ald, --skew-trend and --skew-index are the unobserved components models'\n";
         return 2;
     }
 

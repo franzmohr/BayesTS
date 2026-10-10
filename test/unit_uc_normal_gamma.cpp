@@ -140,7 +140,7 @@ Params params_of(const Case &c, const arma::uword periods)
         }
     }
 
-    const arma::uword order = c.trend == UcTrend::smooth ? 2 : 1;
+    const arma::uword order = c.trend == UcTrend::random_walk ? 1 : 2;
     out.tau0 = arma::linspace<arma::vec>(1.0, 2.0, k * order);
 
     const arma::uword shocks = 2 * k;
@@ -685,6 +685,386 @@ void check_cycle_presample(const Case &c)
                 relative(arma::solve(post_vinv, post_rhs), want_s0_mean), 1e-8);
 }
 
+template <typename Input>
+Input minimal_uc_input();
+template <typename Input>
+void check_refused(const std::string &what, const Input &input, const std::string &needle);
+
+/// log N(dev; 0, cov).
+double gaussian_log_density(const arma::vec &dev, const arma::mat &cov)
+{
+    double log_det = 0.0;
+    arma::log_det_sympd(log_det, cov);
+    return -0.5 * (static_cast<double>(dev.n_elem) * std::log(2.0 * arma::datum::pi) + log_det +
+                   arma::as_scalar(arma::trans(dev) * arma::solve(cov, dev)));
+}
+
+/// The damped trend and the signal equations -- UcExtension -- against the
+/// dense joint normal of the trend, the cycle, the series and the signals:
+///
+///     tau_t - tau_{t-1} = rho (tau_{t-1} - tau_{t-2}) + C d_t + u^tau_t,
+///     s_t = B x^s_t + sum_{j=0..q} Lambda_j c_{t-j} + v_t,
+///
+/// with or without an irregular component. Checked: the path's posterior
+/// precision and mean given the series and the signals, the shocks the
+/// coefficient block regresses on and the shocks rho's regresses on, the
+/// signals' noise rebuilt from their regressors, the filtered likelihood of the
+/// series and the signals together -- through the sampler's log_likelihood(),
+/// so that the draws' layout is read as the file holds it -- and the score of a
+/// held-back stretch, which sees the series alone after the sample.
+void check_extension_case(Case c, const bool damped, const arma::uword m, const arma::uword q,
+                          const bool irregular)
+{
+    if (damped)
+    {
+        c.trend = UcTrend::damped;
+    }
+    std::printf("%s%s, %u signal(s) on %u cycle lag(s)%s\n", c.name.c_str(),
+                damped ? ", damped" : "", static_cast<unsigned>(m), static_cast<unsigned>(q),
+                irregular ? ", irregular" : "");
+    const arma::uword periods = 9;
+    const arma::uword k = static_cast<arma::uword>(c.k);
+    const arma::uword p = static_cast<arma::uword>(c.p);
+    const arma::uword w = 2 * k;
+    const arma::uword r = 1; // one regressor of the signals' own
+    VarSpec spec = spec_of(c);
+    spec.irregular = irregular;
+    spec.n_signals = static_cast<int>(m);
+    spec.signal_lags = static_cast<int>(q);
+    spec.n_signal_x = m > 0 ? static_cast<int>(r) : 0;
+    const Params pr = params_of(c, periods);
+
+    const arma::vec rho = damped ? arma::linspace<arma::vec>(0.3, 0.7, k) : arma::vec();
+    const arma::vec slope = damped ? rho : arma::ones<arma::vec>(k);
+    const arma::uword n_z = r + k * (q + 1);
+    arma::mat gamma(m, n_z);
+    for (arma::uword i = 0; i < m; i++)
+    {
+        gamma(i, 0) = 0.5 + 0.1 * static_cast<double>(i);
+        for (arma::uword j = 0; j <= q; j++)
+        {
+            for (arma::uword l = 0; l < k; l++)
+            {
+                gamma(i, r + j * k + l) =
+                    0.8 / static_cast<double>(j + 1) + 0.1 * (static_cast<double>(i) - l);
+            }
+        }
+    }
+    arma::mat sx(periods, r);
+    for (arma::uword t = 0; t < periods; t++)
+    {
+        sx(t, 0) = 1.0 + 0.1 * static_cast<double>(t);
+    }
+    const arma::vec signal_var = m > 0 ? arma::linspace<arma::vec>(0.2, 0.4, m) : arma::vec();
+    const arma::vec irregular_var = arma::linspace<arma::vec>(0.3, 0.6, k);
+    const arma::mat sigma = arma::inv_sympd(pr.q);
+
+    // nu = (e, eps, v): the 2k shocks, the irregular component and the signal
+    // noise of every period, stacked.
+    const arma::uword ne = w * periods, neps = k * periods, nv = m * periods;
+    const arma::uword nn = ne + neps + nv;
+    arma::mat noise_cov(nn, nn, arma::fill::zeros);
+    for (arma::uword t = 0; t < periods; t++)
+    {
+        noise_cov.submat(t * w, t * w, (t + 1) * w - 1, (t + 1) * w - 1) = sigma;
+        if (irregular)
+        {
+            noise_cov.submat(ne + t * k, ne + t * k, ne + (t + 1) * k - 1, ne + (t + 1) * k - 1) =
+                arma::diagmat(irregular_var);
+        }
+        if (m > 0)
+        {
+            const arma::uword at = ne + neps + t * m;
+            noise_cov.submat(at, at, at + m - 1, at + m - 1) = arma::diagmat(signal_var);
+        }
+    }
+
+    // The recursions, written out independently of the library's.
+    const auto simulate = [&](const arma::vec &nu, arma::mat &tau, arma::mat &cyc, arma::mat &y,
+                              arma::mat &s) {
+        tau.set_size(k, periods);
+        cyc.zeros(k, periods);
+        y.set_size(k, periods);
+        s.set_size(m, periods);
+        const bool order2 = c.trend != UcTrend::random_walk;
+        arma::vec last = pr.tau0.head(k);
+        arma::vec prev = order2 ? arma::vec(pr.tau0.subvec(k, 2 * k - 1)) : arma::vec();
+        for (arma::uword t = 0; t < periods; t++)
+        {
+            const arma::vec et = nu.subvec(t * w, (t + 1) * w - 1);
+            arma::vec ct = et.head(k);
+            for (arma::uword j = 1; j <= p && j <= t; j++)
+            {
+                ct += pr.phi.cols((j - 1) * k, j * k - 1) * cyc.col(t - j);
+            }
+            cyc.col(t) = ct;
+            arma::vec next = order2 ? arma::vec(last + slope % (last - prev)) : last;
+            next += et.tail(k);
+            if (c.n > 0)
+            {
+                next += pr.c * arma::trans(pr.d.row(t));
+            }
+            tau.col(t) = next;
+            if (order2)
+            {
+                prev = last;
+            }
+            last = next;
+            y.col(t) = tau.col(t) + cyc.col(t);
+            if (irregular)
+            {
+                y.col(t) += nu.subvec(ne + t * k, ne + (t + 1) * k - 1);
+            }
+            if (m > 0)
+            {
+                arma::vec st = gamma.cols(0, r - 1) * arma::trans(sx.row(t)) +
+                               nu.subvec(ne + neps + t * m, ne + neps + (t + 1) * m - 1);
+                for (arma::uword j = 0; j <= q && j <= t; j++)
+                {
+                    st += gamma.cols(r + j * k, r + (j + 1) * k - 1) * cyc.col(t - j);
+                }
+                s.col(t) = st;
+            }
+        }
+    };
+
+    // Affine maps of nu: the path x (tau_t, or (tau_t', c_t')' with an
+    // irregular component, per period) and the observations o = (vec y', vec s')'.
+    const arma::uword mx = irregular ? w : k;
+    const auto stack = [&](const arma::mat &tau, const arma::mat &cyc, const arma::mat &y,
+                           const arma::mat &s, arma::vec &x, arma::vec &o) {
+        x.set_size(mx * periods);
+        for (arma::uword t = 0; t < periods; t++)
+        {
+            x.subvec(t * mx, t * mx + k - 1) = tau.col(t);
+            if (irregular)
+            {
+                x.subvec(t * mx + k, (t + 1) * mx - 1) = cyc.col(t);
+            }
+        }
+        o = arma::join_vert(arma::vectorise(y), arma::vectorise(s));
+    };
+    arma::mat tau, cyc, y, s;
+    arma::vec x_c, o_c;
+    simulate(arma::zeros<arma::vec>(nn), tau, cyc, y, s);
+    stack(tau, cyc, y, s, x_c, o_c);
+    arma::mat a_x(x_c.n_elem, nn), b_o(o_c.n_elem, nn);
+    for (arma::uword i = 0; i < nn; i++)
+    {
+        arma::vec unit(nn, arma::fill::zeros);
+        unit(i) = 1.0;
+        arma::vec x, o;
+        simulate(unit, tau, cyc, y, s);
+        stack(tau, cyc, y, s, x, o);
+        a_x.col(i) = x - x_c;
+        b_o.col(i) = o - o_c;
+    }
+
+    // A sample.
+    arma::arma_rng::set_seed(20261010);
+    arma::vec nu(nn, arma::fill::zeros);
+    const arma::mat sigma_root = arma::chol(sigma, "lower");
+    for (arma::uword t = 0; t < periods; t++)
+    {
+        nu.subvec(t * w, (t + 1) * w - 1) = sigma_root * arma::randn<arma::vec>(w);
+        if (irregular)
+        {
+            nu.subvec(ne + t * k, ne + (t + 1) * k - 1) =
+                arma::sqrt(irregular_var) % arma::randn<arma::vec>(k);
+        }
+        if (m > 0)
+        {
+            nu.subvec(ne + neps + t * m, ne + neps + (t + 1) * m - 1) =
+                arma::sqrt(signal_var) % arma::randn<arma::vec>(m);
+        }
+    }
+    arma::mat tau_true, cyc_true, y_mat, s_mat;
+    simulate(nu, tau_true, cyc_true, y_mat, s_mat);
+    arma::vec x_true, o;
+    stack(tau_true, cyc_true, y_mat, s_mat, x_true, o);
+
+    const arma::mat cov_xo = a_x * noise_cov * arma::trans(b_o);
+    const arma::mat cov_oo = b_o * noise_cov * arma::trans(b_o);
+    const arma::mat gain = cov_xo * arma::inv_sympd(cov_oo);
+    const arma::vec want_mean = x_c + gain * (o - o_c);
+    const arma::mat want_cov = a_x * noise_cov * arma::trans(a_x) - gain * arma::trans(cov_xo);
+
+    // The band, with the extension as one draw would hand it over.
+    UcNormalGammaDraws draws;
+    draws.a = c.p > 0 ? arma::mat(arma::vectorise(pr.phi)) : arma::mat();
+    draws.c = c.n > 0 ? arma::mat(arma::vectorise(pr.c)) : arma::mat();
+    draws.tau0 = pr.tau0;
+    draws.u_sigma_inv = arma::vectorise(pr.q);
+    if (irregular)
+    {
+        draws.irregular_inv = 1.0 / irregular_var;
+    }
+    if (damped)
+    {
+        draws.rho = rho;
+    }
+    if (m > 0)
+    {
+        draws.signal = arma::vectorise(gamma);
+        draws.signal_noise_inv = 1.0 / signal_var;
+    }
+    const arma::mat s_file = arma::trans(s_mat); // tt x m, as the file holds it
+    core::UcExtension ext;
+    ext.rho = rho;
+    ext.signal = core::uc_signal_terms_at(spec, draws.signal, draws.signal_noise_inv, s_file, sx, 0);
+    const arma::mat drift = core::drift_path(pr.c, pr.d, k, periods);
+    core::UcTrendBand band =
+        irregular ? core::uc_state_band(spec, y_mat, pr.phi, drift, pr.tau0, pr.q,
+                                        1.0 / irregular_var, arma::mat(), arma::vec(), ext)
+                  : core::uc_trend_band(spec, y_mat, pr.phi, drift, pr.tau0, pr.q, arma::mat(),
+                                        arma::vec(), ext);
+    arma::mat kk(mx * periods, mx * periods, arma::fill::zeros);
+    for (arma::uword i = 0; i < periods; i++)
+    {
+        for (arma::uword d = 0; d <= band.band && i + d < periods; d++)
+        {
+            const arma::mat &blk = band.blocks[i * (band.band + 1) + d];
+            kk.submat(i * mx, (i + d) * mx, (i + 1) * mx - 1, (i + d + 1) * mx - 1) = blk;
+            if (d > 0)
+            {
+                kk.submat((i + d) * mx, i * mx, (i + d + 1) * mx - 1, (i + 1) * mx - 1) =
+                    arma::trans(blk);
+            }
+        }
+    }
+    check_below("path precision against the joint normal's", relative(arma::inv_sympd(kk), want_cov), 1e-9);
+    check_below("path mean against the joint normal's",
+                relative(arma::solve(kk, arma::vectorise(band.rhs)), want_mean), 1e-9);
+
+    // The shocks, rebuilt from the true path by the coefficient block's
+    // regression and, for a damped trend, by rho's.
+    const arma::uvec positions = c.p > 0 ? core::cycle_positions(spec) : arma::uvec();
+    const arma::vec theta = arma::join_vert(arma::vec(arma::vectorise(pr.phi).eval().elem(positions)),
+                                            arma::vec(arma::vectorise(pr.c)), pr.tau0);
+    const core::ShockRegression reg = core::shock_regression_paths(
+        spec, tau_true, cyc_true, pr.d, positions, arma::vec(), rho);
+    arma::vec rebuilt(ne);
+    arma::mat cycle_shocks(k, periods);
+    for (arma::uword t = 0; t < periods; t++)
+    {
+        rebuilt.subvec(t * w, (t + 1) * w - 1) = reg.w.col(t) - reg.x.slice(t) * theta;
+        cycle_shocks.col(t) = nu.subvec(t * w, t * w + k - 1);
+    }
+    check_below("shocks rebuilt from the path against the generating ones",
+                relative(rebuilt, nu.head(ne)), 1e-9);
+    if (damped)
+    {
+        const core::ShockRegression rho_reg =
+            core::damped_rho_regression(spec, tau_true, cycle_shocks, drift, pr.tau0);
+        for (arma::uword t = 0; t < periods; t++)
+        {
+            rebuilt.subvec(t * w, (t + 1) * w - 1) = rho_reg.w.col(t) - rho_reg.x.slice(t) * rho;
+        }
+        check_below("shocks rebuilt by rho's regression against the generating ones",
+                    relative(rebuilt, nu.head(ne)), 1e-9);
+    }
+    if (m > 0)
+    {
+        const arma::mat z = core::signal_regressors(arma::trans(sx), cyc_true, q);
+        check_below("signal noise rebuilt from the regressors against the generating noise",
+                    relative(arma::vectorise(s_mat - gamma * z), nu.tail(nv)), 1e-9);
+    }
+
+    // The likelihood of the series and the signals together.
+    UcNormalGammaInput input;
+    input.spec = spec;
+    input.train.y = arma::trans(y_mat);
+    input.train.x = pr.d;
+    input.train_signal = s_file;
+    input.train_signal_x = m > 0 ? sx : arma::mat();
+    const arma::mat ll = UcNormalGammaSampler{}.log_likelihood(input, draws);
+    const double want_ll = gaussian_log_density(o - o_c, cov_oo);
+    check_below("filtered log likelihood against the joint normal's",
+                std::abs(arma::accu(ll) - want_ll) / std::abs(want_ll), 1e-10);
+
+    // The last three periods held back: their score is the density of the
+    // series there given the sample's series and signals and the periods before.
+    const arma::uword head = periods - 3;
+    UcNormalGammaInput scored = input;
+    scored.spec.h = 3;
+    scored.train.y = arma::trans(y_mat.cols(0, head - 1));
+    scored.train.x = c.n > 0 ? arma::mat(pr.d.head_rows(head)) : arma::mat();
+    scored.forecast.x = c.n > 0 ? arma::mat(pr.d.tail_rows(3)) : arma::mat();
+    scored.test.y = arma::trans(y_mat.cols(head, periods - 1));
+    scored.train_signal = m > 0 ? arma::mat(s_file.head_rows(head)) : arma::mat();
+    scored.train_signal_x = m > 0 ? arma::mat(sx.head_rows(head)) : arma::mat();
+    const arma::mat score = UcNormalGammaSampler{}.predictive_log_density(scored, draws);
+    // Which entries of o are observed: all of y, and the signals of the head.
+    std::vector<arma::uword> with_tail, head_only;
+    for (arma::uword t = 0; t < periods; t++)
+    {
+        for (arma::uword i = 0; i < k; i++)
+        {
+            with_tail.push_back(t * k + i);
+            if (t < head)
+            {
+                head_only.push_back(t * k + i);
+            }
+        }
+    }
+    for (arma::uword t = 0; t < head; t++)
+    {
+        for (arma::uword i = 0; i < m; i++)
+        {
+            with_tail.push_back(k * periods + t * m + i);
+            head_only.push_back(k * periods + t * m + i);
+        }
+    }
+    const arma::uvec all_idx = arma::conv_to<arma::uvec>::from(with_tail);
+    const arma::uvec head_idx = arma::conv_to<arma::uvec>::from(head_only);
+    const arma::vec dev = o - o_c;
+    const double want_score =
+        gaussian_log_density(dev.elem(all_idx), cov_oo.submat(all_idx, all_idx)) -
+        gaussian_log_density(dev.elem(head_idx), cov_oo.submat(head_idx, head_idx));
+    check_below("score of a held-back stretch against the joint normal's",
+                std::abs(arma::accu(score) - want_score) / std::abs(want_score), 1e-9);
+}
+
+/// The damped trend and the signal equations where they cannot be read.
+void check_extension_refusals()
+{
+    std::printf("damped trend and signals refused where they cannot be read\n");
+
+    auto stochvol = minimal_uc_input<UcNormalStochvolInput>();
+    stochvol.spec.trend = UcTrend::damped;
+    check_refused("damped by UcNormalStochvol", stochvol,
+                  "UcNormalStochvol does not read /model/trend damped");
+
+    auto skew = minimal_uc_input<UcNormalSkewInput>();
+    skew.spec.n_signals = 1;
+    check_refused("signals by UcNormalSkew", skew, "UcNormalSkew does not read signal equations");
+
+    auto gamma = minimal_uc_input<UcNormalGammaInput>();
+    gamma.spec.signal_lags = 1;
+    check_refused("signal_lags without n_signals", gamma, "n_signals is zero");
+
+    gamma = minimal_uc_input<UcNormalGammaInput>();
+    gamma.spec.n_signals = 1;
+    gamma.spec.stationary = true;
+    gamma.spec.cycle_init = UcCycleInit::stationary;
+    check_refused("signals with cycle_init stationary", gamma,
+                  "not combined with /model/cycle_init stationary");
+
+    gamma = minimal_uc_input<UcNormalGammaInput>();
+    gamma.spec.n_signals = 1;
+    check_refused("signals without their data", gamma, "/data/train/signal must be 12 x 1");
+
+    auto wishart = minimal_uc_input<UcNormalWishartInput>();
+    wishart.spec.trend = UcTrend::damped;
+    wishart.initial.tau0 = arma::ones<arma::vec>(2);
+    wishart.tau0_prior.mu = arma::ones<arma::vec>(2);
+    wishart.tau0_prior.v_inv = arma::eye<arma::mat>(2, 2);
+    wishart.rho_prior.mu = arma::zeros<arma::vec>(1);
+    wishart.rho_prior.v_inv = arma::eye<arma::mat>(1, 1);
+    wishart.initial.rho = arma::vec{1.0};
+    check_refused("an initial rho of one", wishart, "/initial/rho must lie in (-1, 1)");
+}
+
 /// Fills the parts of an unobserved components input every member validates
 /// the same way: one series over twelve periods, an AR(1) cycle, no drift.
 template <typename Input>
@@ -931,6 +1311,41 @@ int main()
     check_cycle_presample(c);
 
     check_cycle_init_refusals();
+
+    // The damped trend of the European Commission's TFP model and the signal
+    // equations of its capacity utilisation and Phillips curve.
+    c = Case{};
+    c.name = "one series, AR(2) cycle, constant drift";
+    c.p = 2;
+    c.n = 1;
+    check_extension_case(c, true, 0, 0, false);
+    check_extension_case(c, false, 1, 0, false);
+    check_extension_case(c, true, 1, 0, false);
+    check_extension_case(c, true, 1, 3, false);
+    check_extension_case(c, true, 2, 1, true);
+
+    c = Case{};
+    c.name = "two series, VAR(2) cycle, correlated, a break";
+    c.k = 2;
+    c.p = 2;
+    c.n = 2;
+    c.correlated = true;
+    check_extension_case(c, true, 2, 1, false);
+    check_extension_case(c, false, 1, 2, true);
+
+    c = Case{};
+    c.name = "local level, white noise cycle";
+    check_extension_case(c, false, 1, 1, false);
+
+    c = Case{};
+    c.name = "two series, own-lags AR(1) cycles, smooth";
+    c.k = 2;
+    c.p = 1;
+    c.cycle = UcCycle::own;
+    c.trend = UcTrend::smooth;
+    check_extension_case(c, false, 1, 0, false);
+
+    check_extension_refusals();
 
     check_skew();
 

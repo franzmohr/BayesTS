@@ -105,6 +105,29 @@ estimates near zero; with `/model/cycle_init = "stationary"` (and
 before the sample from the cycle's stationary distribution instead, and the log
 likelihood integrates them out.
 
+`UcNormalGamma` and `UcNormalWishart` nest the European Commission's production
+function method (Havik et al. 2014), whose trend-cycle models hang an observed
+indicator on the cycle. With `/model/trend = "damped"` the trend's slope is a
+stationary AR(1), `Delta tau_t = rho Delta tau_{t-1} + C d_t + u_t`, one `rho`
+per series drawn inside (-1, 1) under a normal prior at `/priors/rho` (start at
+`/initial/rho`, draws at `/posterior/rho/coeffs`). This is the EC's TFP trend;
+`rho = 1` would be the smooth trend. **Signal equations** add `n_signals`
+observed series, each a regression on `n_signal_x` regressors of its own and on
+the cycle at lags 0 to `signal_lags`:
+`s_t = B x^s_t + sum_j Lambda_j c_{t-j} + v_t`, with independent noise. The
+capacity utilisation indicator on the TFP cycle and the wage Phillips curve on
+the unemployment gap are both of that form; a lagged dependent variable or the
+Phillips curve's other terms go in `x^s`. The signals sit at
+`/data/train/signal` (`tt` by `n_signals`) and `/data/train/signal_x` (`tt` by
+`n_signal_x`). A normal prior over `vec([B Lambda_0 .. Lambda_q])` sits at
+`/priors/signal`, column by column with the own regressors first, and gamma
+priors on the noise precisions at `/priors/signal_noise`. The draws are written
+to `/posterior/signal/coeffs` and `/posterior/signal_noise_inv/coeffs`. A
+signal informs the cycle, and through it the trend, but is never forecast. The
+log likelihood of a sample period is then the joint density of the series and
+the signals; a scored period has only the series. The two other `Uc*` models
+refuse both, and signals are not combined with `cycle_init = "stationary"`.
+
 **An equation can be restricted to carry no coefficients.** `/model/n_iid`
 names endogenous variables, ordered first, whose equations have no lags, no
 deterministic terms and nothing else — white noise, related to the rest of the
