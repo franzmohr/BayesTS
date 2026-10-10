@@ -32,6 +32,8 @@
 /// a shock precision with and without a covariance block.
 
 #include "bayests/uc_normal_gamma.h"
+#include "bayests/uc_normal_skew.h"
+#include "bayests/uc_normal_stochvol.h"
 
 #include "core/algorithms/chan_jeliazkov_2009.h"
 #include "core/models/uc_skew_support.h"
@@ -39,6 +41,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <stdexcept>
 #include <string>
 
 using namespace bayests;
@@ -168,8 +171,10 @@ struct Dense
     arma::mat b; ///< kT x 2kT, the series.
 };
 
+/// `s0`, where given, is the cycle before the sample, (c_0', .., c_1-p')', in
+/// place of the zeros.
 void run(const Case &c, const Params &pr, const arma::vec &e, arma::vec &tau_out, arma::vec &y_out,
-         const arma::uword periods)
+         const arma::uword periods, const arma::vec &s0 = arma::vec())
 {
     const arma::uword k = static_cast<arma::uword>(c.k);
     const arma::uword p = static_cast<arma::uword>(c.p);
@@ -181,9 +186,17 @@ void run(const Case &c, const Params &pr, const arma::vec &e, arma::vec &tau_out
     {
         const arma::vec et = e.subvec(t * 2 * k, (t + 1) * 2 * k - 1);
         arma::vec ct = et.head(k);
-        for (arma::uword j = 1; j <= p && j <= t; j++)
+        for (arma::uword j = 1; j <= p; j++)
         {
-            ct += pr.phi.cols((j - 1) * k, j * k - 1) * cyc.col(t - j);
+            if (j <= t)
+            {
+                ct += pr.phi.cols((j - 1) * k, j * k - 1) * cyc.col(t - j);
+            }
+            else if (s0.n_elem > 0)
+            {
+                const arma::uword i = j - t - 1;
+                ct += pr.phi.cols((j - 1) * k, j * k - 1) * s0.subvec(i * k, (i + 1) * k - 1);
+            }
         }
         cyc.col(t) = ct;
         arma::vec next = smooth ? arma::vec(2.0 * last - prev) : last;
@@ -510,6 +523,232 @@ void check_general_case(const Case &c, const bool irregular, const bool moving,
                 std::abs(arma::accu(ll) - want_ll) / std::abs(want_ll), 1e-10);
 }
 
+/// The cycle started from its stationary distribution, UcCycleInit::stationary,
+/// against the dense joint normal of the shocks and s_0 = (c_0', .., c_1-p')':
+///
+///   * Gamma solves its Lyapunov equation;
+///   * given s_0 the trend's band, with the lags before the sample moved into
+///     its right hand side, is the covariance and mean of tau given y and s_0;
+///   * the shock regression with s_0 rebuilds the generating shocks;
+///   * the filter started from P_0 = Gamma in the cycle block is the log density
+///     of y with s_0 integrated out;
+///   * the posterior of s_0 given the path is s_0 given (tau, c) in that normal.
+void check_cycle_presample(const Case &c)
+{
+    std::printf("%s, cycle started from its stationary distribution\n", c.name.c_str());
+    const arma::uword periods = 9;
+    const arma::uword k = static_cast<arma::uword>(c.k);
+    const arma::uword p = static_cast<arma::uword>(c.p);
+    const arma::uword w = 2 * k;
+    const arma::uword n0 = k * p;
+    VarSpec spec = spec_of(c);
+    spec.stationary = true;
+    spec.cycle_init = UcCycleInit::stationary;
+    const Params pr = params_of(c, periods);
+    const arma::mat sigma = arma::inv_sympd(pr.q);
+    const arma::mat sigma_c = sigma.submat(0, 0, k - 1, k - 1);
+
+    // Gamma.
+    const arma::mat gamma = core::cycle_stationary_covariance(pr.phi, sigma_c);
+    arma::mat f(n0, n0, arma::fill::zeros);
+    f.rows(0, k - 1) = pr.phi;
+    if (n0 > k)
+    {
+        f.submat(k, 0, n0 - 1, n0 - k - 1) = arma::eye<arma::mat>(n0 - k, n0 - k);
+    }
+    arma::mat e_sigma(n0, n0, arma::fill::zeros);
+    e_sigma.submat(0, 0, k - 1, k - 1) = sigma_c;
+    check_below("Gamma solves Gamma = F Gamma F' + E Sigma_c E'",
+                relative(f * gamma * arma::trans(f) + e_sigma, gamma), 1e-10);
+
+    // The noise nu = (e', s_0')' and its covariance.
+    const arma::uword ne = w * periods;
+    const arma::uword nn = ne + n0;
+    arma::mat noise_cov(nn, nn, arma::fill::zeros);
+    for (arma::uword t = 0; t < periods; t++)
+    {
+        noise_cov.submat(t * w, t * w, (t + 1) * w - 1, (t + 1) * w - 1) = sigma;
+    }
+    noise_cov.submat(ne, ne, nn - 1, nn - 1) = gamma;
+
+    const auto simulate = [&](const arma::vec &nu, arma::vec &tau_out, arma::vec &cyc_out,
+                              arma::vec &y_out) {
+        run(c, pr, nu.head(ne), tau_out, y_out, periods, nu.tail(n0));
+        cyc_out = y_out - tau_out;
+    };
+    const arma::vec nu0(nn, arma::fill::zeros);
+    arma::vec tau_c, cyc_c, y_c;
+    simulate(nu0, tau_c, cyc_c, y_c);
+    arma::mat a_tau(k * periods, nn), a_cyc(k * periods, nn), b(k * periods, nn);
+    for (arma::uword i = 0; i < nn; i++)
+    {
+        arma::vec unit = nu0;
+        unit(i) = 1.0;
+        arma::vec tau, cyc, y;
+        simulate(unit, tau, cyc, y);
+        a_tau.col(i) = tau - tau_c;
+        a_cyc.col(i) = cyc - cyc_c;
+        b.col(i) = y - y_c;
+    }
+
+    arma::arma_rng::set_seed(20261010);
+    const arma::vec nu = arma::chol(noise_cov, "lower") *
+                         arma::randn<arma::vec>(nn);
+    const arma::vec s0 = nu.tail(n0);
+    const arma::vec y = y_c + b * nu;
+    const arma::mat y_mat = arma::reshape(y, k, periods);
+    const arma::mat tau_true = arma::reshape(tau_c + a_tau * nu, k, periods);
+    const arma::mat cyc_true = arma::reshape(cyc_c + a_cyc * nu, k, periods);
+    const arma::mat drift = core::drift_path(pr.c, pr.d, k, periods);
+
+    // tau given y and s_0: the normal over e alone, s_0 moved into the constant.
+    const arma::mat a_e = a_tau.cols(0, ne - 1), b_e = b.cols(0, ne - 1);
+    const arma::vec tau_at = tau_c + a_tau.cols(ne, nn - 1) * s0;
+    const arma::vec y_at = y_c + b.cols(ne, nn - 1) * s0;
+    const arma::mat cov_e = noise_cov.submat(0, 0, ne - 1, ne - 1);
+    const arma::mat gain_e = a_e * cov_e * arma::trans(b_e) * arma::inv_sympd(b_e * cov_e * arma::trans(b_e));
+    const arma::vec want_mean = tau_at + gain_e * (y - y_at);
+    const arma::mat want_cov = a_e * cov_e * arma::trans(a_e) - gain_e * b_e * cov_e * arma::trans(a_e);
+    core::UcTrendBand band = core::uc_trend_band(spec, y_mat, pr.phi, drift, pr.tau0, pr.q,
+                                                 arma::mat(), s0);
+    arma::mat kk(k * periods, k * periods, arma::fill::zeros);
+    for (arma::uword i = 0; i < periods; i++)
+    {
+        for (arma::uword d = 0; d <= band.band && i + d < periods; d++)
+        {
+            const arma::mat &blk = band.blocks[i * (band.band + 1) + d];
+            kk.submat(i * k, (i + d) * k, (i + 1) * k - 1, (i + d + 1) * k - 1) = blk;
+            if (d > 0)
+            {
+                kk.submat((i + d) * k, i * k, (i + d + 1) * k - 1, (i + 1) * k - 1) = arma::trans(blk);
+            }
+        }
+    }
+    check_below("trend precision given s_0 against the joint normal's",
+                relative(arma::inv_sympd(kk), want_cov), 1e-9);
+    check_below("trend mean given s_0 against the joint normal's",
+                relative(arma::solve(kk, arma::vectorise(band.rhs)), want_mean), 1e-9);
+
+    // The shocks.
+    const arma::uvec positions = core::cycle_positions(spec);
+    const arma::vec theta = arma::join_vert(arma::vec(arma::vectorise(pr.phi).eval().elem(positions)),
+                                            arma::vec(arma::vectorise(pr.c)), pr.tau0);
+    const core::ShockRegression reg =
+        core::shock_regression_paths(spec, tau_true, cyc_true, pr.d, positions, s0);
+    arma::vec rebuilt(ne);
+    for (arma::uword t = 0; t < periods; t++)
+    {
+        rebuilt.subvec(t * w, (t + 1) * w - 1) = reg.w.col(t) - reg.x.slice(t) * theta;
+    }
+    check_below("shocks rebuilt with s_0 against the generating ones",
+                relative(rebuilt, nu.head(ne)), 1e-9);
+
+    // The filter, s_0 integrated out.
+    const core::UcStateSpace ss = core::state_space(spec, pr.phi, sigma);
+    const arma::rowvec ll = core::filter_log_density(ss, y_mat, drift, pr.tau0,
+                                                     core::UcFilterTerms(), gamma);
+    const arma::mat cov_yy = b * noise_cov * arma::trans(b);
+    double log_det = 0.0;
+    arma::log_det_sympd(log_det, cov_yy);
+    const arma::vec dev = y - y_c;
+    const double want_ll = -0.5 * (static_cast<double>(k * periods) * std::log(2.0 * arma::datum::pi) +
+                                   log_det + arma::as_scalar(arma::trans(dev) * arma::solve(cov_yy, dev)));
+    check_below("filter from Gamma against the joint normal's log density",
+                std::abs(arma::accu(ll) - want_ll) / std::abs(want_ll), 1e-10);
+
+    // s_0 given the path.
+    const core::ShockRegression zero =
+        core::shock_regression_paths(spec, tau_true, cyc_true, pr.d, positions);
+    arma::mat shocks_zero(w, periods);
+    for (arma::uword t = 0; t < periods; t++)
+    {
+        shocks_zero.col(t) = zero.w.col(t) - zero.x.slice(t) * theta;
+    }
+    arma::mat post_vinv;
+    arma::vec post_rhs;
+    core::cycle_presample_posterior(pr.phi, gamma, shocks_zero, pr.q, post_vinv, post_rhs);
+    const arma::mat a_path = arma::join_vert(a_tau, a_cyc);
+    const arma::vec path_c = arma::join_vert(tau_c, cyc_c);
+    const arma::vec path = arma::join_vert(arma::vectorise(tau_true), arma::vectorise(cyc_true));
+    arma::mat a_s0(n0, nn, arma::fill::zeros);
+    a_s0.cols(ne, nn - 1) = arma::eye<arma::mat>(n0, n0);
+    const arma::mat cov_pp = a_path * noise_cov * arma::trans(a_path);
+    const arma::mat cov_sp = a_s0 * noise_cov * arma::trans(a_path);
+    // The path is 2kT long and a function of 2kT + kp noises, so cov_pp is
+    // full rank; pinv rather than inv only for its conditioning.
+    const arma::mat gain_s = cov_sp * arma::pinv(cov_pp);
+    const arma::vec want_s0_mean = gain_s * (path - path_c);
+    const arma::mat want_s0_cov = gamma - gain_s * arma::trans(cov_sp);
+    check_below("s_0 posterior covariance against the joint normal's",
+                relative(arma::inv_sympd(post_vinv), want_s0_cov), 1e-8);
+    check_below("s_0 posterior mean against the joint normal's",
+                relative(arma::solve(post_vinv, post_rhs), want_s0_mean), 1e-8);
+}
+
+/// Fills the parts of an unobserved components input every member validates
+/// the same way: one series over twelve periods, an AR(1) cycle, no drift.
+template <typename Input>
+Input minimal_uc_input()
+{
+    Input input;
+    input.spec.k = 1;
+    input.spec.p = 1;
+    input.spec.iterations = 1;
+    input.train.y = arma::linspace<arma::mat>(1.0, 2.0, 12);
+    input.a_prior.mu = arma::zeros<arma::vec>(1);
+    input.a_prior.v_inv = arma::eye<arma::mat>(1, 1);
+    input.initial.a = arma::vec{0.5};
+    input.tau0_prior.mu = arma::ones<arma::vec>(1);
+    input.tau0_prior.v_inv = arma::eye<arma::mat>(1, 1);
+    input.initial.tau0 = arma::ones<arma::vec>(1);
+    return input;
+}
+
+/// Whether validate() refuses `input` with a message containing `needle`.
+template <typename Input>
+void check_refused(const std::string &what, const Input &input, const std::string &needle)
+{
+    std::string message;
+    try
+    {
+        input.validate();
+    }
+    catch (const std::invalid_argument &e)
+    {
+        message = e.what();
+    }
+    const bool ok = message.find(needle) != std::string::npos;
+    std::printf("  %-62s %s\n", what.c_str(), ok ? "ok" : "FAILED");
+    if (!ok)
+    {
+        std::printf("    got: %s\n", message.empty() ? "(no refusal)" : message.c_str());
+        failures++;
+    }
+}
+
+/// /model/cycle_init stationary where it cannot be read.
+void check_cycle_init_refusals()
+{
+    std::printf("cycle_init stationary refused where it cannot be read\n");
+
+    auto gamma = minimal_uc_input<UcNormalGammaInput>();
+    gamma.spec.cycle_init = UcCycleInit::stationary;
+    check_refused("without /model/stationary", gamma, "needs /model/stationary");
+    gamma.spec.stationary = true;
+    gamma.spec.p = 0;
+    check_refused("with a white noise cycle, p = 0", gamma, "needs a cycle with lags");
+
+    auto stochvol = minimal_uc_input<UcNormalStochvolInput>();
+    stochvol.spec.cycle_init = UcCycleInit::stationary;
+    stochvol.spec.stationary = true;
+    check_refused("by UcNormalStochvol", stochvol, "UcNormalStochvol does not read /model/cycle_init");
+
+    auto skew = minimal_uc_input<UcNormalSkewInput>();
+    skew.spec.cycle_init = UcCycleInit::stationary;
+    skew.spec.stationary = true;
+    check_refused("by UcNormalSkew", skew, "UcNormalSkew does not read /model/cycle_init");
+}
+
 /// int_0^inf g(L) p(L) dL for the latent's density p -- the half normal or the
 /// unit exponential -- by Simpson's rule in u = sqrt(L), which takes out the
 /// square root singularity the asymmetric Laplace's mixture has at zero.
@@ -667,6 +906,31 @@ int main()
     c.correlated = true;
     check_general_case(c, true, true, true);
     check_general_case(c, false, true, true);
+
+    c = Case{};
+    c.name = "Clark: one series, AR(2) cycle, constant drift";
+    c.p = 2;
+    c.n = 1;
+    check_cycle_presample(c);
+
+    c = Case{};
+    c.name = "two series, VAR(2) cycle, correlated, smooth";
+    c.k = 2;
+    c.p = 2;
+    c.trend = UcTrend::smooth;
+    c.correlated = true;
+    check_cycle_presample(c);
+
+    c = Case{};
+    c.name = "two series, own-lags AR(1) cycles, correlated, a break";
+    c.k = 2;
+    c.p = 1;
+    c.n = 2;
+    c.cycle = UcCycle::own;
+    c.correlated = true;
+    check_cycle_presample(c);
+
+    check_cycle_init_refusals();
 
     check_skew();
 

@@ -99,6 +99,11 @@ moves at all, and with one series and no cycle lags it is the UCSV model of
 Stock and Watson (2007) -- and `UcNormalSkew` is the skewed model of Huang, Luo
 and Wang (2026), whose cycle shocks' asymmetry moves with an uncertainty index.
 Each of the four can add an irregular component, `y_t = tau_t + c_t + eps_t`.
+The cycle is zero before the sample, as in Grant and Chan, which pins its first
+estimates near zero; with `/model/cycle_init = "stationary"` (and
+`/model/stationary`) `UcNormalGamma` and `UcNormalWishart` draw the `p` values
+before the sample from the cycle's stationary distribution instead, and the log
+likelihood integrates them out.
 
 **An equation can be restricted to carry no coefficients.** `/model/n_iid`
 names endogenous variables, ordered first, whose equations have no lags, no

@@ -39,6 +39,7 @@ UcNormalGammaDraws read_coefficients(const ModelFile &file)
     read_draws_if_present(file, "/posterior/psi/coeffs", draws.psi);
     read_draws_if_present(file, "/posterior/u_omega_inv/coeffs", draws.u_omega_inv);
     read_draws_if_present(file, "/posterior/u_sigma_inv/coeffs", draws.u_sigma_inv);
+    read_draws_if_present(file, "/posterior/cycle0/coeffs", draws.cycle0);
     return draws;
 }
 
@@ -52,6 +53,11 @@ void write_coefficients(const ModelFile &file, const UcNormalGammaDraws &draws)
     }
     write_draws(file, "/posterior/u_omega_inv/coeffs", draws.u_omega_inv);
     write_draws(file, "/posterior/u_sigma_inv/coeffs", draws.u_sigma_inv);
+    // The cycle before the sample, under /model/cycle_init stationary only.
+    if (draws.cycle0.n_elem > 0)
+    {
+        write_draws(file, "/posterior/cycle0/coeffs", draws.cycle0);
+    }
 }
 
 } // namespace bayests::hdf5_io::uc_normal_gamma

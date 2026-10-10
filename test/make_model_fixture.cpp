@@ -109,6 +109,10 @@
 //                 UcNormalGamma only: writes /model/trend = "smooth", the trend
 //                 whose second difference is the shock, with no drift and a
 //                 tau0 of two periods.
+//     --stationary-init
+//                 UcNormalGamma and UcNormalWishart: writes /model/cycle_init =
+//                 "stationary" together with /model/stationary, the cycle
+//                 before the sample drawn from its stationary distribution.
 //     --own-cycle
 //                 The unobserved components models: writes /model/cycle = "own",
 //                 each cycle an AR(p) in its own lags. --smooth is theirs too.
@@ -2314,6 +2318,7 @@ struct UcOptions
     bool own_cycle = false;
     bool with_break = false;
     bool stationary = false;
+    bool stationary_init = false; ///< /model/cycle_init stationary, which needs stationary.
     bool irregular = false;
     bool noncentred = false; ///< UcNormalStochvol: omega_v on the log-volatilities.
     bool ald = false;        ///< UcNormalSkew: the asymmetric Laplace.
@@ -2372,9 +2377,13 @@ void write_uc_model(const ModelFile &file, const arma::mat &y, const UcOptions &
     write_attribute<std::string>(file, "/model", "error", error);
     write_attribute<std::string>(file, "/model", "trend", o.smooth ? "smooth" : "rw");
     write_attribute<std::string>(file, "/model", "cycle", o.own_cycle ? "own" : "var");
-    if (o.stationary)
+    if (o.stationary || o.stationary_init)
     {
         write_attribute<bool>(file, "/model", "stationary", true);
+    }
+    if (o.stationary_init)
+    {
+        write_attribute<std::string>(file, "/model", "cycle_init", "stationary");
     }
     if (o.irregular)
     {
@@ -2587,6 +2596,7 @@ int main(int argc, char *argv[])
     bool scenario = false;
     bool smooth = false;
     bool own_cycle = false;
+    bool stationary_init = false;
     bool uc_irregular = false;
     bool uc_ald = false;
     bool skew_trend = false;
@@ -2683,6 +2693,12 @@ int main(int argc, char *argv[])
         {
             // An unobserved components cycle in its own lags only.
             own_cycle = true;
+        }
+        else if (token == "--stationary-init")
+        {
+            // An unobserved components cycle started from its stationary
+            // distribution rather than from zero.
+            stationary_init = true;
         }
         else if (token == "--irregular")
         {
@@ -2812,6 +2828,7 @@ int main(int argc, char *argv[])
             options.own_cycle = own_cycle;
             options.with_break = deterministic;
             options.stationary = stationary;
+            options.stationary_init = stationary_init;
             options.irregular = uc_irregular;
             options.noncentred = noncentred;
             options.ald = uc_ald;
@@ -2832,6 +2849,7 @@ int main(int argc, char *argv[])
                       << ", p=" << kUcP << ", trend=" << (smooth ? "smooth" : "rw")
                       << ", cycle=" << (own_cycle ? "own" : "var")
                       << (deterministic ? ", break=1" : "") << (stationary ? ", stationary=1" : "")
+                      << (stationary_init ? ", cycle_init=stationary" : "")
                       << (uc_irregular ? ", irregular=1" : "")
                       << (noncentred ? ", noncentred=1" : "") << (uc_ald ? ", skew=ald" : "")
                       << (skew_trend ? ", skew_shock=trend" : "")
@@ -2845,9 +2863,9 @@ int main(int argc, char *argv[])
         }
         return 0;
     }
-    if (smooth || own_cycle || uc_irregular || uc_ald || skew_trend || skew_index)
+    if (smooth || own_cycle || stationary_init || uc_irregular || uc_ald || skew_trend || skew_index)
     {
-        std::cerr << "--smooth, --own-cycle, --irregular, --ald, --skew-trend and --skew-index "
+        std::cerr << "--smooth, --own-cycle, --stationary-init, --irregular, --ald, --skew-trend and --skew-index "
                      "are the unobserved components models'\n";
         return 2;
     }
