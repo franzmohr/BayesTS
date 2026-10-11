@@ -75,6 +75,8 @@ def main():
                     continue  # a multi-model file
                 if any(f"data/{s}/constraints" in f for s in ("train", "test", "forecast")):
                     continue  # constraints of its own already
+                if bool(f["model"].attrs.get("structural", False)):
+                    continue  # a structural form is refused beside constraints by design
                 if "data/test/y" in f:
                     scored.setdefault(algorithm_of(f), path)
                     continue
