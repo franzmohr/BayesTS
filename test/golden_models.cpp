@@ -131,6 +131,8 @@ constexpr const char *kOutputs[] = {
     "/posterior/a/theta",
     // The unconditional mean under the steady-state prior.
     "/posterior/mu/coeffs",
+    // The free scales and decay rate of a volatility break.
+    "/posterior/volatility/coeffs",
     "/posterior/v_sigma_inv/coeffs",
     "/posterior/psi/coeffs",
     "/posterior/psi/lambda",

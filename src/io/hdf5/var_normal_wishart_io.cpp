@@ -62,6 +62,22 @@ VarNormalWishartInput read_input(const ModelFile &file)
         input.mu_prior = read_normal_prior(file, "/priors/mu");
     }
     read_vec_if_present(file, "/initial/mu", input.initial.mu);
+
+    // The volatility break's prior and start, where the file has them: a Pareto
+    // shape for the free scales and a beta on the decay rate, all scalars.
+    if (file.exist("/priors/volatility/shape"))
+    {
+        input.volatility_prior.shape = get_dataset_double(file, "/priors/volatility/shape");
+    }
+    if (file.exist("/priors/volatility/rho_shape1"))
+    {
+        input.volatility_prior.rho_shape1 = get_dataset_double(file, "/priors/volatility/rho_shape1");
+    }
+    if (file.exist("/priors/volatility/rho_shape2"))
+    {
+        input.volatility_prior.rho_shape2 = get_dataset_double(file, "/priors/volatility/rho_shape2");
+    }
+    read_vec_if_present(file, "/initial/volatility", input.initial.volatility);
     return input;
 }
 
@@ -95,6 +111,10 @@ VarNormalWishartDraws read_coefficients(const ModelFile &file)
     {
         draws.mu = read_draws(file, "/posterior/mu/coeffs");
     }
+    if (dataset_has_data(file, "/posterior/volatility/coeffs"))
+    {
+        draws.volatility = read_draws(file, "/posterior/volatility/coeffs");
+    }
     return draws;
 }
 
@@ -123,6 +143,10 @@ void write_coefficients(const ModelFile &file, const VarNormalWishartDraws &draw
     if (draws.has_constraints_inv())
     {
         write_draws(file, "/posterior/constraints_inv/coeffs", draws.constraints_inv);
+    }
+    if (draws.has_volatility())
+    {
+        write_draws(file, "/posterior/volatility/coeffs", draws.volatility);
     }
 }
 

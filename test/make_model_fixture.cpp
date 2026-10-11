@@ -105,6 +105,13 @@
 //                 writes /model/steady_state = true, a normal prior on the
 //                 unconditional mean at /priors/mu and its start at /initial/mu.
 //                 The same three only, without --shrinkage.
+//     --volatility-break
+//                 VarNormalWishart only: writes /model/volatility_break at the
+//                 fifth period from the end, three free scales, a Pareto(1)
+//                 prior on them and the beta of Lenza and Primiceri (2022) on
+//                 the decay, at /priors/volatility, and a start at
+//                 /initial/volatility. Not with --steady-state or a panel or
+//                 horizon not observed whole.
 //     --smooth
 //                 UcNormalGamma only: writes /model/trend = "smooth", the trend
 //                 whose second difference is the shock, with no drift and a
@@ -2656,6 +2663,7 @@ int main(int argc, char *argv[])
     bool draw_theta = false;
     bool quantile_grid = false;
     bool steady_state = false;
+    bool volatility_break = false;
     bool soft = false;
     bool scenario = false;
     bool smooth = false;
@@ -2704,6 +2712,11 @@ int main(int argc, char *argv[])
         {
             // An adaptive prior on `a`: /model/shrinkage and /priors/a/shrinkage.
             shrinkage = token.substr(12);
+        }
+        else if (token == "--volatility-break")
+        {
+            // A known break in the volatility: /model/volatility_break.
+            volatility_break = true;
         }
         else if (token == "--steady-state")
         {
@@ -3042,6 +3055,13 @@ int main(int argc, char *argv[])
                      "variable selection, --iid or a structural form\n";
         return 2;
     }
+    if (volatility_break &&
+        (model != "VarNormalWishart" || steady_state || mixed || missing || partial_test || soft))
+    {
+        std::cerr << "--volatility-break is written on VarNormalWishart only, without "
+                     "--steady-state and on a panel and horizon observed whole\n";
+        return 2;
+    }
     if (draw_theta && shrinkage != "normal_gamma")
     {
         std::cerr << "--draw-theta needs --shrinkage=normal_gamma\n";
@@ -3339,6 +3359,21 @@ int main(int argc, char *argv[])
             write_row(file, "/initial/mu", arma::vec(kK, arma::fill::zeros));
         }
 
+        if (volatility_break)
+        {
+            // The break five periods from the end: three free scales and two
+            // periods of decay inside the sample. The hyperprior of Lenza and
+            // Primiceri (2022): Pareto(1, 1) on the scales, a beta with mode
+            // 0.8 and standard deviation 0.2 on the decay.
+            write_attribute<int>(file, "/model", "volatility_break", kTT - 4);
+            write_attribute<int>(file, "/model", "volatility_scales", 3);
+            ensure_group(file, "/priors/volatility");
+            write_dataset_double(file, "/priors/volatility/shape", 1.0);
+            write_dataset_double(file, "/priors/volatility/rho_shape1", 3.0357);
+            write_dataset_double(file, "/priors/volatility/rho_shape2", 1.5089);
+            write_row(file, "/initial/volatility", arma::vec({2.0, 2.0, 2.0, 0.5}));
+        }
+
         if (model == "VarTvpDiscount")
         {
             write_var_tvp_discount(file, layout);
@@ -3393,6 +3428,7 @@ int main(int argc, char *argv[])
                   << (stationary ? ", stationary=1" : "")
                   << (draw_theta ? ", draw_theta=1" : "")
                   << (steady_state ? ", steady_state=1" : "")
+                  << (volatility_break ? ", volatility_break=1" : "")
                   << ")\n";
     }
     catch (const std::exception &e)

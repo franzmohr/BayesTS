@@ -32,6 +32,10 @@ struct VarNormalWishartInitial
     arma::vec a_theta;
     /// The unconditional mean the chain starts from under VarSpec::steady_state.
     arma::vec mu;
+    /// Where a volatility break starts (VarSpec::volatility_break): the
+    /// volatility_scales free scales, each at least one, then the decay rate in
+    /// (0, 1). Empty starts the scales at two and the rate at one half.
+    arma::vec volatility;
 };
 
 /// The complete argument of the VarNormalWishart sampler.
@@ -62,6 +66,10 @@ struct VarNormalWishartInput
     /// The normal prior on the unconditional mean under VarSpec::steady_state:
     /// a mean of k and a k x k precision. Unused without it.
     NormalPrior mu_prior;
+
+    /// The prior of a volatility break. Unused without one
+    /// (VarSpec::volatility_break).
+    VolatilityBreakPrior volatility_prior;
 
     VarNormalWishartInitial initial;
 

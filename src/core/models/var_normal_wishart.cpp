@@ -13,6 +13,7 @@
 #include "core/models/model_support.h"
 #include "core/models/shrinkage_support.h"
 #include "core/models/steady_state_support.h"
+#include "core/models/volatility_break_support.h"
 #include "core/models/predictive_score.h"
 
 #include <algorithm>
@@ -164,10 +165,37 @@ VarNormalWishartDraws VarNormalWishartSampler::draw_coefficients(const VarNormal
         out.mu = arma::mat(static_cast<arma::uword>(k), iterations);
     }
 
+    // A volatility break: every sweep runs on the rows from the break on divided
+    // by s_t -- the VAR of the rescaled data, which given the scales is the whole
+    // model -- and ends by drawing the scales from the residuals on the original
+    // scale. Inactive, it holds ones, draws nothing and rescales nothing.
+    core::VolatilityBreak volatility(input.spec, input.volatility_prior, input.initial.volatility,
+                                     static_cast<arma::uword>(tt), static_cast<arma::uword>(k));
+    const arma::vec y_original = volatility.active() ? y : arma::vec();
+    const arma::mat z_original = volatility.active() ? z : arma::mat();
+    if (volatility.active())
+    {
+        out.volatility = arma::mat(volatility.theta().n_elem, iterations);
+    }
+
     for (int draw = 0; draw < draws; draw++)
     {
         reporter.check_interrupt();
         reporter.progress(draw + 1, draws);
+
+        if (volatility.active())
+        {
+            core::rescale_rows(y_original, z_original, volatility.scales(), static_cast<arma::uword>(k),
+                               volatility.start(), y, z);
+            if (a_bvs)
+            {
+                z_bvs = z;
+            }
+            if (!use_a)
+            {
+                u = arma::reshape(y, k, tt);
+            }
+        }
 
         if (complete)
         {
@@ -271,6 +299,14 @@ VarNormalWishartDraws VarNormalWishartSampler::draw_coefficients(const VarNormal
         // Update u_sigma_inv
         u_sigma_inv = wishart(u, prior_u_sigma_scale, post_u_sigma_df);
 
+        // Update the volatility break, from the residuals on the original scale
+        if (volatility.active())
+        {
+            arma::mat u_original = u;
+            u_original.each_row() %= arma::trans(volatility.scales());
+            volatility.update(u_original, u_sigma_inv, draw < input.spec.burnin);
+        }
+
         // Store draws
         if (input.spec.keeps(draw))
         {
@@ -300,11 +336,16 @@ VarNormalWishartDraws VarNormalWishartSampler::draw_coefficients(const VarNormal
                 }
             }
             out.u_sigma_inv.col(draw_pos) = arma::vectorise(u_sigma_inv);
+            if (volatility.active())
+            {
+                out.volatility.col(draw_pos) = volatility.theta();
+            }
             completion.store(out.y, out.constraints_inv, static_cast<arma::uword>(draw_pos), y);
         }
     }
 
     reporter.finish();
+    volatility.report(reporter, input.spec.burnin);
     if (unstationary_sweeps > 0)
     {
         reporter.message(std::to_string(unstationary_sweeps) + " of " + std::to_string(draws) +
@@ -399,16 +440,34 @@ ForecastDraws VarNormalWishartSampler::forecast(const VarNormalWishartInput &inp
     // and with it every draw it made before.
     const bool conditioned = !input.forecast.constraints.empty();
 
+    // A volatility break: each horizon's error is drawn with the scale the
+    // draw's path puts on it, periods tt .. tt + h - 1 counted from the start of
+    // the sample, whether or not a scenario conditions the path.
+    const bool scaled = input.spec.uses_volatility_break();
+    const arma::uword tt_sample =
+        scaled ? stacked_response(input.train).n_elem / static_cast<arma::uword>(k) : 0;
+    if (scaled && coefficients.volatility.n_cols != draws)
+    {
+        throw std::invalid_argument("the model has a volatility break, and posterior draws of it "
+                                    "(/posterior/volatility/coeffs) are missing or not one column "
+                                    "per draw");
+    }
+
     // Calculate forecasts
     for (arma::uword draw = 0; draw < draws; draw++)
     {
         reporter.check_interrupt();
         reporter.progress(static_cast<long long>(draw) + 1, static_cast<long long>(draws));
 
+        const arma::vec horizon_scale =
+            scaled ? core::volatility_path(input.spec, coefficients.volatility.col(draw), tt_sample,
+                                           static_cast<arma::uword>(h))
+                   : arma::vec();
+
         if (conditioned)
         {
-            fcst.col(draw) = arma::vectorise(
-                core::conditioned_forecast(input, coefficients, draw, use_a, "VarNormalWishart"));
+            fcst.col(draw) = arma::vectorise(core::conditioned_forecast(
+                input, coefficients, draw, use_a, "VarNormalWishart", horizon_scale));
             continue;
         }
 
@@ -449,8 +508,17 @@ ForecastDraws VarNormalWishartSampler::forecast(const VarNormalWishartInput &inp
             }
 
             // Add error
-            fcst.submat(i * k, draw, (i + 1) * k - 1, draw) =
-                fcst.submat(i * k, draw, (i + 1) * k - 1, draw) + error_root * arma::randn(k);
+            if (scaled)
+            {
+                fcst.submat(i * k, draw, (i + 1) * k - 1, draw) =
+                    fcst.submat(i * k, draw, (i + 1) * k - 1, draw) +
+                    horizon_scale(static_cast<arma::uword>(i)) * (error_root * arma::randn(k));
+            }
+            else
+            {
+                fcst.submat(i * k, draw, (i + 1) * k - 1, draw) =
+                    fcst.submat(i * k, draw, (i + 1) * k - 1, draw) + error_root * arma::randn(k);
+            }
 
             // A_0 y_t = A_1 y_{t-1} + ... + u_t, so the inverse applies to the
             // whole right-hand side, signal and error alike.
@@ -465,6 +533,83 @@ ForecastDraws VarNormalWishartSampler::forecast(const VarNormalWishartInput &inp
     reporter.finish();
     return ForecastDraws{fcst};
 }
+
+namespace
+{
+
+/// The pointwise log likelihood of a complete panel, draws x tt: `y` stacked by
+/// period, `z` its SUR regressors, and `first` the position of its first period
+/// counted from the start of the training sample -- zero for the sample itself,
+/// tt for a scored horizon -- which is what places a volatility break on it.
+arma::mat gaussian_log_likelihood(const VarSpec &spec, const arma::vec &y, const arma::mat &z,
+                                  const VarNormalWishartDraws &coefficients, const arma::uword first)
+{
+    const int k = spec.k;
+    const bool use_a = z.n_cols > 0;
+    const arma::uword draws = coefficients.iterations();
+    const int tt = static_cast<int>(y.n_elem) / k;
+    arma::mat loglik = arma::mat(draws, tt);
+
+    const bool scaled = spec.uses_volatility_break();
+    if (scaled && coefficients.volatility.n_cols != draws)
+    {
+        throw std::invalid_argument("the model has a volatility break, and posterior draws of it "
+                                    "(/posterior/volatility/coeffs) are missing or not one column "
+                                    "per draw");
+    }
+
+    // Calculate errors
+    arma::mat u = arma::repmat(y, 1, draws);
+    if (use_a)
+    {
+        u = u - z * coefficients.a;
+    }
+
+    // Calculate log likelihood. Under a volatility break period t's covariance
+    // is s_t^2 Sigma: the log determinant gains -k log s_t, the quadratic form
+    // is divided by s_t^2.
+    const double part_a = -k * std::log(2 * arma::datum::pi) / 2;
+    arma::mat u_sigma_inv;
+    for (arma::uword draw = 0; draw < draws; draw++)
+    {
+        u_sigma_inv = arma::reshape(coefficients.u_sigma_inv.col(draw), k, k);
+        const double part_b = core::half_log_det_precision(u_sigma_inv);
+        const arma::vec s =
+            scaled ? core::volatility_path(spec, coefficients.volatility.col(draw), first,
+                                           static_cast<arma::uword>(tt))
+                   : arma::vec();
+        for (int i = 0; i < tt; i++)
+        {
+            const double part_c = -arma::as_scalar(arma::trans(u.submat(i * k, draw, (i + 1) * k - 1, draw)) * u_sigma_inv * u.submat(i * k, draw, (i + 1) * k - 1, draw)) / 2;
+            if (scaled)
+            {
+                const double si = s(static_cast<arma::uword>(i));
+                loglik(draw, i) = part_a + part_b - k * std::log(si) + part_c / (si * si);
+            }
+            else
+            {
+                loglik(draw, i) = part_a + part_b + part_c;
+            }
+        }
+    }
+
+    return loglik;
+}
+
+/// The likelihood and the score run from draws without validate() in between,
+/// so the one combination they would get wrong is refused here as well: the
+/// completion step's density has one covariance for every period.
+void require_no_break_with_constraints(const VarNormalWishartInput &input)
+{
+    if (input.spec.uses_volatility_break())
+    {
+        throw std::invalid_argument(
+            "VarNormalWishart does not combine /model/volatility_break with /data/train/constraints "
+            "or /data/test/constraints");
+    }
+}
+
+} // namespace
 
 arma::mat VarNormalWishartSampler::log_likelihood(const VarNormalWishartInput &input,
                                                   const VarNormalWishartDraws &coefficients) const
@@ -489,41 +634,17 @@ arma::mat VarNormalWishartSampler::log_likelihood(const VarNormalWishartInput &i
         throw std::invalid_argument("the model has regressors but posterior draws of a are missing");
     }
 
-    const arma::uword draws = coefficients.iterations();
-    const int tt = static_cast<int>(y.n_elem) / k;
-    arma::mat loglik = arma::mat(draws, tt);
-
     // A panel not observed whole: the density of what was observed, with what
     // was not integrated out -- never the density of one draw's completion,
     // which is not a likelihood of the data. Period t is the density of the
     // rows ending in t given those ending before it.
     if (!input.train.constraints.empty())
     {
+        require_no_break_with_constraints(input);
         return core::observed_log_likelihood(input, coefficients, "VarNormalWishart");
     }
 
-    // Calculate errors
-    arma::mat u = arma::repmat(y, 1, draws);
-    if (use_a)
-    {
-        u = u - z * coefficients.a;
-    }
-
-    // Calculate log likelihood
-    const double part_a = -k * std::log(2 * arma::datum::pi) / 2;
-    arma::mat u_sigma_inv;
-    for (arma::uword draw = 0; draw < draws; draw++)
-    {
-        u_sigma_inv = arma::reshape(coefficients.u_sigma_inv.col(draw), k, k);
-        const double part_b = core::half_log_det_precision(u_sigma_inv);
-        for (int i = 0; i < tt; i++)
-        {
-            const double part_c = -arma::as_scalar(arma::trans(u.submat(i * k, draw, (i + 1) * k - 1, draw)) * u_sigma_inv * u.submat(i * k, draw, (i + 1) * k - 1, draw)) / 2;
-            loglik(draw, i) = part_a + part_b + part_c;
-        }
-    }
-
-    return loglik;
+    return gaussian_log_likelihood(input.spec, y, z, coefficients, 0);
 }
 
 arma::mat VarNormalWishartSampler::predictive_log_density(const VarNormalWishartInput &input,
@@ -542,6 +663,7 @@ arma::mat VarNormalWishartSampler::predictive_log_density(const VarNormalWishart
     // every file without constraints, so its scores do not move.
     if (!input.train.constraints.empty() || !input.test.constraints.empty())
     {
+        require_no_break_with_constraints(input);
         return core::score_from_panel(input, coefficients, periods, "VarNormalWishart");
     }
 
@@ -561,6 +683,19 @@ arma::mat VarNormalWishartSampler::predictive_log_density(const VarNormalWishart
     scored.train.x = x;
     scored.train.z = core::sur_regressors(x, input.spec.k);
 
+    // Under a volatility break the horizon's periods are tt and on, which is
+    // where the path puts their scales; without one this is log_likelihood().
+    if (input.spec.uses_volatility_break())
+    {
+        if (coefficients.u_sigma_inv.n_elem == 0)
+        {
+            throw std::invalid_argument("posterior draws of u_sigma_inv are missing");
+        }
+        const arma::uword tt_sample =
+            stacked_response(input.train).n_elem / static_cast<arma::uword>(input.spec.k);
+        return gaussian_log_likelihood(scored.spec, stacked_response(scored.train), scored.train.z,
+                                       coefficients, tt_sample);
+    }
     return log_likelihood(scored, coefficients);
 }
 
