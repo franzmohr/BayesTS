@@ -296,12 +296,6 @@ bayests::VarNormalWishartInput input_for(const Sample &s, const int break_at, co
     return input;
 }
 
-/// Coefficient matrix [A_1 c] of draw d.
-arma::mat coefficients_of(const arma::mat &a, const arma::uword d)
-{
-    return arma::reshape(a.col(d), kK, kNx);
-}
-
 void test_recovery()
 {
     std::printf("recovery on a VAR whose shocks jump\n");
