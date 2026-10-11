@@ -5,6 +5,8 @@
 
 #include "io/hdf5/hdf5_and_armadillo.h"
 
+#include <utility>
+
 namespace bayests::hdf5_io::var_normal_wishart
 {
 
@@ -78,6 +80,19 @@ VarNormalWishartInput read_input(const ModelFile &file)
         input.volatility_prior.rho_shape2 = get_dataset_double(file, "/priors/volatility/rho_shape2");
     }
     read_vec_if_present(file, "/initial/volatility", input.initial.volatility);
+
+    // Student t errors: a fixed nu, or a gamma prior on it, and a start.
+    for (const auto &[name, field] :
+         {std::pair<const char *, double *>{"/priors/student_t/df", &input.student_t_prior.df},
+          {"/priors/student_t/shape", &input.student_t_prior.shape},
+          {"/priors/student_t/rate", &input.student_t_prior.rate},
+          {"/initial/student_t_df", &input.initial.student_t_df}})
+    {
+        if (file.exist(name))
+        {
+            *field = get_dataset_double(file, name);
+        }
+    }
     return input;
 }
 
@@ -115,6 +130,14 @@ VarNormalWishartDraws read_coefficients(const ModelFile &file)
     {
         draws.volatility = read_draws(file, "/posterior/volatility/coeffs");
     }
+    if (dataset_has_data(file, "/posterior/student_t/df"))
+    {
+        draws.student_t_df = read_draws(file, "/posterior/student_t/df");
+    }
+    if (dataset_has_data(file, "/posterior/student_t/lambda"))
+    {
+        draws.student_t_lambda = read_draws(file, "/posterior/student_t/lambda");
+    }
     return draws;
 }
 
@@ -147,6 +170,11 @@ void write_coefficients(const ModelFile &file, const VarNormalWishartDraws &draw
     if (draws.has_volatility())
     {
         write_draws(file, "/posterior/volatility/coeffs", draws.volatility);
+    }
+    if (draws.has_student_t())
+    {
+        write_draws(file, "/posterior/student_t/df", draws.student_t_df);
+        write_draws(file, "/posterior/student_t/lambda", draws.student_t_lambda);
     }
 }
 

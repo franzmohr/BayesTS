@@ -29,6 +29,63 @@ heading, and move down into a version section when one is cut.
 
 ### Added
 
+* **Student t errors for `VarNormalWishart`.** `/model/student_t = true` makes
+  every period's shock vector multivariate t: `u_t ~ N(0, lambda_t s_t^2 Sigma)`,
+  `lambda_t ~ IG(nu / 2, nu / 2)` independently, `s_t` the volatility break's
+  path where there is one and one where there is not. The mixing scale is common
+  to every equation, so the Wishart block stays conjugate and the sweep runs on
+  the rows divided by `s_t sqrt(lambda_t)` -- the break's rescaling, extended to
+  every period. A period whose shocks are large is weighted down by its own
+  `lambda_t`, without anyone dating it: where a break says *when*, this says
+  *which*.
+
+  `lambda_t` is drawn exactly, from its inverse gamma given the residuals with
+  the break divided out. `nu` is either held at `/priors/student_t/df`, or drawn
+  under a gamma prior at `/priors/student_t/shape` and `rate` -- Gamma(2, 0.1)
+  after Juarez and Steel (2010) -- by a random walk Metropolis-Hastings step in
+  `log nu`, adapted over the burn-in (`AdaptiveWalk`) and held after it, from
+  `/initial/student_t_df` or the prior mean. With a break, `lambda` is drawn
+  given the break and then the break given the new `lambda`. Both live in the
+  new `core/models/student_t_support.h` (`StudentTErrors`,
+  `student_t_log_density()`, `validate_student_t()`,
+  `require_supported_student_t()`), on `StudentTPrior` and two new members of
+  `VarNormalWishartDraws`, written as `/posterior/student_t/df`
+  `(1, iterations)` and `/posterior/student_t/lambda` `(tt, iterations)`.
+
+  `/posterior/loglik` and the score are the multivariate t density with scale
+  `s_t^2 Sigma`, `lambda` integrated out: the density of the data, not of one
+  draw's mixture. A forecast draws each horizon's `lambda` from its prior.
+  Refused: exactly one of `df` and `shape`/`rate` missing or both given, a
+  non-positive one, the steady-state prior, training and test constraints, and a
+  scenario. A scenario's pins say how large the horizon's shocks were, so its
+  `lambda` would have to be drawn given them, and drawing from the prior would
+  be a different distribution. Every other algorithm refuses `/model/student_t`
+  by name.
+
+  `unit.student_t` checks:
+  - the t density integrates to one and tends to the normal;
+  - each `lambda_t` against its inverse gamma (within 0.2%);
+  - `nu`'s step run with the lambdas against the marginal posterior of `nu` by
+    quadrature (4.704 against 4.700);
+  - the log likelihood and the score against the t density, with and without a
+    break, to `1e-15`;
+  - the forecast's variance against `s^2 nu / (nu - 2)` (within 0.5%);
+  - on a simulated VAR with t(6) errors and three shocks blown up 15 times, the
+    three largest lambdas are those three periods (122, 85 and 35 against a
+    median of 1.3), and the worst coefficient error is 0.062 against 0.087 under
+    normal errors;
+  - beside a volatility break, the break's and `nu`'s 99% intervals still cover
+    the truth. The free scales are less sharp there, since one huge month can be
+    explained by its scale or by its `lambda`;
+  - every refusal.
+
+  Four fixtures from `make_model_fixture --student-t` and `--student-t-fixed`:
+  `VarNormalWishart-student-t`, `-student-t-fixed-score`, `-student-t-break` and
+  `-student-t-minnesota`. *Draws are unchanged* for every file without
+  `/model/student_t`: the fingerprints of all 206 earlier fixtures agree, the
+  four volatility break fixtures among them, with the two new
+  `/posterior/student_t/... absent` lines set aside.
+
 * **A volatility break for `VarNormalWishart`: the VAR of Lenza and Primiceri
   (2022) for data that run through March 2020.** From a known period every
   shock's covariance is `s_t^2 Sigma`: `/model/volatility_break` names the

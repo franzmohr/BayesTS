@@ -305,6 +305,17 @@ struct VarSpec
     /// April and May 2020. At least one. Read only where volatility_break is.
     int volatility_scales = 3;
 
+    /// Student t errors: u_t ~ N(0, lambda_t Sigma), lambda_t ~ IG(nu / 2, nu / 2)
+    /// independently over periods, so every period's shock vector is
+    /// multivariate t with nu degrees of freedom. The mixing scale is common to
+    /// every equation, like a volatility break's, and the two multiply. What it
+    /// adds is that nobody has to say which periods are extreme: a period whose
+    /// shocks are large is weighted down by its own lambda_t. nu is drawn under
+    /// a gamma prior or held fixed (StudentTPrior).
+    ///
+    /// Read by VarNormalWishart only, and refused by every other algorithm.
+    bool student_t = false;
+
     /// What a forecast does with the states of a time-varying model. Read by the
     /// forecasts of every model with something that drifts: VarTvpWishart,
     /// VarTvpGamma, VarTvpStochvol, VarNormalStochvol, VecTvpWishart,
