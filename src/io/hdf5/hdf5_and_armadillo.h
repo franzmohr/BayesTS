@@ -158,6 +158,9 @@ std::vector<std::string> list_model_groups(const HighFive::File &file, const std
 /// sorted. /posterior is left out, being the run's output rather than its
 /// input, and so is any group below that is a model of its own -- a model at
 /// the root of a file that also holds /models/3 does not own what is in it.
+/// So are the groups below /model, where a host keeps metadata of its own
+/// (bvartools' /model/sign_restrictions) that no reader opens; a dataset
+/// directly in /model is still listed.
 std::vector<std::string> list_model_datasets(const ModelFile &file);
 
 /// The names of the attributes on `group` within a model, sorted.
