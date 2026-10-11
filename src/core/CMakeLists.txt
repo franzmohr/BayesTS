@@ -21,6 +21,7 @@ add_library(bayests_core
             models/steady_state_support.h
             models/volatility_break_support.h
             models/student_t_support.h
+            models/error_scale_checks.h
             models/adaptive_walk.h
             models/quantile_grid.h
             models/noncentred_support.h

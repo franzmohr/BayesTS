@@ -443,6 +443,20 @@ heading, and move down into a version section when one is cut.
   (exit 1 and the wording). *Draws are unchanged*: 206 fixtures, 12028
   fingerprints recorded before and after, none moved.
 
+* **`src/core/inputs.cpp` no longer includes the Student t and volatility
+  break sampler headers.** It needs only their refusals --
+  `require_supported_student_t()`, `validate_student_t()`,
+  `require_supported_volatility_break()` and `validate_volatility_break()` --
+  but included `student_t_support.h` and `volatility_break_support.h` whole,
+  and with them `adaptive_walk.h`, so a package vendoring the core by its
+  include closure copied VarNormalWishart's sampler blocks into a factor or
+  unobserved components package that never runs them. The four functions move
+  unchanged into the new `core/models/error_scale_checks.h`, which includes
+  public headers only; the two support headers include it, so their users are
+  unchanged, and `inputs.cpp`, `var_tvp_discount.cpp` and
+  `vec_tvp_discount.cpp` include it alone. *Draws are unchanged*: 215 fixtures,
+  12985 fingerprints recorded before and after, none moved.
+
 * **`src/core/inputs.cpp` no longer includes `uc_support.h`.** The signal
   equations made it include the unobserved components support header for one
   shape check, `require_uc_signal_data()`, which pulled the whole of that
