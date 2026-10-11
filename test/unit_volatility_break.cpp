@@ -544,7 +544,17 @@ void test_refusals()
     constrained.train.constraints.weight = {1.0};
     constrained.train.constraints.value = {s.y(0, 0)};
     constrained.train.constraints.group = {0};
-    check("beside training constraints", refuses(constrained, "volatility_break"));
+    bool reads = true;
+    try
+    {
+        constrained.validate();
+    }
+    catch (const std::exception &e)
+    {
+        std::printf("    %s\n", e.what());
+        reads = false;
+    }
+    check("beside training constraints it validates: a panel not observed whole is read", reads);
 
     bayests::VarNormalGammaInput gamma;
     gamma.spec.k = static_cast<int>(kK);

@@ -18,6 +18,7 @@
 #include "bayests/reporter.h"
 #include "bayests/var_normal_gamma.h"
 #include "bayests/var_normal_wishart.h"
+#include "core/models/completion_support.h"
 #include "core/models/student_t_support.h"
 #include "core/models/volatility_break_support.h"
 
@@ -451,6 +452,37 @@ void test_refusals()
     scenario.forecast.constraints.variable = {0};
     scenario.forecast.constraints.weight = {1.0};
     check("beside a scenario", refuses(scenario, "/data/forecast/constraints"));
+
+    auto partial = good;
+    partial.spec.h = 2;
+    partial.forecast.x = arma::mat(2, kNx, arma::fill::ones);
+    partial.test.y = arma::mat(2, kK, arma::fill::zeros);
+    partial.test.constraints.value = {0.0};
+    partial.test.constraints.group = {0};
+    partial.test.constraints.row = {0};
+    partial.test.constraints.period = {0};
+    partial.test.constraints.variable = {0};
+    partial.test.constraints.weight = {1.0};
+    check("a score against a horizon realised in part", refuses(partial, "realised in part"));
+    auto scored = good;
+    scored.spec.h = 2;
+    scored.forecast.x = arma::mat(2, kNx, arma::fill::ones);
+    scored.test.y = arma::mat(2, kK, arma::fill::zeros);
+    scored.train.constraints = bayests::core::pin_every_entry(s.y);
+    check("a score from a panel not observed whole", refuses(scored, "not observed whole"));
+    auto training = good;
+    training.train.constraints = bayests::core::pin_every_entry(s.y);
+    bool reads = true;
+    try
+    {
+        training.validate();
+    }
+    catch (const std::exception &e)
+    {
+        std::printf("    %s\n", e.what());
+        reads = false;
+    }
+    check("training constraints alone validate: the panel is completed", reads);
 
     bayests::VarNormalGammaInput gamma;
     gamma.spec.k = static_cast<int>(kK);

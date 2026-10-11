@@ -52,11 +52,13 @@ inline void require_supported_student_t(const VarSpec &spec, const bool supporte
 
 /// Refuses Student t errors the sampler cannot run as given: a prior that is
 /// neither a fixed nu nor a gamma on it, or both; a start that is not
-/// positive; and the combinations that would read the error covariance as the
-/// same in every period -- the steady-state prior's draw of the mean and a
-/// panel or a horizon not observed whole -- or would condition a forecast on a
-/// scenario, which carries information about the horizon's lambda that a draw
-/// from its prior ignores.
+/// positive; the steady-state prior, whose draw of the mean reads the error
+/// covariance as the same in every period; a score from a panel or of a horizon
+/// not observed whole, where lambda does not integrate out in closed form; and
+/// a scenario, which carries information about the horizon's lambda that a
+/// draw from its prior ignores. A training panel not observed whole is read:
+/// its completion takes one covariance per period, and its log likelihood
+/// conditions on the lambdas drawn.
 inline void validate_student_t(const VarSpec &spec, const StudentTPrior &prior,
                                const double initial_df, const TrainData &train,
                                const ForecastData &forecast, const TestData &test,
@@ -102,12 +104,13 @@ inline void validate_student_t(const VarSpec &spec, const StudentTPrior &prior,
             name + " does not combine /model/student_t with /model/steady_state, whose draw of "
                    "the unconditional mean reads the error covariance as the same in every period");
     }
-    if (!train.constraints.empty() || !test.constraints.empty())
+    if (!test.constraints.empty() || (!train.constraints.empty() && test.y.n_elem > 0))
     {
         throw std::invalid_argument(
-            name + " does not combine /model/student_t with /data/train/constraints or "
-                   "/data/test/constraints yet: the panel a completion draws has one error "
-                   "covariance for every period");
+            name + " does not score a forecast with Student t errors from a panel not observed "
+                   "whole, or against a horizon realised in part (/data/test/constraints), yet: the "
+                   "horizon's lambda would have to be integrated out of a density whose rows reach "
+                   "across periods");
     }
     if (!forecast.constraints.empty())
     {

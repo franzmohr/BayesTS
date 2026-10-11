@@ -29,6 +29,12 @@
 /// host wrote into /data/forecast/x, which for an entry nothing observed is a
 /// placeholder.
 ///
+/// A volatility break and Student t errors read a panel not observed whole too:
+/// pinned whole it is the complete panel's chain bit for bit, its likelihood
+/// the complete panel's under a break and the normal given the mixing scales
+/// under t errors, its score the recursion's; and a quarterly series is
+/// recovered beside a break, every average holding.
+///
 /// Beyond those: a score from a completed panel or against a horizon realised
 /// in part agrees with the recursion where the two describe the same thing; a
 /// scenario holds in every draw of a conditional forecast, whose mean is the
@@ -40,6 +46,7 @@
 #include "bayests/var_normal_wishart.h"
 #include "core/algorithms/constrained_var_path.h"
 #include "core/models/completion_support.h"
+#include "core/models/volatility_break_support.h"
 
 #include <algorithm>
 #include <cmath>
@@ -897,6 +904,215 @@ void test_refusals()
 
 } // namespace
 
+
+/// The VAR of simulate(), its shocks in period t multiplied by scale(t).
+Sample simulate_scaled(const arma::uword tt, const arma::vec &scale)
+{
+    Sample s = simulate(1);
+    const arma::mat root = arma::chol(s.sigma, "lower");
+    arma::arma_rng::set_seed(5151);
+    arma::vec previous = s.lag0;
+    s.y.set_size(tt, kK);
+    for (arma::uword t = 0; t < tt; t++)
+    {
+        previous = s.a.cols(0, kK - 1) * previous + s.a.col(kK) +
+                   scale(t) * (root * arma::randn<arma::vec>(kK));
+        s.y.row(t) = previous.t();
+    }
+    return s;
+}
+
+/// The volatility break of Lenza and Primiceri (2022) at `break_at`, and
+/// Student t errors where `t` says so.
+void add_break_and_t(bayests::VarNormalWishartInput &input, const int break_at, const bool t)
+{
+    input.spec.volatility_break = break_at;
+    input.spec.volatility_scales = 3;
+    input.volatility_prior.shape = 1.0;
+    input.volatility_prior.rho_shape1 = 3.0357;
+    input.volatility_prior.rho_shape2 = 1.5089;
+    if (t)
+    {
+        input.spec.student_t = true;
+        input.student_t_prior.shape = 2.0;
+        input.student_t_prior.rate = 0.1;
+    }
+}
+
+void test_scaled_pinned_whole()
+{
+    std::printf("a volatility break and Student t errors on a panel pinned whole\n");
+    const arma::uword tt = 60;
+    // Ones, then a jump at period 52 (one-based) decaying through the three
+    // periods a score reads after the sample.
+    const arma::vec scale = arma::join_cols(
+        arma::vec(51, arma::fill::ones),
+        arma::vec({8.0, 20.0, 6.0, 3.5, 2.2, 1.6, 1.3, 1.2, 1.1, 1.05, 1.03, 1.02}));
+    const Sample s = simulate_scaled(tt + 3, scale);
+    const arma::mat y = s.y.head_rows(tt);
+    bayests::NullReporter reporter;
+    const bayests::VarNormalWishartSampler sampler;
+
+    for (const bool t : {false, true})
+    {
+        const std::string tag = t ? ", with t errors" : "";
+        bayests::VarNormalWishartInput plain = input_for(y, s.lag0, 200, 50);
+        add_break_and_t(plain, 52, t);
+        bayests::VarNormalWishartInput pinned = plain;
+        RowBuilder rows;
+        for (arma::uword p = 0; p < tt; p++)
+        {
+            for (arma::uword i = 0; i < kK; i++)
+            {
+                rows.add(y(p, i), {{p, i}}, 1.0);
+            }
+        }
+        pinned.train.constraints = rows.build();
+
+        arma::arma_rng::set_seed(77);
+        const auto a = sampler.draw_coefficients(plain, reporter);
+        arma::arma_rng::set_seed(77);
+        const auto b = sampler.draw_coefficients(pinned, reporter);
+        bool same = arma::approx_equal(a.a, b.a, "absdiff", 0.0) &&
+                    arma::approx_equal(a.u_sigma_inv, b.u_sigma_inv, "absdiff", 0.0) &&
+                    arma::approx_equal(a.volatility, b.volatility, "absdiff", 0.0);
+        if (t)
+        {
+            same = same && arma::approx_equal(a.student_t_lambda, b.student_t_lambda, "absdiff", 0.0) &&
+                   arma::approx_equal(a.student_t_df, b.student_t_df, "absdiff", 0.0);
+        }
+        check("the chain agrees bit for bit with the complete panel's" + tag, same);
+        check("and its stored panel is the data, on the original scale" + tag,
+              b.has_y() && arma::approx_equal(b.y, arma::repmat(arma::vectorise(y.t()), 1, b.y.n_cols),
+                                              "absdiff", 0.0));
+
+        const arma::mat ll_pinned = sampler.log_likelihood(pinned, b);
+        if (!t)
+        {
+            const arma::mat ll_plain = sampler.log_likelihood(plain, a);
+            check_below("the log likelihood is the complete panel's, to rounding",
+                        arma::abs(ll_plain - ll_pinned).max() / arma::abs(ll_plain).max(), 1e-12);
+        }
+        else
+        {
+            // Given the mixing scales: the normal with lambda_t s_t^2 Sigma.
+            double worst = 0.0;
+            for (arma::uword d = 0; d < 5; d++)
+            {
+                const arma::mat a_d = arma::reshape(b.a.col(d), kK, kNx);
+                const arma::mat sigma = arma::inv_sympd(arma::reshape(b.u_sigma_inv.col(d), kK, kK));
+                const arma::vec path =
+                    bayests::core::volatility_path(pinned.spec, b.volatility.col(d), 0, tt) %
+                    arma::sqrt(b.student_t_lambda.col(d));
+                for (arma::uword p = 0; p < tt; p++)
+                {
+                    const arma::vec lag = p == 0 ? s.lag0 : arma::vec(y.row(p - 1).t());
+                    const arma::vec e = y.row(p).t() - a_d * arma::join_cols(lag, arma::vec({1.0}));
+                    const arma::mat cov = path(p) * path(p) * sigma;
+                    double logdet, sign;
+                    arma::log_det(logdet, sign, cov);
+                    const double want =
+                        -0.5 * (kK * std::log(2.0 * arma::datum::pi) + logdet +
+                                arma::as_scalar(e.t() * arma::solve(cov, e)));
+                    worst = std::max(worst, std::abs(ll_pinned(d, p) - want));
+                }
+            }
+            check_below("the log likelihood is the normal given the mixing scales", worst, 1e-8);
+        }
+
+        if (!t)
+        {
+            // The score of a horizon realised whole, given as constraints or not.
+            bayests::VarNormalWishartInput scored = plain;
+            scored.spec.h = 3;
+            scored.test.y = s.y.rows(tt, tt + 2);
+            scored.forecast.x = arma::mat(3, kNx, arma::fill::zeros);
+            scored.forecast.x.col(kK).ones();
+            scored.forecast.x.submat(0, 0, 0, kK - 1) = y.row(tt - 1);
+            const arma::mat recursion = sampler.predictive_log_density(scored, a);
+            scored.test.constraints = bayests::core::pin_every_entry(scored.test.y);
+            const arma::mat from_panel = sampler.predictive_log_density(scored, a);
+            check_below("the score from a panel is the recursion's, horizon scales and all",
+                        arma::abs(recursion - from_panel).max() / arma::abs(recursion).max(), 1e-10);
+        }
+    }
+}
+
+void test_quarterly_series_beside_a_break()
+{
+    std::printf("a quarterly series beside a volatility break\n");
+    const arma::uword tt = 240;
+    const arma::vec theta = {10.0, 25.0, 6.0, 0.7};
+    bayests::VarSpec spec;
+    spec.volatility_break = 202;
+    spec.volatility_scales = 3;
+    const Sample s = simulate_scaled(tt, bayests::core::volatility_path(spec, theta, 0, tt));
+
+    arma::mat y_file = s.y;
+    y_file.col(2).zeros();
+    RowBuilder rows;
+    for (arma::uword t = 0; t < tt; t++)
+    {
+        rows.add(s.y(t, 0), {{t, 0}}, 1.0);
+        rows.add(s.y(t, 1), {{t, 1}}, 1.0);
+    }
+    arma::vec quarterly(tt / 3);
+    for (arma::uword q = 0; q < tt / 3; q++)
+    {
+        quarterly(q) = arma::mean(s.y.col(2).subvec(3 * q, 3 * q + 2));
+        rows.add(quarterly(q), {{3 * q, 2}, {3 * q + 1, 2}, {3 * q + 2, 2}}, 1.0 / 3.0);
+    }
+
+    bayests::NullReporter reporter;
+    for (const bool t : {false, true})
+    {
+        const std::string tag = t ? ", with t errors" : "";
+        bayests::VarNormalWishartInput input = input_for(y_file, s.lag0, 3000, 1500);
+        input.train.constraints = rows.build();
+        add_break_and_t(input, 202, t);
+        arma::arma_rng::set_seed(2027);
+        const auto draws = bayests::VarNormalWishartSampler{}.draw_coefficients(input, reporter);
+
+        double worst = 0.0;
+        for (arma::uword d = 0; d < draws.y.n_cols; d++)
+        {
+            const arma::mat path = arma::reshape(draws.y.col(d), kK, tt);
+            for (arma::uword q = 0; q < tt / 3; q++)
+            {
+                worst = std::max(worst, std::abs(arma::mean(path.row(2).subvec(3 * q, 3 * q + 2)) -
+                                                 quarterly(q)));
+            }
+            worst = std::max(worst, arma::abs(path.row(0).t() - s.y.col(0)).max());
+        }
+        check_below("every quarterly average and every pinned value holds in every draw" + tag, worst,
+                    1e-10);
+
+        const arma::vec lo = arma::quantile(draws.volatility, arma::vec({0.005}), 1);
+        const arma::vec hi = arma::quantile(draws.volatility, arma::vec({0.995}), 1);
+        const arma::vec med = arma::median(draws.volatility, 1);
+        std::printf("    break medians %.2f %.2f %.2f %.3f, truth 10 25 6 0.7\n", med(0), med(1), med(2),
+                    med(3));
+        check("the break's 99% intervals cover the truth" + tag,
+              arma::all(lo <= theta) && arma::all(hi >= theta));
+
+        // The hidden monthly series against the quarterly figure repeated.
+        const arma::mat mean_path = arma::reshape(arma::mean(draws.y, 1), kK, tt);
+        arma::vec step(tt);
+        for (arma::uword p = 0; p < tt; p++)
+        {
+            step(p) = quarterly(p / 3);
+        }
+        const double rmse_model = std::sqrt(arma::mean(arma::square(mean_path.row(2).t() - s.y.col(2))));
+        const double rmse_step = std::sqrt(arma::mean(arma::square(step - s.y.col(2))));
+        std::printf("    hidden monthly series, RMSE: posterior mean %.3f, quarterly step %.3f\n",
+                    rmse_model, rmse_step);
+        check("the completed months beat the quarterly step" + tag, rmse_model < rmse_step);
+
+        const arma::mat ll = bayests::VarNormalWishartSampler{}.log_likelihood(input, draws);
+        check("the log likelihood is finite" + tag, ll.is_finite());
+    }
+}
+
 int main()
 {
     try
@@ -909,6 +1125,8 @@ int main()
         test_soft_rows();
         test_iid_variable_not_observed();
         test_var_normal_gamma();
+        test_scaled_pinned_whole();
+        test_quarterly_series_beside_a_break();
         test_refusals();
     }
     catch (const std::exception &e)
