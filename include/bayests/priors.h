@@ -218,6 +218,17 @@ struct VolatilityBreakPrior
     double rho_shape2 = 0.0;
 };
 
+/// The prior of Student t errors (VarSpec::student_t): either a fixed `df`, or
+/// a gamma with `shape` and `rate` on the degrees of freedom nu -- exactly one
+/// of the two. Gamma(2, 0.1), mean 20, is the choice of Juarez and Steel
+/// (2010) and is weak over the range where the tails matter.
+struct StudentTPrior
+{
+    double df = 0.0;    ///< A fixed nu, or zero to draw it.
+    double shape = 0.0; ///< Gamma prior on nu, shape and rate; zero when nu is fixed.
+    double rate = 0.0;
+};
+
 /// A random walk state equation: how far the state may drift from one period
 /// to the next, and where it starts.
 struct RandomWalkPrior

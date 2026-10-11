@@ -112,6 +112,10 @@ add_executable(bayests_unit_steady_state unit_steady_state.cpp)
 # against the conditional it targets, the likelihood, score and forecast
 # against the scale the path puts on each period, and recovery of a jump.
 add_executable(bayests_unit_volatility_break unit_volatility_break.cpp)
+# Student t errors in VarNormalWishart: the mixing scales and the degrees of
+# freedom against their conditionals, the t likelihood, score and forecast,
+# and outliers found where they were planted.
+add_executable(bayests_unit_student_t unit_student_t.cpp)
 # The structural quantile VAR: the distribution a grid of quantiles describes,
 # and a recursive system's forecast simulated through it against the truth.
 add_executable(bayests_unit_var_quantile_grid unit_var_quantile_grid.cpp)
@@ -176,6 +180,7 @@ foreach(_core_unit bayests_unit_identification bayests_unit_vec_klgs_2010 bayest
                    bayests_unit_favar_normal_wishart bayests_unit_bvs bayests_unit_ssvs
                    bayests_unit_iid_block bayests_unit_constraints bayests_unit_var_mixed_frequency
                    bayests_unit_shrinkage bayests_unit_steady_state bayests_unit_volatility_break
+                   bayests_unit_student_t
                    bayests_unit_var_quantile_grid
                    bayests_unit_input_values bayests_unit_var_normal_stochvol
                    bayests_unit_var_tvp_discount bayests_unit_vec_tvp_discount
@@ -361,7 +366,7 @@ foreach(_unit vec_to_var forecast_lags forecast_regressors_io forecast_group_io 
               dfm_tvp_gamma dfm_tvp_stochvol favar_normal_wishart var_ald thin model_group bvs ssvs
               input_values var_normal_stochvol var_tvp_discount vec_tvp_discount read_path bool_attributes tvp_initial_state
               forecast_states noncentred iid_block constraints constraints_io var_mixed_frequency shrinkage steady_state var_quantile_grid
-              volatility_break
+              volatility_break student_t
               uc_normal_gamma)
     add_test(NAME "unit.${_unit}" COMMAND "bayests_unit_${_unit}")
     set_tests_properties("unit.${_unit}" PROPERTIES
@@ -580,6 +585,12 @@ bayests_add_model_fixture(VarNormalWishart-volatility-break           VarNormalW
 bayests_add_model_fixture(VarNormalWishart-volatility-break-scenario  VarNormalWishart none 0 0 4 --volatility-break --scenario)
 bayests_add_model_fixture(VarNormalWishart-volatility-break-score-minnesota VarNormalWishart none 0 0 4 --volatility-break --score --shrinkage=minnesota)
 bayests_add_model_fixture(VarNormalWishart-volatility-break-bvs       VarNormalWishart bvs  0 0 4 --volatility-break)
+# Student t errors: the degrees of freedom drawn; held fixed and scored; drawn
+# beside a volatility break; and under a hierarchical Minnesota prior.
+bayests_add_model_fixture(VarNormalWishart-student-t            VarNormalWishart none 0 0 4 --student-t)
+bayests_add_model_fixture(VarNormalWishart-student-t-fixed-score VarNormalWishart none 0 0 4 --student-t-fixed --score)
+bayests_add_model_fixture(VarNormalWishart-student-t-break      VarNormalWishart none 0 0 4 --student-t --volatility-break)
+bayests_add_model_fixture(VarNormalWishart-student-t-minnesota  VarNormalWishart none 0 0 4 --student-t --shrinkage=minnesota)
 bayests_add_model_fixture(VarNormalGamma-steady-state-mixed     VarNormalGamma    none 0 0 4 --steady-state --mixed)
 bayests_add_model_fixture(VarNormalStochvol-steady-state-stationary VarNormalStochvol none 0 0 4 --steady-state --stationary)
 bayests_add_model_fixture(VarNormalGamma-nofcst     VarNormalGamma     none 0 0 0)

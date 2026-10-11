@@ -13,6 +13,7 @@
 #include "core/models/model_support.h"
 #include "core/models/shrinkage_support.h"
 #include "core/models/steady_state_support.h"
+#include "core/models/student_t_support.h"
 #include "core/models/volatility_break_support.h"
 #include "core/models/predictive_score.h"
 
@@ -171,22 +172,39 @@ VarNormalWishartDraws VarNormalWishartSampler::draw_coefficients(const VarNormal
     // scale. Inactive, it holds ones, draws nothing and rescales nothing.
     core::VolatilityBreak volatility(input.spec, input.volatility_prior, input.initial.volatility,
                                      static_cast<arma::uword>(tt), static_cast<arma::uword>(k));
-    const arma::vec y_original = volatility.active() ? y : arma::vec();
-    const arma::mat z_original = volatility.active() ? z : arma::mat();
+    // Student t errors: a mixing scale lambda_t per period on top, drawn after
+    // the Wishart like the break, the two multiplying. Inactive, all ones.
+    core::StudentTErrors tails(input.spec, input.student_t_prior, input.initial.student_t_df,
+                               static_cast<arma::uword>(tt), static_cast<arma::uword>(k));
+    const bool rescaled = volatility.active() || tails.active();
+    const arma::vec y_original = rescaled ? y : arma::vec();
+    const arma::mat z_original = rescaled ? z : arma::mat();
     if (volatility.active())
     {
         out.volatility = arma::mat(volatility.theta().n_elem, iterations);
     }
+    if (tails.active())
+    {
+        out.student_t_df = arma::mat(1, iterations);
+        out.student_t_lambda = arma::mat(static_cast<arma::uword>(tt), iterations);
+    }
+    // What every row is divided by, s_t sqrt(lambda_t), and the first period
+    // that is: the break's, unless every period has a lambda of its own.
+    const auto row_scale = [&]() {
+        return tails.active() ? arma::vec(volatility.scales() % arma::sqrt(tails.lambda()))
+                              : volatility.scales();
+    };
+    const arma::uword first_scaled = tails.active() ? 0 : volatility.start();
 
     for (int draw = 0; draw < draws; draw++)
     {
         reporter.check_interrupt();
         reporter.progress(draw + 1, draws);
 
-        if (volatility.active())
+        if (rescaled)
         {
-            core::rescale_rows(y_original, z_original, volatility.scales(), static_cast<arma::uword>(k),
-                               volatility.start(), y, z);
+            core::rescale_rows(y_original, z_original, row_scale(), static_cast<arma::uword>(k),
+                               first_scaled, y, z);
             if (a_bvs)
             {
                 z_bvs = z;
@@ -299,12 +317,27 @@ VarNormalWishartDraws VarNormalWishartSampler::draw_coefficients(const VarNormal
         // Update u_sigma_inv
         u_sigma_inv = wishart(u, prior_u_sigma_scale, post_u_sigma_df);
 
-        // Update the volatility break, from the residuals on the original scale
-        if (volatility.active())
+        // Update the mixing scales and the volatility break, from the residuals
+        // on the original scale: lambda given the residuals with the break
+        // divided out, then the break given them with the new lambda divided out.
+        if (rescaled)
         {
             arma::mat u_original = u;
-            u_original.each_row() %= arma::trans(volatility.scales());
-            volatility.update(u_original, u_sigma_inv, draw < input.spec.burnin);
+            u_original.each_row() %= arma::trans(row_scale());
+            if (tails.active())
+            {
+                arma::mat e = u_original;
+                e.each_row() /= arma::trans(volatility.scales());
+                tails.update(e, u_sigma_inv, draw < input.spec.burnin);
+            }
+            if (volatility.active())
+            {
+                if (tails.active())
+                {
+                    u_original.each_row() /= arma::trans(arma::sqrt(tails.lambda()));
+                }
+                volatility.update(u_original, u_sigma_inv, draw < input.spec.burnin);
+            }
         }
 
         // Store draws
@@ -340,12 +373,18 @@ VarNormalWishartDraws VarNormalWishartSampler::draw_coefficients(const VarNormal
             {
                 out.volatility.col(draw_pos) = volatility.theta();
             }
+            if (tails.active())
+            {
+                out.student_t_df(0, draw_pos) = tails.df();
+                out.student_t_lambda.col(draw_pos) = tails.lambda();
+            }
             completion.store(out.y, out.constraints_inv, static_cast<arma::uword>(draw_pos), y);
         }
     }
 
     reporter.finish();
     volatility.report(reporter, input.spec.burnin);
+    tails.report(reporter, input.spec.burnin);
     if (unstationary_sweeps > 0)
     {
         reporter.message(std::to_string(unstationary_sweeps) + " of " + std::to_string(draws) +
@@ -453,6 +492,21 @@ ForecastDraws VarNormalWishartSampler::forecast(const VarNormalWishartInput &inp
                                     "per draw");
     }
 
+    // Student t errors: each horizon's shock is drawn with a mixing scale of
+    // its own from IG(nu / 2, nu / 2), nu the draw's.
+    const bool tailed = input.spec.student_t;
+    if (tailed && coefficients.student_t_df.n_cols != draws)
+    {
+        throw std::invalid_argument("the model has Student t errors, and posterior draws of their "
+                                    "degrees of freedom (/posterior/student_t/df) are missing or "
+                                    "not one column per draw");
+    }
+    if (tailed && conditioned)
+    {
+        throw std::invalid_argument("VarNormalWishart does not condition a forecast with Student t "
+                                    "errors on /data/forecast/constraints yet");
+    }
+
     // Calculate forecasts
     for (arma::uword draw = 0; draw < draws; draw++)
     {
@@ -508,11 +562,17 @@ ForecastDraws VarNormalWishartSampler::forecast(const VarNormalWishartInput &inp
             }
 
             // Add error
-            if (scaled)
+            if (scaled || tailed)
             {
+                double shock_scale = scaled ? horizon_scale(static_cast<arma::uword>(i)) : 1.0;
+                if (tailed)
+                {
+                    const double nu = coefficients.student_t_df(0, draw);
+                    shock_scale *= std::sqrt(1.0 / arma::randg<double>(arma::distr_param(0.5 * nu, 2.0 / nu)));
+                }
                 fcst.submat(i * k, draw, (i + 1) * k - 1, draw) =
                     fcst.submat(i * k, draw, (i + 1) * k - 1, draw) +
-                    horizon_scale(static_cast<arma::uword>(i)) * (error_root * arma::randn(k));
+                    shock_scale * (error_root * arma::randn(k));
             }
             else
             {
@@ -557,6 +617,13 @@ arma::mat gaussian_log_likelihood(const VarSpec &spec, const arma::vec &y, const
                                     "(/posterior/volatility/coeffs) are missing or not one column "
                                     "per draw");
     }
+    const bool tailed = spec.student_t;
+    if (tailed && coefficients.student_t_df.n_cols != draws)
+    {
+        throw std::invalid_argument("the model has Student t errors, and posterior draws of their "
+                                    "degrees of freedom (/posterior/student_t/df) are missing or "
+                                    "not one column per draw");
+    }
 
     // Calculate errors
     arma::mat u = arma::repmat(y, 1, draws);
@@ -581,7 +648,16 @@ arma::mat gaussian_log_likelihood(const VarSpec &spec, const arma::vec &y, const
         for (int i = 0; i < tt; i++)
         {
             const double part_c = -arma::as_scalar(arma::trans(u.submat(i * k, draw, (i + 1) * k - 1, draw)) * u_sigma_inv * u.submat(i * k, draw, (i + 1) * k - 1, draw)) / 2;
-            if (scaled)
+            if (tailed)
+            {
+                // The multivariate t with scale s_t^2 Sigma: lambda_t integrated
+                // out, so the density of the data rather than of one draw's mix.
+                const double si = scaled ? s(static_cast<arma::uword>(i)) : 1.0;
+                loglik(draw, i) = core::student_t_log_density(
+                    -2.0 * part_c / (si * si), -2.0 * part_b + 2.0 * k * std::log(si),
+                    static_cast<double>(k), coefficients.student_t_df(0, draw));
+            }
+            else if (scaled)
             {
                 const double si = s(static_cast<arma::uword>(i));
                 loglik(draw, i) = part_a + part_b - k * std::log(si) + part_c / (si * si);
@@ -601,11 +677,11 @@ arma::mat gaussian_log_likelihood(const VarSpec &spec, const arma::vec &y, const
 /// completion step's density has one covariance for every period.
 void require_no_break_with_constraints(const VarNormalWishartInput &input)
 {
-    if (input.spec.uses_volatility_break())
+    if (input.spec.uses_volatility_break() || input.spec.student_t)
     {
         throw std::invalid_argument(
-            "VarNormalWishart does not combine /model/volatility_break with /data/train/constraints "
-            "or /data/test/constraints");
+            "VarNormalWishart does not combine /model/volatility_break or /model/student_t with "
+            "/data/train/constraints or /data/test/constraints");
     }
 }
 

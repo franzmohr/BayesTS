@@ -112,6 +112,14 @@
 //                 the decay, at /priors/volatility, and a start at
 //                 /initial/volatility. Not with --steady-state or a panel or
 //                 horizon not observed whole.
+//     --student-t
+//                 VarNormalWishart only: writes /model/student_t = true, a
+//                 Gamma(2, 0.1) prior on the degrees of freedom at
+//                 /priors/student_t and a start of 10 at /initial/student_t_df.
+//     --student-t-fixed
+//                 the same with the degrees of freedom held at 5
+//                 (/priors/student_t/df). Neither with --steady-state,
+//                 --scenario or a panel or horizon not observed whole.
 //     --smooth
 //                 UcNormalGamma only: writes /model/trend = "smooth", the trend
 //                 whose second difference is the shock, with no drift and a
@@ -2664,6 +2672,8 @@ int main(int argc, char *argv[])
     bool quantile_grid = false;
     bool steady_state = false;
     bool volatility_break = false;
+    bool student_t = false;
+    bool student_t_fixed = false;
     bool soft = false;
     bool scenario = false;
     bool smooth = false;
@@ -2712,6 +2722,17 @@ int main(int argc, char *argv[])
         {
             // An adaptive prior on `a`: /model/shrinkage and /priors/a/shrinkage.
             shrinkage = token.substr(12);
+        }
+        else if (token == "--student-t")
+        {
+            // Student t errors with the degrees of freedom drawn.
+            student_t = true;
+        }
+        else if (token == "--student-t-fixed")
+        {
+            // Student t errors with the degrees of freedom held fixed.
+            student_t = true;
+            student_t_fixed = true;
         }
         else if (token == "--volatility-break")
         {
@@ -3062,6 +3083,13 @@ int main(int argc, char *argv[])
                      "--steady-state and on a panel and horizon observed whole\n";
         return 2;
     }
+    if (student_t && (model != "VarNormalWishart" || steady_state || mixed || missing ||
+                      partial_test || soft || scenario))
+    {
+        std::cerr << "--student-t is written on VarNormalWishart only, without --steady-state or "
+                     "--scenario and on a panel and horizon observed whole\n";
+        return 2;
+    }
     if (draw_theta && shrinkage != "normal_gamma")
     {
         std::cerr << "--draw-theta needs --shrinkage=normal_gamma\n";
@@ -3374,6 +3402,22 @@ int main(int argc, char *argv[])
             write_row(file, "/initial/volatility", arma::vec({2.0, 2.0, 2.0, 0.5}));
         }
 
+        if (student_t)
+        {
+            write_attribute<bool>(file, "/model", "student_t", true);
+            ensure_group(file, "/priors/student_t");
+            if (student_t_fixed)
+            {
+                write_dataset_double(file, "/priors/student_t/df", 5.0);
+            }
+            else
+            {
+                write_dataset_double(file, "/priors/student_t/shape", 2.0);
+                write_dataset_double(file, "/priors/student_t/rate", 0.1);
+                write_dataset_double(file, "/initial/student_t_df", 10.0);
+            }
+        }
+
         if (model == "VarTvpDiscount")
         {
             write_var_tvp_discount(file, layout);
@@ -3429,6 +3473,7 @@ int main(int argc, char *argv[])
                   << (draw_theta ? ", draw_theta=1" : "")
                   << (steady_state ? ", steady_state=1" : "")
                   << (volatility_break ? ", volatility_break=1" : "")
+                  << (student_t ? (student_t_fixed ? ", student_t=fixed" : ", student_t=1") : "")
                   << ")\n";
     }
     catch (const std::exception &e)

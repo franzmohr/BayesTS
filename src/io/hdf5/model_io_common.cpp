@@ -480,6 +480,8 @@ VarSpec read_spec(const ModelFile &file, const char *covar_error)
     // only VarNormalWishart reads one; every other model refuses it by name.
     spec.volatility_break = optional_attribute_int(file, "/model", "volatility_break", 0);
     spec.volatility_scales = optional_attribute_int(file, "/model", "volatility_scales", 3);
+    // Student t errors, read by VarNormalWishart only and refused by the rest.
+    spec.student_t = optional_attribute_bool(file, "/model", "student_t", false);
     spec.structural = optional_attribute_bool(file, "/model", "structural", false);
 
     // Absent from every file written before the choice existed. Those files
@@ -776,6 +778,7 @@ bool is_model_attribute(const std::string &name)
         "delta_beta", "delta_sigma", "shrinkage", "stationary", "steady_state",
         "trend",     "cycle",     "irregular", "skew",       "skew_shock", "cycle_init",
         "n_signals", "signal_lags", "n_signal_x", "volatility_break", "volatility_scales",
+        "student_t",
     };
     return names.count(name) > 0;
 }

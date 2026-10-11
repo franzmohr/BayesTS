@@ -133,6 +133,9 @@ constexpr const char *kOutputs[] = {
     "/posterior/mu/coeffs",
     // The free scales and decay rate of a volatility break.
     "/posterior/volatility/coeffs",
+    // The degrees of freedom and mixing scales of Student t errors.
+    "/posterior/student_t/df",
+    "/posterior/student_t/lambda",
     "/posterior/v_sigma_inv/coeffs",
     "/posterior/psi/coeffs",
     "/posterior/psi/lambda",
