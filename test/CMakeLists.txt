@@ -970,6 +970,32 @@ bayests_add_model_fixture(VecNormalGamma-score    VecNormalGamma    none 0 0 4 -
 bayests_add_model_fixture(VecTvpDiscount-score    VecTvpDiscount    none 0 0 4 --score)
 bayests_add_model_fixture(DfmTvpGamma-score       DfmTvpGamma       none 0 0 4 --score)
 
+# A structural model with something to score is refused, and by `bayests check`
+# as well as by the forecasts stage: the scored rows' regressors would include
+# the contemporaneous observations and the density the Jacobian of A_0 (see
+# core::require_scorable()). Until check made the same call it accepted these
+# files and the run refused them only after the chain. No golden run: the file
+# is one a run refuses, so these are the error path and not a sampler.
+foreach(_model VarNormalGamma VarNormalStochvol VarTvpGamma VarTvpStochvol
+               VecNormalGamma VecNormalStochvol VecTvpGamma VecTvpStochvol)
+    set(_name "${_model}-structural-score")
+    add_test(NAME "fixture.${_name}"
+        COMMAND bayests_make_model_fixture
+                "${BAYESTS_FIXTURE_DIR}/${_name}.h5" "${_model}" none 0 1 4 --score)
+    set_tests_properties("fixture.${_name}" PROPERTIES
+        FIXTURES_SETUP "fx.${_name}"
+        ENVIRONMENT_MODIFICATION "${_bayests_test_env_mod}")
+    add_test(NAME "check.${_name}-refused"
+        COMMAND ${CMAKE_COMMAND}
+                -DBAYESTS=$<TARGET_FILE:bayests>
+                -DFIXTURE=${BAYESTS_FIXTURE_DIR}/${_name}.h5
+                "-DPATTERN=a structural model cannot be scored"
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/check_refuses.cmake)
+    set_tests_properties("check.${_name}-refused" PROPERTIES
+        FIXTURES_REQUIRED "fx.${_name}"
+        ENVIRONMENT_MODIFICATION "${_bayests_test_env_mod}")
+endforeach()
+
 #####################################################################
 # Recorded model files
 #

@@ -382,6 +382,22 @@ heading, and move down into a version section when one is cut.
 
 ### Fixed
 
+* **`bayests check` refuses a structural model it would be asked to score.**
+  A `structural` VAR or VEC with `h > 0` and rows in `/data/test/y` was
+  accepted by the check, and the run refused it only in the `forecasts` stage,
+  after the chain and the forecast, with "a structural model cannot be scored".
+  The VAR and VEC check templates in `src/models/model_check.h` now make the
+  sampler's own `core::require_scorable()` call under the condition the
+  forecasts stage scores under (`require_scorable_if_scored()`), so the check
+  exits 1 with the run's message. `VecNormalGamma`, `VecNormalWishart` and
+  `VecKlgs2010` score through the level `VarNormalWishart` and named
+  themselves after it in that message; they now raise it as "this VEC", as the
+  other VECs do. New tests `check.<model>-structural-score-refused` over a
+  structural `--score` fixture of each of the eight algorithms that take
+  `structural` with a horizon, through the new `test/check_refuses.cmake`
+  (exit 1 and the wording). *Draws are unchanged*: 206 fixtures, 12028
+  fingerprints recorded before and after, none moved.
+
 * **`src/core/inputs.cpp` no longer includes `uc_support.h`.** The signal
   equations made it include the unobserved components support header for one
   shape check, `require_uc_signal_data()`, which pulled the whole of that

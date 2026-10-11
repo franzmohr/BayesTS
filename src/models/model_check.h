@@ -20,6 +20,7 @@
 
 #include "models/models.h"
 
+#include "core/models/predictive_score.h"
 #include "io/hdf5/hdf5_and_armadillo.h"
 #include "io/hdf5/model_io_common.h"
 
@@ -220,6 +221,20 @@ void require_var_forecast_regressors(const Input &input)
     }
 }
 
+/// The refusal the forecasts stage meets when it scores: a model with a
+/// horizon and rows in /data/test/y is scored after its forecast is drawn, and
+/// core::require_scorable() refuses a structural one there. Made here with the
+/// sampler's own call and wording, so that the file a run refuses after its
+/// chain is refused before it. `name` is what the sampler names itself.
+template <typename Input>
+void require_scorable_if_scored(const Input &input, const std::string &name)
+{
+    if (input.spec.h > 0 && input.test.y.n_rows > 0)
+    {
+        core::require_scorable(input.spec, name);
+    }
+}
+
 /// The same for a VEC. Its forecast rewrites the draws as the level VAR they
 /// imply and hands /data/forecast/x to that VAR's forecast, so the regressors
 /// are in the level layout vec_to_var_spec() describes -- p lag blocks of the
@@ -341,8 +356,11 @@ template <typename ReadInput>
 ModelCheck check_var_model(const ModelLocation &location, ReadInput read_input)
 {
     return bayests::model_check_detail::run(
-        location, read_input, [](const ModelFile &, const auto &input) {
+        location, read_input, [](const ModelFile &file, const auto &input) {
             bayests::model_check_detail::require_var_forecast_regressors(input);
+            // Each VAR sampler names itself by its algorithm.
+            bayests::model_check_detail::require_scorable_if_scored(
+                input, bayests::hdf5_io::optional_attribute_string(file, "/model", "algorithm", ""));
         });
 }
 
@@ -353,6 +371,9 @@ ModelCheck check_vec_model(const ModelLocation &location, ReadInput read_input)
     return bayests::model_check_detail::run(
         location, read_input, [](const ModelFile &, const auto &input) {
             bayests::model_check_detail::require_vec_forecast_regressors(input);
+            // As score_vec_forecast() names it; the level VAR it scores is
+            // structural exactly when the VEC is.
+            bayests::model_check_detail::require_scorable_if_scored(input, "this VEC");
         });
 }
 
