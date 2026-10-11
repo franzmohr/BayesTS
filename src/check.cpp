@@ -166,7 +166,9 @@ void print_report(const std::string &algorithm, const ModelCheck &check)
 	// let something drift over the horizon, and carrying each draw's state
 	// forward before the density is taken is not written yet; a structural
 	// model is refused for good, its regressors holding the contemporaneous
-	// observations and its density the Jacobian of A_0. The two discounted
+	// observations and its density the Jacobian of A_0 -- with a horizon the
+	// check has already refused the file for it, so the term below is only
+	// reached by one that forecasts nothing. The two discounted
 	// models are scored like any other -- VarTvpDiscount exactly, its filter
 	// carrying itself through the realised values, and VecTvpDiscount by
 	// simulation as every VEC is.
