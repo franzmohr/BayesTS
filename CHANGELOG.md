@@ -29,6 +29,38 @@ heading, and move down into a version section when one is cut.
 
 ### Added
 
+* **A volatility break for `VecNormalWishart`.** The VEC beside the VAR reads
+  `/model/volatility_break`, `volatility_scales`, `/priors/volatility` and
+  `/initial/volatility` exactly as `VarNormalWishart` does, and writes
+  `/posterior/volatility/coeffs`. From the break, each sweep divides by `s_t`:
+  - the differenced response and the short-run regressors (`rescale_rows()`);
+  - the columns of `w`, the lagged levels that both the error correction term
+    and the cointegration block's cross-product are built from.
+
+  The loadings, the space and the Wishart then stay conjugate. The forecast and
+  the score are the level VAR's, as they always were: `vec_to_var_coefficients()`
+  carries the break's draws across, and the VEC hands the level VAR the
+  sample's length so that the horizon sits at periods `tt` and on. The log
+  likelihood reads `s_t^2 Sigma`. `read_volatility_break()` in
+  `model_io_common` now reads the prior and start for both models. Every other
+  VEC still refuses the break by name. `VecNormalGamma` forecasts through
+  `VarNormalGamma`, which has no break yet.
+
+  `unit.volatility_break` gains three cases:
+  - at rank zero, the VEC's chain, scales and log likelihood are
+    `VarNormalWishart`'s on the same rows, exactly;
+  - at rank one, its log likelihood is the dense normal with `s_t^2 Sigma` (to
+    `1e-15`), and its forecast, through the level VAR, has a variance that
+    accumulates `s_{T+i}^2` over the horizon (within 0.5%);
+  - on a simulated cointegrated pair whose shocks jump, the break's 99%
+    intervals cover the truth, and the cointegration space is recovered to
+    0.16 degrees, against 0.90 when the jump is ignored.
+
+  Two fixtures, `VecNormalWishart-volatility-break-score` and `-bvs`, from
+  `make_model_fixture --volatility-break`, whose writer is now one function
+  for both models. *Draws are unchanged* for every file without the break: all
+  215 earlier fixtures fingerprint identically, every VEC among them.
+
 * **The volatility break and Student t errors read a panel not observed
   whole.** `VarNormalWishart` with `/model/volatility_break` or
   `/model/student_t` now takes `/data/train/constraints`, quarterly series in a

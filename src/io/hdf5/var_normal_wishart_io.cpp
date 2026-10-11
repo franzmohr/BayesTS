@@ -65,21 +65,7 @@ VarNormalWishartInput read_input(const ModelFile &file)
     }
     read_vec_if_present(file, "/initial/mu", input.initial.mu);
 
-    // The volatility break's prior and start, where the file has them: a Pareto
-    // shape for the free scales and a beta on the decay rate, all scalars.
-    if (file.exist("/priors/volatility/shape"))
-    {
-        input.volatility_prior.shape = get_dataset_double(file, "/priors/volatility/shape");
-    }
-    if (file.exist("/priors/volatility/rho_shape1"))
-    {
-        input.volatility_prior.rho_shape1 = get_dataset_double(file, "/priors/volatility/rho_shape1");
-    }
-    if (file.exist("/priors/volatility/rho_shape2"))
-    {
-        input.volatility_prior.rho_shape2 = get_dataset_double(file, "/priors/volatility/rho_shape2");
-    }
-    read_vec_if_present(file, "/initial/volatility", input.initial.volatility);
+    read_volatility_break(file, input.volatility_prior, input.initial.volatility);
 
     // Student t errors: a fixed nu, or a gamma prior on it, and a start.
     for (const auto &[name, field] :

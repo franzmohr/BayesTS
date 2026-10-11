@@ -873,6 +873,10 @@ bayests_add_model_fixture(VecNormalWishart-plain  VecNormalWishart none 0 0 4)
 bayests_add_model_fixture(VecNormalWishart-ssvs   VecNormalWishart ssvs 0 0 4)
 bayests_add_model_fixture(VecNormalWishart-bvs    VecNormalWishart bvs  0 0 4)
 bayests_add_model_fixture(VecNormalWishart-nofcst VecNormalWishart none 0 0 0)
+# The volatility break in the VEC: forecast and scored through the level VAR,
+# and with bvs, whose regressors the rescaling reaches too.
+bayests_add_model_fixture(VecNormalWishart-volatility-break-score VecNormalWishart none 0 0 4 --volatility-break --score)
+bayests_add_model_fixture(VecNormalWishart-volatility-break-bvs   VecNormalWishart bvs  0 0 4 --volatility-break)
 
 bayests_add_model_fixture(VecNormalGamma-plain      VecNormalGamma none 0 0 4)
 bayests_add_model_fixture(VecNormalGamma-ssvs       VecNormalGamma ssvs 0 0 4)

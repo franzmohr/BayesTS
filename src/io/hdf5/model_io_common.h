@@ -165,6 +165,11 @@ VarSpec read_spec(const ModelFile &file, const char *covar_error);
 /// is then read through its default.
 bool is_model_attribute(const std::string &name);
 
+/// The prior and start of a volatility break (VarSpec::volatility_break),
+/// where the file has them: /priors/volatility/shape, rho_shape1 and
+/// rho_shape2, all scalars, and /initial/volatility.
+void read_volatility_break(const ModelFile &file, VolatilityBreakPrior &prior, arma::vec &initial);
+
 /// /model/seed: what the command line seeds each stage of this model's run
 /// from, or nothing when the file names no seed. Read here, where every other
 /// attribute is read, and applied by src/model_seed.cpp -- seeding the

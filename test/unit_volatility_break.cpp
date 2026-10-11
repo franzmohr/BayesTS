@@ -15,10 +15,17 @@
 /// scenario's, against the scale the path puts on each horizon; recovery on a
 /// simulated VAR whose shocks jump, and that ignoring the jump distorts the
 /// coefficients where modelling it does not; and what is refused is refused.
+/// Then VecNormalWishart: at rank zero it is
+/// VarNormalWishart on the same rows, break and all; at rank one its log
+/// likelihood is the dense normal with s_t^2 Sigma, its forecast -- through the
+/// level VAR -- spreads by the scales the horizon accumulates, and a
+/// cointegrated system whose shocks jump has its break and its cointegration
+/// space recovered.
 
 #include "bayests/reporter.h"
 #include "bayests/var_normal_gamma.h"
 #include "bayests/var_normal_wishart.h"
+#include "bayests/vec_normal_wishart.h"
 #include "core/models/volatility_break_support.h"
 
 #include <cmath>
@@ -562,6 +569,228 @@ void test_refusals()
     check("VarNormalGamma refuses it by name", refuses(gamma, "does not read /model/volatility_break"));
 }
 
+
+// ---- VecNormalWishart ------------------------------------------------------
+
+constexpr arma::uword kVk = 2;
+
+/// A cointegrated pair: dy_t = alpha beta' y_{t-1} + c + s_t L e_t, with
+/// beta = (1, -1)'. Returns the differences, the levels lagged once (w) and
+/// the regressors [beta' w_t kron I_k, I_k] at the true beta.
+struct VecSample
+{
+    arma::mat dy;    ///< tt x k
+    arma::mat w;     ///< tt x k_beta, y_{t-1}
+    arma::mat z;     ///< (tt k) x (k rank + k)
+    arma::vec alpha; ///< k
+    arma::vec beta;  ///< k_beta
+    arma::vec c;     ///< k
+    arma::mat chol;
+    arma::vec last;  ///< the last level
+};
+
+VecSample simulate_vec(const arma::uword tt, const arma::vec &scale, const int seed)
+{
+    VecSample s;
+    s.alpha = {-0.3, 0.2};
+    s.beta = {1.0, -1.0};
+    s.c = {0.05, 0.02};
+    s.chol = {{0.5, 0.0}, {0.2, 0.4}};
+    arma::arma_rng::set_seed(seed);
+    arma::vec level = {1.0, 1.0};
+    s.dy.set_size(tt, kVk);
+    s.w.set_size(tt, kVk);
+    for (arma::uword t = 0; t < tt; t++)
+    {
+        s.w.row(t) = level.t();
+        const arma::vec d = s.alpha * arma::dot(s.beta, level) + s.c +
+                            scale(t) * (s.chol * arma::randn<arma::vec>(kVk));
+        s.dy.row(t) = d.t();
+        level += d;
+    }
+    s.last = level;
+    s.z = arma::zeros<arma::mat>(tt * kVk, 2 * kVk);
+    for (arma::uword t = 0; t < tt; t++)
+    {
+        s.z.submat(t * kVk, 0, t * kVk + kVk - 1, kVk - 1) =
+            arma::dot(s.beta, s.w.row(t).t()) * arma::eye<arma::mat>(kVk, kVk);
+        s.z.submat(t * kVk, kVk, t * kVk + kVk - 1, 2 * kVk - 1) = arma::eye<arma::mat>(kVk, kVk);
+    }
+    return s;
+}
+
+bayests::VecNormalWishartInput vec_input(const VecSample &s, const int rank, const int break_at,
+                                         const int iterations, const int burnin)
+{
+    bayests::VecNormalWishartInput input;
+    input.spec.k = static_cast<int>(kVk);
+    input.spec.p = 1;
+    input.spec.n = 1;
+    input.spec.rank = rank;
+    input.spec.k_beta = rank > 0 ? static_cast<int>(kVk) : 0;
+    input.spec.iterations = iterations;
+    input.spec.burnin = burnin;
+    input.spec.volatility_break = break_at;
+    input.spec.volatility_scales = 3;
+    input.train.y = s.dy;
+    input.train.z = rank > 0 ? s.z : arma::mat(s.z.cols(kVk, 2 * kVk - 1));
+    if (rank > 0)
+    {
+        input.train.w = s.w;
+        input.beta_prior.v_inv = 0.0;
+        input.beta_prior.p_tau_inv = arma::eye<arma::mat>(kVk, kVk);
+        input.initial.beta = {1.0, -0.5};
+    }
+    const arma::uword n_a = input.train.z.n_cols;
+    input.a_prior.mu = arma::zeros<arma::vec>(n_a);
+    input.a_prior.v_inv = 0.01 * arma::eye<arma::mat>(n_a, n_a);
+    input.initial.a = arma::zeros<arma::vec>(n_a);
+    input.u_sigma_prior.df = static_cast<int>(kVk) + 2;
+    input.u_sigma_prior.scale = arma::eye<arma::mat>(kVk, kVk);
+    input.initial.u_sigma_inv = arma::eye<arma::mat>(kVk, kVk);
+    input.volatility_prior.shape = 1.0;
+    input.volatility_prior.rho_shape1 = 3.0357;
+    input.volatility_prior.rho_shape2 = 1.5089;
+    return input;
+}
+
+void test_vec_rank_zero_is_the_var()
+{
+    std::printf("VecNormalWishart at rank zero is VarNormalWishart on the same rows\n");
+    const arma::vec theta = {8.0, 20.0, 6.0, 0.6};
+    bayests::VarSpec spec;
+    spec.volatility_break = 101;
+    spec.volatility_scales = 3;
+    const VecSample s = simulate_vec(120, bayests::core::volatility_path(spec, theta, 0, 120), 3);
+    const auto vec = vec_input(s, 0, 101, 300, 200);
+
+    bayests::VarNormalWishartInput var;
+    var.spec = vec.spec;
+    var.spec.rank = 0;
+    var.train.y = vec.train.y;
+    var.train.z = vec.train.z;
+    var.a_prior = vec.a_prior;
+    var.u_sigma_prior = vec.u_sigma_prior;
+    var.initial.a = vec.initial.a;
+    var.initial.u_sigma_inv = vec.initial.u_sigma_inv;
+    var.volatility_prior = vec.volatility_prior;
+
+    bayests::NullReporter reporter;
+    arma::arma_rng::set_seed(12);
+    const auto a = bayests::VecNormalWishartSampler{}.draw_coefficients(vec, reporter);
+    arma::arma_rng::set_seed(12);
+    const auto b = bayests::VarNormalWishartSampler{}.draw_coefficients(var, reporter);
+    const double worst = std::max({arma::abs(a.a - b.a).max(),
+                                   arma::abs(a.u_sigma_inv - b.u_sigma_inv).max(),
+                                   arma::abs(a.volatility - b.volatility).max()});
+    check_below("coefficients, precision and break agree", worst, 1e-9);
+    const arma::mat ll_a = bayests::VecNormalWishartSampler{}.log_likelihood(vec, a);
+    const arma::mat ll_b = bayests::VarNormalWishartSampler{}.log_likelihood(var, b);
+    check_below("and so does the log likelihood", arma::abs(ll_a - ll_b).max(), 1e-8);
+}
+
+void test_vec_likelihood_and_forecast()
+{
+    std::printf("VecNormalWishart at rank one: the likelihood, and the forecast in levels\n");
+    const arma::uword tt = 40;
+    const arma::vec theta = {6.0, 14.0, 5.0, 0.6};
+    bayests::VarSpec spec;
+    spec.volatility_break = 36;
+    spec.volatility_scales = 3;
+    const arma::vec path = bayests::core::volatility_path(spec, theta, 0, tt);
+    const VecSample s = simulate_vec(tt, path, 4);
+    auto input = vec_input(s, 1, 36, 2, 0);
+
+    const arma::mat sigma = {{0.25, 0.08}, {0.08, 0.2}};
+    bayests::VecNormalWishartDraws draws;
+    draws.a = arma::repmat(arma::join_cols(s.alpha, s.c), 1, 2);
+    draws.beta = arma::repmat(s.beta, 1, 2);
+    draws.u_sigma_inv = arma::repmat(arma::vectorise(arma::inv_sympd(sigma)), 1, 2);
+    draws.volatility = arma::repmat(theta, 1, 2);
+    const arma::mat ll = bayests::VecNormalWishartSampler{}.log_likelihood(input, draws);
+    double worst = 0.0;
+    for (arma::uword t = 0; t < tt; t++)
+    {
+        const arma::vec e = s.dy.row(t).t() - s.alpha * arma::dot(s.beta, s.w.row(t).t()) - s.c;
+        const arma::mat cov = path(t) * path(t) * sigma;
+        double logdet, sign;
+        arma::log_det(logdet, sign, cov);
+        const double want = -0.5 * (kVk * std::log(2.0 * arma::datum::pi) + logdet +
+                                    arma::as_scalar(e.t() * arma::solve(cov, e)));
+        worst = std::max(worst, std::abs(ll(0, t) - want));
+    }
+    check_below("every period's log density is the normal with s_t^2 Sigma", worst, 1e-10);
+
+    // alpha and c zero: the levels are a random walk, so horizon i's variance
+    // is the sum of the scales squared up to it.
+    const int h = 3;
+    input.spec.h = h;
+    input.forecast.x = arma::mat(h, kVk + 1, arma::fill::zeros);
+    input.forecast.x.col(kVk).ones();
+    const arma::uword n = 40000;
+    bayests::VecNormalWishartDraws walk;
+    walk.a = arma::zeros<arma::mat>(2 * kVk, n);
+    walk.beta = arma::repmat(s.beta, 1, n);
+    walk.u_sigma_inv = arma::repmat(arma::vectorise(arma::eye<arma::mat>(kVk, kVk)), 1, n);
+    walk.volatility = arma::repmat(theta, 1, n);
+    bayests::NullReporter reporter;
+    arma::arma_rng::set_seed(9);
+    const arma::mat f = bayests::VecNormalWishartSampler{}.forecast(input, walk, reporter).values;
+    const arma::vec horizon = bayests::core::volatility_path(spec, theta, tt, h);
+    worst = 0.0;
+    double cumulated = 0.0;
+    for (int i = 0; i < h; i++)
+    {
+        cumulated += horizon(i) * horizon(i);
+        worst = std::max(worst, std::abs(arma::var(f.row(i * kVk)) / cumulated - 1.0));
+    }
+    std::printf("    horizon scales %.2f %.2f %.2f\n", horizon(0), horizon(1), horizon(2));
+    check_below("the level forecast's variance accumulates s_{T+i}^2 (relative error)", worst, 0.03);
+}
+
+void test_vec_recovery()
+{
+    std::printf("VecNormalWishart: a cointegrated system whose shocks jump\n");
+    const arma::uword tt = 300;
+    const arma::vec theta = {12.0, 30.0, 8.0, 0.7};
+    bayests::VarSpec spec;
+    spec.volatility_break = 281;
+    spec.volatility_scales = 3;
+    const VecSample s = simulate_vec(tt, bayests::core::volatility_path(spec, theta, 0, tt), 5);
+    bayests::NullReporter reporter;
+    const auto input = vec_input(s, 1, 281, 3000, 1500);
+    arma::arma_rng::set_seed(13);
+    const auto draws = bayests::VecNormalWishartSampler{}.draw_coefficients(input, reporter);
+
+    const arma::vec lo = arma::quantile(draws.volatility, arma::vec({0.005}), 1);
+    const arma::vec hi = arma::quantile(draws.volatility, arma::vec({0.995}), 1);
+    const arma::vec med = arma::median(draws.volatility, 1);
+    std::printf("    break medians %.2f %.2f %.2f %.3f, truth 12 30 8 0.7\n", med(0), med(1), med(2),
+                med(3));
+    check("the break's 99% intervals cover the truth",
+          arma::all(lo <= theta) && arma::all(hi >= theta));
+
+    // The space, against (1, -1): the angle of the posterior mean direction.
+    const auto angle = [&](const bayests::VecNormalWishartDraws &d) {
+        arma::vec m(kVk, arma::fill::zeros);
+        for (arma::uword i = 0; i < d.beta.n_cols; i++)
+        {
+            arma::vec b = d.beta.col(i) / arma::norm(d.beta.col(i));
+            m += b(0) < 0.0 ? arma::vec(-b) : b;
+        }
+        m /= arma::norm(m);
+        const arma::vec truth = s.beta / arma::norm(s.beta);
+        return std::acos(std::min(1.0, std::abs(arma::dot(m, truth)))) * 180.0 / arma::datum::pi;
+    };
+    auto ignore = input;
+    ignore.spec.volatility_break = 0;
+    arma::arma_rng::set_seed(13);
+    const auto naive = bayests::VecNormalWishartSampler{}.draw_coefficients(ignore, reporter);
+    std::printf("    cointegration space off by %.2f degrees with the break, %.2f ignoring it\n",
+                angle(draws), angle(naive));
+    check_below("the cointegration space is recovered (degrees)", angle(draws), 3.0);
+}
+
 } // namespace
 
 int main()
@@ -573,6 +802,9 @@ int main()
     test_forecast();
     test_recovery();
     test_refusals();
+    test_vec_rank_zero_is_the_var();
+    test_vec_likelihood_and_forecast();
+    test_vec_recovery();
     if (failures > 0)
     {
         std::printf("%d check(s) FAILED\n", failures);

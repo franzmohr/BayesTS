@@ -763,6 +763,23 @@ void write_log_likelihood(const ModelFile &file, const arma::mat &loglik)
 namespace bayests::hdf5_io
 {
 
+void read_volatility_break(const ModelFile &file, VolatilityBreakPrior &prior, arma::vec &initial)
+{
+    if (file.exist("/priors/volatility/shape"))
+    {
+        prior.shape = get_dataset_double(file, "/priors/volatility/shape");
+    }
+    if (file.exist("/priors/volatility/rho_shape1"))
+    {
+        prior.rho_shape1 = get_dataset_double(file, "/priors/volatility/rho_shape1");
+    }
+    if (file.exist("/priors/volatility/rho_shape2"))
+    {
+        prior.rho_shape2 = get_dataset_double(file, "/priors/volatility/rho_shape2");
+    }
+    read_vec_if_present(file, "/initial/volatility", initial);
+}
+
 bool is_model_attribute(const std::string &name)
 {
     // read_spec() above reads all of these but `algorithm`, which picks the

@@ -106,7 +106,8 @@
 //                 unconditional mean at /priors/mu and its start at /initial/mu.
 //                 The same three only, without --shrinkage.
 //     --volatility-break
-//                 VarNormalWishart only: writes /model/volatility_break at the
+//                 VarNormalWishart and VecNormalWishart: writes
+//                 /model/volatility_break at the
 //                 fifth period from the end, three free scales, a Pareto(1)
 //                 prior on them and the beta of Lenza and Primiceri (2022) on
 //                 the decay, at /priors/volatility, and a start at
@@ -628,6 +629,21 @@ void write_incomplete_panel(const ModelFile &file, const arma::mat &series, cons
         write_row(file, "/priors/constraints/rate", arma::vec{0.2});
         write_row(file, "/initial/constraints_inv", arma::vec{10.0});
     }
+}
+
+/// A volatility break five periods from the end: three free scales and two
+/// periods of decay inside the sample. The hyperprior of Lenza and Primiceri
+/// (2022): Pareto(1, 1) on the scales, a beta with mode 0.8 and standard
+/// deviation 0.2 on the decay.
+void write_volatility_break(const ModelFile &file)
+{
+    write_attribute<int>(file, "/model", "volatility_break", kTT - 4);
+    write_attribute<int>(file, "/model", "volatility_scales", 3);
+    ensure_group(file, "/priors/volatility");
+    write_dataset_double(file, "/priors/volatility/shape", 1.0);
+    write_dataset_double(file, "/priors/volatility/rho_shape1", 3.0357);
+    write_dataset_double(file, "/priors/volatility/rho_shape2", 1.5089);
+    write_row(file, "/initial/volatility", arma::vec({2.0, 2.0, 2.0, 0.5}));
 }
 
 /// --shrinkage: /model/shrinkage and /priors/a/shrinkage. `a` is vec of the
@@ -3076,10 +3092,11 @@ int main(int argc, char *argv[])
                      "variable selection, --iid or a structural form\n";
         return 2;
     }
-    if (volatility_break && (model != "VarNormalWishart" || steady_state))
+    if (volatility_break &&
+        ((model != "VarNormalWishart" && model != "VecNormalWishart") || steady_state))
     {
-        std::cerr << "--volatility-break is written on VarNormalWishart only, without "
-                     "--steady-state\n";
+        std::cerr << "--volatility-break is written on VarNormalWishart and VecNormalWishart "
+                     "only, without --steady-state\n";
         return 2;
     }
     if (student_t && (model != "VarNormalWishart" || steady_state || scenario || partial_test ||
@@ -3319,6 +3336,11 @@ int main(int argc, char *argv[])
                 write_attribute<std::string>(file, "/model", "forecast_states", "hold");
             }
 
+            if (volatility_break)
+            {
+                write_volatility_break(file);
+            }
+
             // Levels, the parameterisation a VEC forecasts and is scored in --
             // the same series /data/forecast/x carries the lags of, not the
             // differences /data/train/y holds.
@@ -3335,7 +3357,8 @@ int main(int argc, char *argv[])
                       << ", nparams=" << nparams << ", coint_rho=" << coint_rho
                       << (coint_p_tau ? ", coint_p_tau=1" : "")
                       << (hold_states ? ", forecast_states=hold" : "")
-                      << (score ? ", score=1" : "") << ")\n";
+                      << (score ? ", score=1" : "")
+                      << (volatility_break ? ", volatility_break=1" : "") << ")\n";
             return 0;
         }
 
@@ -3388,17 +3411,7 @@ int main(int argc, char *argv[])
 
         if (volatility_break)
         {
-            // The break five periods from the end: three free scales and two
-            // periods of decay inside the sample. The hyperprior of Lenza and
-            // Primiceri (2022): Pareto(1, 1) on the scales, a beta with mode
-            // 0.8 and standard deviation 0.2 on the decay.
-            write_attribute<int>(file, "/model", "volatility_break", kTT - 4);
-            write_attribute<int>(file, "/model", "volatility_scales", 3);
-            ensure_group(file, "/priors/volatility");
-            write_dataset_double(file, "/priors/volatility/shape", 1.0);
-            write_dataset_double(file, "/priors/volatility/rho_shape1", 3.0357);
-            write_dataset_double(file, "/priors/volatility/rho_shape2", 1.5089);
-            write_row(file, "/initial/volatility", arma::vec({2.0, 2.0, 2.0, 0.5}));
+            write_volatility_break(file);
         }
 
         if (student_t)
