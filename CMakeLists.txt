@@ -57,17 +57,21 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 
 # Build options
-option(BAYESTS_BUILD_DOCS "Add the 'docs' target for Doxygen API documentation" ON)
+option(BAYESTS_BUILD_DOCS "Add the 'docs' target for Doxygen API documentation" ${PROJECT_IS_TOP_LEVEL})
 
 # The regression harness in test/ pins the RNG and fingerprints a sampler's
 # output, so a refactor can be checked against the recorded fixtures.
-option(BAYESTS_BUILD_TESTS "Build the regression harnesses in test/" ON)
+option(BAYESTS_BUILD_TESTS "Build the regression harnesses in test/" ${PROJECT_IS_TOP_LEVEL})
 
 # Warnings are errors where a build is expected to be clean and nobody is
 # watching the log -- CI turns this on. It is off by default because a newer
 # compiler than the one a release was tested with finds new warnings, and a
 # user building from source should get a binary, not a diagnostic.
 option(BAYESTS_WERROR "Treat compiler warnings as errors" OFF)
+
+# Off when BayesTS is another project's subproject -- see "Pulled in by another
+# project" below.
+option(BAYESTS_INSTALL "Install the bayests executable and describe its package" ${PROJECT_IS_TOP_LEVEL})
 
 # -march=native bakes the build machine's instruction set into the binary, so a
 # package built with it dies with an illegal instruction on any older CPU. It is
@@ -487,6 +491,20 @@ endif()
 if(BAYESTS_BUILD_TESTS)
     enable_testing()
     add_subdirectory(test)
+endif()
+
+#####################################################################
+# Pulled in by another project
+#
+# A host application that adds this tree with add_subdirectory() or
+# FetchContent links BayesTS::core, BayesTS::hdf5_helper and BayesTS::models
+# and packages itself: the documentation, the tests, the installed executable
+# and CPack below all default off for it, so `cmake --install` and `cpack` in
+# the host's tree carry the host's package and not this one. A host that also
+# wants the `bayests` executable installed beside it turns BAYESTS_INSTALL on
+# (declared with the other options above).
+if(NOT BAYESTS_INSTALL)
+    return()
 endif()
 
 #####################################################################

@@ -15,7 +15,6 @@
 #include "bayests/var_normal_wishart.h"
 #include "io/hdf5/hdf5_and_armadillo.h"
 #include "io/hdf5/var_normal_wishart_io.h"
-#include "reporters/console_reporter.h"
 
 #include <iostream>
 #include <stdexcept>
@@ -51,7 +50,7 @@ void VarNormalWishart::draw_coefficients(const ModelLocation &location_arg)
 
     const bayests::VarNormalWishartInput input = io::read_input(file);
 
-    bayests::ConsoleReporter reporter;
+    bayests::Reporter &reporter = stage_reporter();
     const bayests::VarNormalWishartDraws draws =
         bayests::VarNormalWishartSampler{}.draw_coefficients(input, reporter);
 
@@ -100,7 +99,7 @@ void VarNormalWishart::forecast(const ModelLocation &location_arg)
     const bayests::VarNormalWishartInput input = io::read_input(file);
     const bayests::VarNormalWishartDraws draws = io::read_coefficients(file);
 
-    bayests::NullReporter reporter;
+    bayests::Reporter &reporter = quiet_reporter();
     if (!dataset_has_data(file, "/posterior/forecast/forecasts"))
     {
         const bayests::ForecastDraws fcst =

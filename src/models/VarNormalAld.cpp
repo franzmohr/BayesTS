@@ -15,7 +15,6 @@
 #include "bayests/var_normal_ald.h"
 #include "io/hdf5/hdf5_and_armadillo.h"
 #include "io/hdf5/var_normal_ald_io.h"
-#include "reporters/console_reporter.h"
 
 #include <iostream>
 #include <stdexcept>
@@ -52,7 +51,7 @@ void VarNormalAld::draw_coefficients(const ModelLocation &location_arg)
 
     const bayests::VarNormalAldInput input = io::read_input(file);
 
-    bayests::ConsoleReporter reporter;
+    bayests::Reporter &reporter = stage_reporter();
     const bayests::VarNormalAldDraws draws =
         bayests::VarNormalAldSampler{}.draw_coefficients(input, reporter);
 
@@ -89,7 +88,7 @@ void VarNormalAld::forecast(const ModelLocation &location_arg)
 
     const bayests::VarNormalAldInput input = io::read_input(file);
     const bayests::VarNormalAldDraws draws = io::read_coefficients(file);
-    bayests::NullReporter reporter;
+    bayests::Reporter &reporter = quiet_reporter();
     const bayests::ForecastDraws fcst =
         bayests::VarNormalAldSampler{}.forecast(input, draws, reporter);
     bayests::hdf5_io::write_forecast(file, fcst);

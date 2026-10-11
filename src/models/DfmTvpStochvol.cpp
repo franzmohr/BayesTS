@@ -15,7 +15,6 @@
 #include "bayests/dfm_tvp_stochvol.h"
 #include "io/hdf5/dfm_tvp_stochvol_io.h"
 #include "io/hdf5/hdf5_and_armadillo.h"
-#include "reporters/console_reporter.h"
 
 #include <iostream>
 #include <stdexcept>
@@ -51,7 +50,7 @@ void DfmTvpStochvol::draw_coefficients(const ModelLocation &location_arg)
 
     const bayests::DfmTvpStochvolInput input = io::read_input(file);
 
-    bayests::ConsoleReporter reporter;
+    bayests::Reporter &reporter = stage_reporter();
     const bayests::DfmTvpStochvolDraws draws =
         bayests::DfmTvpStochvolSampler{}.draw_coefficients(input, reporter);
 
@@ -108,7 +107,7 @@ void DfmTvpStochvol::forecast(const ModelLocation &location_arg)
     // paths are handed over whole and cut inside the sampler.
     const bayests::DfmTvpStochvolDraws draws = io::read_forecast_coefficients(file, input);
 
-    bayests::NullReporter reporter;
+    bayests::Reporter &reporter = quiet_reporter();
     if (!dataset_has_data(file, "/posterior/forecast/forecasts"))
     {
         const bayests::ForecastDraws fcst =

@@ -15,7 +15,6 @@
 #include "bayests/var_tvp_ald.h"
 #include "io/hdf5/hdf5_and_armadillo.h"
 #include "io/hdf5/var_tvp_ald_io.h"
-#include "reporters/console_reporter.h"
 
 #include <iostream>
 #include <stdexcept>
@@ -51,7 +50,7 @@ void VarTvpAld::draw_coefficients(const ModelLocation &location_arg)
 
     const bayests::VarTvpAldInput input = io::read_input(file);
 
-    bayests::ConsoleReporter reporter;
+    bayests::Reporter &reporter = stage_reporter();
     const bayests::VarTvpAldDraws draws =
         bayests::VarTvpAldSampler{}.draw_coefficients(input, reporter);
 

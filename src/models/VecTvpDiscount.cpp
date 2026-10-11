@@ -22,7 +22,6 @@
 #include "io/hdf5/hdf5_and_armadillo.h"
 #include "io/hdf5/model_io_common.h"
 #include "io/hdf5/vec_tvp_discount_io.h"
-#include "reporters/console_reporter.h"
 
 #include <iostream>
 #include <stdexcept>
@@ -68,7 +67,7 @@ void VecTvpDiscount::draw_coefficients(const ModelLocation &location_arg)
 
     const bayests::VecTvpDiscountInput input = io::read_input(file);
 
-    bayests::ConsoleReporter reporter;
+    bayests::Reporter &reporter = stage_reporter();
     const bayests::VecTvpDiscountPosterior posterior =
         bayests::VecTvpDiscountEstimator{}.estimate(input, reporter);
 
@@ -105,7 +104,7 @@ void VecTvpDiscount::forecast(const ModelLocation &location_arg)
     const bayests::VecTvpDiscountPosterior posterior = io::read_posterior(file);
     const arma::uword draws = posterior_draws(input.spec);
 
-    bayests::NullReporter reporter;
+    bayests::Reporter &reporter = quiet_reporter();
     if (!dataset_has_data(file, "/posterior/forecast/forecasts"))
     {
         const bayests::ForecastDraws fcst =
@@ -144,7 +143,7 @@ void VecTvpDiscount::log_likelihood(const ModelLocation &location_arg)
     // same arithmetic and not a second estimate.
     const bayests::VecTvpDiscountInput input = io::read_input(file);
 
-    bayests::NullReporter reporter;
+    bayests::Reporter &reporter = quiet_reporter();
     const bayests::VecTvpDiscountPosterior posterior =
         bayests::VecTvpDiscountEstimator{}.estimate(input, reporter);
 

@@ -15,7 +15,6 @@
 #include "bayests/dfm_tvp_gamma.h"
 #include "io/hdf5/dfm_tvp_gamma_io.h"
 #include "io/hdf5/hdf5_and_armadillo.h"
-#include "reporters/console_reporter.h"
 
 #include <iostream>
 #include <stdexcept>
@@ -51,7 +50,7 @@ void DfmTvpGamma::draw_coefficients(const ModelLocation &location_arg)
 
     const bayests::DfmTvpGammaInput input = io::read_input(file);
 
-    bayests::ConsoleReporter reporter;
+    bayests::Reporter &reporter = stage_reporter();
     const bayests::DfmTvpGammaDraws draws =
         bayests::DfmTvpGammaSampler{}.draw_coefficients(input, reporter);
 
@@ -103,7 +102,7 @@ void DfmTvpGamma::forecast(const ModelLocation &location_arg)
     // starts from the last in-sample period of each.
     const bayests::DfmTvpGammaDraws draws = io::read_forecast_coefficients(file, input);
 
-    bayests::NullReporter reporter;
+    bayests::Reporter &reporter = quiet_reporter();
     if (!dataset_has_data(file, "/posterior/forecast/forecasts"))
     {
         const bayests::ForecastDraws fcst =

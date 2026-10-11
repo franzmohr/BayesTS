@@ -30,7 +30,6 @@
 #include "io/hdf5/hdf5_and_armadillo.h"
 #include "io/hdf5/model_io_common.h"
 #include "io/hdf5/var_tvp_discount_io.h"
-#include "reporters/console_reporter.h"
 
 #include <iostream>
 #include <stdexcept>
@@ -78,7 +77,7 @@ void VarTvpDiscount::draw_coefficients(const ModelLocation &location_arg)
 
     const bayests::VarTvpDiscountInput input = io::read_input(file);
 
-    bayests::ConsoleReporter reporter;
+    bayests::Reporter &reporter = stage_reporter();
     const bayests::VarTvpDiscountPosterior posterior =
         bayests::VarTvpDiscountEstimator{}.estimate(input, reporter);
 
@@ -116,7 +115,7 @@ void VarTvpDiscount::forecast(const ModelLocation &location_arg)
     const bayests::VarTvpDiscountPosterior posterior = io::read_posterior(file);
     const arma::uword draws = forecast_draws(input.spec);
 
-    bayests::NullReporter reporter;
+    bayests::Reporter &reporter = quiet_reporter();
     if (!dataset_has_data(file, "/posterior/forecast/forecasts"))
     {
         const bayests::ForecastDraws fcst =
@@ -159,7 +158,7 @@ void VarTvpDiscount::log_likelihood(const ModelLocation &location_arg)
     // second estimate of it.
     const bayests::VarTvpDiscountInput input = io::read_input(file);
 
-    bayests::NullReporter reporter;
+    bayests::Reporter &reporter = quiet_reporter();
     const bayests::VarTvpDiscountPosterior posterior =
         bayests::VarTvpDiscountEstimator{}.estimate(input, reporter);
 
