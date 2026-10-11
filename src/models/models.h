@@ -75,7 +75,8 @@ struct ModelCheck
     /// rather than a forecast being scored.
     arma::uword test_periods = 0;
 
-    /// Datasets in the model's tree the reader never opened, /posterior aside.
+    /// Datasets in the model's tree the reader never opened, /posterior and
+    /// the groups below /model aside (see list_model_datasets()).
     std::vector<std::string> unread;
 
     /// /model attributes no reader looks for.

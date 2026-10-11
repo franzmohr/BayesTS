@@ -622,7 +622,15 @@ void collect_model_datasets(const ModelFile &file, const std::string &relative,
 			found.push_back(child);
 			break;
 		case HighFive::ObjectType::Group:
-			if (child != "/posterior" && !is_model_group(h5, child_absolute))
+			// A group below /model is a host's own metadata about the model --
+			// bvartools' /model/sign_restrictions, which the rotations in
+			// /posterior/q are drawn under -- and no reader opens a dataset
+			// anywhere in /model, so none of it can be the trace of a different
+			// model, which is what an unread dataset usually is. A dataset
+			// directly in /model is still listed: that is where the readers look
+			// for attributes, and one stored as a dataset there is a mistake.
+			if (child != "/posterior" && relative != "/model" &&
+			    !is_model_group(h5, child_absolute))
 			{
 				collect_model_datasets(file, child, found);
 			}

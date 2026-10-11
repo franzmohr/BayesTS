@@ -427,6 +427,24 @@ heading, and move down into a version section when one is cut.
 
 ### Fixed
 
+* **`bayests check` no longer warns about a host's metadata below `/model`.**
+  bvartools' `write_to_hdf5()` stores a sign-restriction identification as
+  `/model/sign_restrictions/restrictions` beside the rotations in
+  `/posterior/q/coeffs`, and BayesTS Studio writes the same layout; check
+  warned that `VarNormalWishart` never reads it, on a file that is exactly
+  what it should be. `list_model_datasets()` in
+  `src/io/hdf5/hdf5_and_armadillo.cpp` now skips the groups below `/model`, as
+  it skips `/posterior`: no reader opens a dataset anywhere in `/model`, so
+  nothing there can be the trace of a different model, which is what the
+  warning is for. A dataset directly in `/model` is still named -- that is
+  where the attributes go -- as is an unread dataset anywhere else. New test
+  `check.model_metadata` (`test/check_model_metadata.py`, registered with the
+  other Python tests) adds the group to a copy of every algorithm's first
+  fixture and of a grouped one, 27 models, and requires no warning; a second
+  copy adds `/model/stray` and `/initial/stray` beside it and requires exactly
+  those two named. Draws are unchanged: the fingerprint comparison over all
+  215 fixtures moved none.
+
 * **`bayests check` refuses a structural model it would be asked to score.**
   A `structural` VAR or VEC with `h > 0` and rows in `/data/test/y` was
   accepted by the check, and the run refused it only in the `forecasts` stage,

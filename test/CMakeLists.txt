@@ -1059,7 +1059,7 @@ endif()
 # cannot quietly stop running there. Point Python3_EXECUTABLE at the interpreter
 # to use when the first one found lacks the modules.
 set(BAYESTS_TEST_PYTHON "AUTO" CACHE STRING
-    "Run the tests written in Python (check.nonfinite, check.constraints, cli.interrupted): AUTO, ON or OFF")
+    "Run the tests written in Python (check.nonfinite, check.constraints, check.model_metadata, cli.interrupted): AUTO, ON or OFF")
 set_property(CACHE BAYESTS_TEST_PYTHON PROPERTY STRINGS AUTO ON OFF)
 
 if(NOT BAYESTS_TEST_PYTHON STREQUAL "OFF")
@@ -1102,6 +1102,18 @@ if(NOT BAYESTS_TEST_PYTHON STREQUAL "OFF")
         set_tests_properties(check.constraints PROPERTIES
             FIXTURES_REQUIRED "${_bayests_all_fixtures}"
             ENVIRONMENT "${_bayests_pin_threads}"
+            ENVIRONMENT_MODIFICATION "${_bayests_test_env_mod}")
+
+        # A host's metadata in a group below /model -- bvartools'
+        # /model/sign_restrictions -- checks without a warning through every
+        # model's reader, while a dataset directly in /model or in /initial is
+        # still named as one the model never reads.
+        add_test(NAME check.model_metadata
+            COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/check_model_metadata.py"
+                    "$<TARGET_FILE:bayests>" "${BAYESTS_FIXTURE_DIR}"
+                    "${CMAKE_CURRENT_BINARY_DIR}/check_model_metadata")
+        set_tests_properties(check.model_metadata PROPERTIES
+            FIXTURES_REQUIRED "${_bayests_all_fixtures}"
             ENVIRONMENT_MODIFICATION "${_bayests_test_env_mod}")
 
         # A panel pinned whole is estimated as the complete panel, bit for bit, by
