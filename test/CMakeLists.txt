@@ -591,6 +591,14 @@ bayests_add_model_fixture(VarNormalWishart-student-t            VarNormalWishart
 bayests_add_model_fixture(VarNormalWishart-student-t-fixed-score VarNormalWishart none 0 0 4 --student-t-fixed --score)
 bayests_add_model_fixture(VarNormalWishart-student-t-break      VarNormalWishart none 0 0 4 --student-t --volatility-break)
 bayests_add_model_fixture(VarNormalWishart-student-t-minnesota  VarNormalWishart none 0 0 4 --student-t --shrinkage=minnesota)
+# Both on a panel not observed whole: the break on a quarterly series, scored
+# from the completed panel, and against a horizon realised in part; t errors on
+# a quarterly series, and beside a break on a panel with missing values.
+bayests_add_model_fixture(VarNormalWishart-volatility-break-mixed         VarNormalWishart none 0 0 4 --volatility-break --mixed)
+bayests_add_model_fixture(VarNormalWishart-volatility-break-missing-score VarNormalWishart none 0 0 4 --volatility-break --missing --score)
+bayests_add_model_fixture(VarNormalWishart-volatility-break-score-partial VarNormalWishart none 0 0 4 --volatility-break --score --partial-test)
+bayests_add_model_fixture(VarNormalWishart-student-t-mixed               VarNormalWishart none 0 0 4 --student-t --mixed)
+bayests_add_model_fixture(VarNormalWishart-student-t-break-missing       VarNormalWishart none 0 0 4 --student-t --volatility-break --missing)
 bayests_add_model_fixture(VarNormalGamma-steady-state-mixed     VarNormalGamma    none 0 0 4 --steady-state --mixed)
 bayests_add_model_fixture(VarNormalStochvol-steady-state-stationary VarNormalStochvol none 0 0 4 --steady-state --stationary)
 bayests_add_model_fixture(VarNormalGamma-nofcst     VarNormalGamma     none 0 0 0)

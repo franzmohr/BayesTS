@@ -110,8 +110,7 @@
 //                 fifth period from the end, three free scales, a Pareto(1)
 //                 prior on them and the beta of Lenza and Primiceri (2022) on
 //                 the decay, at /priors/volatility, and a start at
-//                 /initial/volatility. Not with --steady-state or a panel or
-//                 horizon not observed whole.
+//                 /initial/volatility. Not with --steady-state.
 //     --student-t
 //                 VarNormalWishart only: writes /model/student_t = true, a
 //                 Gamma(2, 0.1) prior on the degrees of freedom at
@@ -119,7 +118,8 @@
 //     --student-t-fixed
 //                 the same with the degrees of freedom held at 5
 //                 (/priors/student_t/df). Neither with --steady-state,
-//                 --scenario or a panel or horizon not observed whole.
+//                 --scenario, --partial-test or a score beside --mixed or
+//                 --missing.
 //     --smooth
 //                 UcNormalGamma only: writes /model/trend = "smooth", the trend
 //                 whose second difference is the shock, with no drift and a
@@ -3076,18 +3076,17 @@ int main(int argc, char *argv[])
                      "variable selection, --iid or a structural form\n";
         return 2;
     }
-    if (volatility_break &&
-        (model != "VarNormalWishart" || steady_state || mixed || missing || partial_test || soft))
+    if (volatility_break && (model != "VarNormalWishart" || steady_state))
     {
         std::cerr << "--volatility-break is written on VarNormalWishart only, without "
-                     "--steady-state and on a panel and horizon observed whole\n";
+                     "--steady-state\n";
         return 2;
     }
-    if (student_t && (model != "VarNormalWishart" || steady_state || mixed || missing ||
-                      partial_test || soft || scenario))
+    if (student_t && (model != "VarNormalWishart" || steady_state || scenario || partial_test ||
+                      (score && (mixed || missing))))
     {
-        std::cerr << "--student-t is written on VarNormalWishart only, without --steady-state or "
-                     "--scenario and on a panel and horizon observed whole\n";
+        std::cerr << "--student-t is written on VarNormalWishart only, without --steady-state, "
+                     "--scenario, --partial-test, or --score beside --mixed or --missing\n";
         return 2;
     }
     if (draw_theta && shrinkage != "normal_gamma")

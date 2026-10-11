@@ -815,7 +815,7 @@ void VarNormalWishartInput::validate() const
     const arma::uword nparams = train.nparams();
 
     require_identified_structural(spec, true, "a Wishart prior on the error precision");
-    core::validate_volatility_break(spec, volatility_prior, initial.volatility, train, test, tt,
+    core::validate_volatility_break(spec, volatility_prior, initial.volatility, tt,
                                     "VarNormalWishart");
     core::validate_student_t(spec, student_t_prior, initial.student_t_df, train, forecast, test,
                              "VarNormalWishart");

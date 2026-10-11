@@ -29,6 +29,51 @@ heading, and move down into a version section when one is cut.
 
 ### Added
 
+* **The volatility break and Student t errors read a panel not observed
+  whole.** `VarNormalWishart` with `/model/volatility_break` or
+  `/model/student_t` now takes `/data/train/constraints`, quarterly series in a
+  monthly VAR and missing values included, which it refused before. This is the
+  combination the pandemic forecasting literature pairs: a mixed-frequency VAR
+  (Schorfheide and Song) estimated through 2020 with the months downweighted
+  (Lenza and Primiceri).
+
+  - **Completion.** Each sweep draws the panel with each period's own
+    covariance, `s_t^2 lambda_t Sigma`. `scaled_covariance()` in
+    `completion_support.h` stacks it in the form `var_path_prior_from()` already
+    took. The sweep then rescales the completed rows, where it used to rescale
+    the data before the completion. `/posterior/y/coeffs` keeps the panel on its
+    original scale.
+  - **Log likelihood.** It is the density of what was observed under those
+    covariances (`observed_log_likelihood()` takes a per-period scale). Under a
+    break that is exact. Under Student t errors it conditions on each draw's
+    `lambda`: with rows that reach across periods, `lambda` does not integrate
+    out in closed form. A complete panel's likelihood remains the t density with
+    `lambda` integrated out.
+  - **Score.** A score from a completed panel or against a horizon realised in
+    part, `/data/test/constraints`, reads the break's horizon scales
+    (`score_from_panel()` takes them). Under Student t errors both stay refused,
+    for the same reason as the likelihood, and so does a scenario.
+
+  `unit.var_mixed_frequency` gains two cases:
+  - **Pinned whole.** With every entry pinned, the chains with a break, and with
+    a break and t errors, agree bit for bit with the complete panel's: the
+    coefficients, the precision, the scales, `nu` and every `lambda`. The stored
+    panel is the data. The log likelihood is the complete panel's to `2e-15`
+    under a break, and the normal given the mixing scales under t errors. The
+    score from a panel pinned whole is the recursion's, horizon scales and all.
+  - **A quarterly series beside a break of 10, 25, 6 and 0.7.** Every quarterly
+    average and every pinned value holds in every draw, with and without t
+    errors. The break's 99% intervals cover the truth (medians 10.5, 29.5, 5.7,
+    0.76). The posterior mean of the hidden monthly series errs by 0.73 against
+    1.68 for the quarterly figure repeated.
+
+  The refusals this lifts are gone from `unit.volatility_break` and
+  `unit.student_t`, which check the ones that remain. Five fixtures:
+  `VarNormalWishart-volatility-break-mixed`, `-volatility-break-missing-score`,
+  `-volatility-break-score-partial`, `-student-t-mixed` and
+  `-student-t-break-missing`. *Draws are unchanged* for every file that was not
+  refused before: the fingerprints of all 210 earlier fixtures agree.
+
 * **Student t errors for `VarNormalWishart`.** `/model/student_t = true` makes
   every period's shock vector multivariate t: `u_t ~ N(0, lambda_t s_t^2 Sigma)`,
   `lambda_t ~ IG(nu / 2, nu / 2)` independently, `s_t` the volatility break's

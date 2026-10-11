@@ -70,13 +70,12 @@ inline void require_supported_volatility_break(const VarSpec &spec, const bool s
 
 /// Refuses a volatility break the sampler cannot estimate as given: a break
 /// outside the sample, no free scale, a prior that is not proper, a start
-/// outside the support, and the combinations that would read the error
-/// covariance as constant -- the steady-state prior's draw of the mean, and a
-/// panel or a horizon not observed whole, which the completion step draws with
-/// one covariance for every period.
+/// outside the support, and the steady-state prior, whose draw of the mean
+/// reads the error covariance as the same in every period. A panel or a
+/// horizon not observed whole is read: the completion step takes one
+/// covariance per period.
 inline void validate_volatility_break(const VarSpec &spec, const VolatilityBreakPrior &prior,
-                                      const arma::vec &initial, const TrainData &train,
-                                      const TestData &test, const arma::uword tt,
+                                      const arma::vec &initial, const arma::uword tt,
                                       const char *algorithm)
 {
     const std::string name(algorithm);
@@ -111,14 +110,6 @@ inline void validate_volatility_break(const VarSpec &spec, const VolatilityBreak
                    "draw of the unconditional mean reads the error covariance as the same in "
                    "every period");
     }
-    if (!train.constraints.empty() || !test.constraints.empty())
-    {
-        throw std::invalid_argument(
-            name + " does not combine /model/volatility_break with /data/train/constraints or "
-                   "/data/test/constraints: the panel a completion draws has one error "
-                   "covariance for every period, and the break is the claim that it has not");
-    }
-
     const auto positive = [&](const double v, const char *what) {
         if (!(v > 0.0) || !std::isfinite(v))
         {
