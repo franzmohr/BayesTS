@@ -203,6 +203,21 @@ struct GammaPrior
     arma::vec rate;
 };
 
+/// The prior of a volatility break (VarSpec::volatility_break): a Pareto on
+/// each free scale and a beta on the rate its excess decays at -- Lenza and
+/// Primiceri (2022) use shape one and a beta with mode 0.8 and standard
+/// deviation 0.2.
+///
+/// The Pareto's scale is fixed at one, so a scale below one -- a break that
+/// calmed the economy -- has no prior mass. That is the model, not a default:
+/// the break is a known period of larger shocks.
+struct VolatilityBreakPrior
+{
+    double shape = 0.0;      ///< Pareto shape of every free scale, density shape s^-(shape + 1) on s >= 1.
+    double rho_shape1 = 0.0; ///< Beta prior on the decay rate, in R's dbeta() order.
+    double rho_shape2 = 0.0;
+};
+
 /// A random walk state equation: how far the state may drift from one period
 /// to the next, and where it starts.
 struct RandomWalkPrior

@@ -475,6 +475,11 @@ VarSpec read_spec(const ModelFile &file, const char *covar_error)
         optional_attribute_string(file, "/model", "shrinkage", "none"));
     spec.stationary = optional_attribute_bool(file, "/model", "stationary", false);
     spec.steady_state = optional_attribute_bool(file, "/model", "steady_state", false);
+    // A volatility break: the period it starts in, counted from one, and how
+    // many periods from it have a scale of their own. Absent is no break, and
+    // only VarNormalWishart reads one; every other model refuses it by name.
+    spec.volatility_break = optional_attribute_int(file, "/model", "volatility_break", 0);
+    spec.volatility_scales = optional_attribute_int(file, "/model", "volatility_scales", 3);
     spec.structural = optional_attribute_bool(file, "/model", "structural", false);
 
     // Absent from every file written before the choice existed. Those files
@@ -770,7 +775,7 @@ bool is_model_attribute(const std::string &name)
         "varsel",    "structural", "error",     "seed",       "forecast_states",
         "delta_beta", "delta_sigma", "shrinkage", "stationary", "steady_state",
         "trend",     "cycle",     "irregular", "skew",       "skew_shock", "cycle_init",
-        "n_signals", "signal_lags", "n_signal_x",
+        "n_signals", "signal_lags", "n_signal_x", "volatility_break", "volatility_scales",
     };
     return names.count(name) > 0;
 }

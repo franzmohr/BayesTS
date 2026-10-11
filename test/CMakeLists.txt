@@ -108,6 +108,10 @@ add_executable(bayests_unit_shrinkage unit_shrinkage.cpp)
 # The steady-state prior: the intercept every draw implies, and the prior
 # acting on the mean rather than the intercept.
 add_executable(bayests_unit_steady_state unit_steady_state.cpp)
+# The volatility break of Lenza and Primiceri (2022): each block of the draw
+# against the conditional it targets, the likelihood, score and forecast
+# against the scale the path puts on each period, and recovery of a jump.
+add_executable(bayests_unit_volatility_break unit_volatility_break.cpp)
 # The structural quantile VAR: the distribution a grid of quantiles describes,
 # and a recursive system's forecast simulated through it against the truth.
 add_executable(bayests_unit_var_quantile_grid unit_var_quantile_grid.cpp)
@@ -171,7 +175,8 @@ foreach(_core_unit bayests_unit_identification bayests_unit_vec_klgs_2010 bayest
                    bayests_unit_var_ald bayests_unit_thin
                    bayests_unit_favar_normal_wishart bayests_unit_bvs bayests_unit_ssvs
                    bayests_unit_iid_block bayests_unit_constraints bayests_unit_var_mixed_frequency
-                   bayests_unit_shrinkage bayests_unit_steady_state bayests_unit_var_quantile_grid
+                   bayests_unit_shrinkage bayests_unit_steady_state bayests_unit_volatility_break
+                   bayests_unit_var_quantile_grid
                    bayests_unit_input_values bayests_unit_var_normal_stochvol
                    bayests_unit_var_tvp_discount bayests_unit_vec_tvp_discount
                    bayests_unit_predictive_score bayests_unit_factor_score
@@ -356,6 +361,7 @@ foreach(_unit vec_to_var forecast_lags forecast_regressors_io forecast_group_io 
               dfm_tvp_gamma dfm_tvp_stochvol favar_normal_wishart var_ald thin model_group bvs ssvs
               input_values var_normal_stochvol var_tvp_discount vec_tvp_discount read_path bool_attributes tvp_initial_state
               forecast_states noncentred iid_block constraints constraints_io var_mixed_frequency shrinkage steady_state var_quantile_grid
+              volatility_break
               uc_normal_gamma)
     add_test(NAME "unit.${_unit}" COMMAND "bayests_unit_${_unit}")
     set_tests_properties("unit.${_unit}" PROPERTIES
@@ -567,6 +573,13 @@ bayests_add_model_fixture(VarNormalGamma-normal-gamma-theta-covar VarNormalGamma
 # The steady-state prior, on each of the three, with the stationarity condition
 # and with a panel not observed whole beside it.
 bayests_add_model_fixture(VarNormalWishart-steady-state         VarNormalWishart  none 0 0 4 --steady-state)
+# The volatility break of Lenza and Primiceri (2022), five periods from the end
+# of the sample: on its own, through a scenario, scored under a hierarchical
+# Minnesota prior, and with bvs -- the four paths the rescaled rows go through.
+bayests_add_model_fixture(VarNormalWishart-volatility-break           VarNormalWishart none 0 0 4 --volatility-break)
+bayests_add_model_fixture(VarNormalWishart-volatility-break-scenario  VarNormalWishart none 0 0 4 --volatility-break --scenario)
+bayests_add_model_fixture(VarNormalWishart-volatility-break-score-minnesota VarNormalWishart none 0 0 4 --volatility-break --score --shrinkage=minnesota)
+bayests_add_model_fixture(VarNormalWishart-volatility-break-bvs       VarNormalWishart bvs  0 0 4 --volatility-break)
 bayests_add_model_fixture(VarNormalGamma-steady-state-mixed     VarNormalGamma    none 0 0 4 --steady-state --mixed)
 bayests_add_model_fixture(VarNormalStochvol-steady-state-stationary VarNormalStochvol none 0 0 4 --steady-state --stationary)
 bayests_add_model_fixture(VarNormalGamma-nofcst     VarNormalGamma     none 0 0 0)

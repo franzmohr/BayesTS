@@ -6,6 +6,7 @@
 #include "core/models/constraint_support.h"
 #include "core/models/shrinkage_support.h"
 #include "core/models/steady_state_support.h"
+#include "core/models/volatility_break_support.h"
 #include "core/models/discount_support.h"
 #include "core/models/vec_support.h"
 
@@ -149,6 +150,7 @@ void VecTvpDiscountInput::validate() const
     core::require_supported_iid_block(spec, false, "VecTvpDiscount");
     core::require_supported_shrinkage(spec, false, "VecTvpDiscount");
     core::require_supported_steady_state(spec, false, "VecTvpDiscount");
+    core::require_supported_volatility_break(spec, false, "VecTvpDiscount");
     core::require_supported_constraints(spec, train, test, false, "VecTvpDiscount");
     core::require_supported_forecast_constraints(spec, forecast, false, "VecTvpDiscount");
     // Before anything that would read a value: a NaN or an infinity here would

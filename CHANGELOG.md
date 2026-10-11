@@ -29,6 +29,66 @@ heading, and move down into a version section when one is cut.
 
 ### Added
 
+* **A volatility break for `VarNormalWishart`: the VAR of Lenza and Primiceri
+  (2022) for data that run through March 2020.** From a known period every
+  shock's covariance is `s_t^2 Sigma`: `/model/volatility_break` names the
+  first scaled column of `/data/train/y`, counted from one, and
+  `/model/volatility_scales` (default 3) how many periods from it have a free
+  scale before the excess decays, `s_t = 1 + (s_{m-1} - 1) rho^(t - break - m + 1)`.
+  A common scale is what keeps the Wishart block conjugate: given the scales the
+  model is the VAR of the rescaled rows `y_t / s_t` on `z_t / s_t`, which is
+  what each sweep runs (`rescale_rows()`), and every block that reads the
+  rows -- the coefficients under any prior or adaptive scheme, `stationary`,
+  `ssvs`, `bvs`, `n_iid` -- is unchanged. The scales are drawn after the
+  Wishart from the residuals on the original scale (`VolatilityBreak` in the
+  new `core/models/volatility_break_support.h`). The free scales but the last
+  move one period each and are drawn exactly: `s^2` is inverse gamma restricted
+  to at least one, drawn as the reciprocal of a gamma restricted to (0, 1]
+  (`draw_gamma_below_one()`, two exact rejection samplers, whichever accepts
+  more often). The last scale and `rho` move every period after it, so they are
+  one random walk Metropolis-Hastings step in `(log(s - 1), logit rho)`, adapted
+  over the burn-in and held after it. The prior is a Pareto with scale one and
+  shape `/priors/volatility/shape` on each free scale, and a beta,
+  `rho_shape1` and `rho_shape2`, on `rho` (`VolatilityBreakPrior`). The start
+  is `/initial/volatility`, the scales then `rho`, each scale above one;
+  absent, it is two and one half. The draws go to `/posterior/volatility/coeffs`,
+  `(volatility_scales + 1, iterations)` in HDF5 dataspace terms.
+
+  The break reaches everything downstream. `/posterior/loglik` is the normal
+  with `s_t^2 Sigma`. A forecast draws horizon `i` with `s_{T+i}`, and so does a
+  score of `/data/test/y`. A scenario (`/data/forecast/constraints`) is the
+  completion step over the horizon with one covariance per period:
+  `conditioned_forecast()` takes the horizon's scales, and an empty vector
+  leaves it as it was. Refused: the break outside the sample, no free scale, an
+  improper prior, a start off the support, and the break beside
+  `steady_state`, `/data/train/constraints` or `/data/test/constraints`, whose
+  draws read one covariance for every period. Every other algorithm refuses
+  `/model/volatility_break` by name (`require_supported_volatility_break()`).
+
+  `AdaptiveWalk`, `UcNormalSkew`'s adapted proposal, moves unchanged out of
+  `uc_normal_skew.cpp` into `core/models/adaptive_walk.h` so the two share it.
+
+  `unit.volatility_break` checks:
+  - the path;
+  - the restricted gamma in both samplers against quadrature;
+  - the exact draw of a free scale, the Metropolis-Hastings step for the last
+    scale and `rho`, and a free scale past the sample against their
+    conditionals at fixed residuals (within 0.5%, 0.1%, 0.02% and 0.4%);
+  - the log likelihood and the score against the dense normal (to `1e-15`);
+  - the forecast's spread at each horizon against `s_{T+i}`, and a scenario's
+    against `s_{T+i} sqrt(1 - r^2)`;
+  - recovery of a jump of 12, 30, 8 and 0.7 on a simulated VAR. Modelled, the
+    coefficients are as close to the truth as OLS on the 280 periods before the
+    jump (0.30 against 0.32), where ignoring the jump doubles the error (0.63);
+  - every refusal.
+
+  Four fixtures from `make_model_fixture --volatility-break`:
+  `VarNormalWishart-volatility-break`, `-scenario`, `-score-minnesota` and
+  `-bvs`. *Draws are unchanged* for every file without
+  `/model/volatility_break`: the fingerprints of all 202 earlier fixtures agree,
+  with the new `/posterior/volatility/coeffs absent` line set aside, and that
+  includes `UcNormalSkew` after the move.
+
 * **A damped trend and signal equations for `UcNormalGamma` and
   `UcNormalWishart`: the European Commission's output gap models, nested.** The
   production function method (Havik et al. 2014) estimates trend TFP and the
