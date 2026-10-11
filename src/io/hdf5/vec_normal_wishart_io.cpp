@@ -53,6 +53,8 @@ VecNormalWishartInput read_input(const ModelFile &file)
     read_mat_if_present(file, "/priors/u_sigma/scale", input.u_sigma_prior.scale);
     read_mat_if_present(file, "/initial/u_sigma_inv", input.initial.u_sigma_inv);
 
+    // The volatility break's prior and start, where the file has them.
+    read_volatility_break(file, input.volatility_prior, input.initial.volatility);
     return input;
 }
 
@@ -75,6 +77,10 @@ VecNormalWishartDraws read_coefficients(const ModelFile &file)
     if (dataset_has_data(file, "/posterior/u_sigma_inv/coeffs"))
     {
         draws.u_sigma_inv = read_draws(file, "/posterior/u_sigma_inv/coeffs");
+    }
+    if (dataset_has_data(file, "/posterior/volatility/coeffs"))
+    {
+        draws.volatility = read_draws(file, "/posterior/volatility/coeffs");
     }
 
     return draws;
@@ -103,6 +109,10 @@ void write_coefficients(const ModelFile &file, const VecNormalWishartDraws &draw
     }
 
     write_draws(file, "/posterior/u_sigma_inv/coeffs", draws.u_sigma_inv);
+    if (draws.has_volatility())
+    {
+        write_draws(file, "/posterior/volatility/coeffs", draws.volatility);
+    }
 }
 
 } // namespace bayests::hdf5_io::vec_normal_wishart
