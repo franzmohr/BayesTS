@@ -51,7 +51,9 @@ heading, and move down into a version section when one is cut.
 
   *Draws are unchanged*: neither hook consumes random numbers. Verified with
   `diff_fingerprints.sh` over the full suite, 202 of 202 fixtures (11,592
-  fingerprints) unchanged; ctest 655 of 655.
+  fingerprints) unchanged; ctest 655 of 655. Rebased onto `main` (d5c92d3),
+  with the volatility break and Student t errors, and verified again: 217 of
+  217 fixtures unchanged against `main`, ctest 723 of 723.
 
 * **A volatility break for `VecNormalWishart`.** The VEC beside the VAR reads
   `/model/volatility_break`, `volatility_scales`, `/priors/volatility` and
