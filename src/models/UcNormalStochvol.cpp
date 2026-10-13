@@ -15,7 +15,6 @@
 #include "bayests/uc_normal_stochvol.h"
 #include "io/hdf5/uc_normal_stochvol_io.h"
 #include "io/hdf5/hdf5_and_armadillo.h"
-#include "reporters/console_reporter.h"
 
 #include <iostream>
 #include <stdexcept>
@@ -51,7 +50,7 @@ void UcNormalStochvol::draw_coefficients(const ModelLocation &location_arg)
 
     const bayests::UcNormalStochvolInput input = io::read_input(file);
 
-    bayests::ConsoleReporter reporter;
+    bayests::Reporter &reporter = stage_reporter();
     const bayests::UcNormalStochvolDraws draws =
         bayests::UcNormalStochvolSampler{}.draw_coefficients(input, reporter);
 
@@ -103,7 +102,7 @@ void UcNormalStochvol::forecast(const ModelLocation &location_arg)
     bayests::hdf5_io::require_log_volatility_variances(file, input.spec);
     const bayests::UcNormalStochvolDraws draws = io::read_coefficients(file);
 
-    bayests::NullReporter reporter;
+    bayests::Reporter &reporter = quiet_reporter();
     if (!dataset_has_data(file, "/posterior/forecast/forecasts"))
     {
         const bayests::ForecastDraws fcst =

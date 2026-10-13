@@ -15,7 +15,6 @@
 #include "bayests/dfm_normal_stochvol.h"
 #include "io/hdf5/dfm_normal_stochvol_io.h"
 #include "io/hdf5/hdf5_and_armadillo.h"
-#include "reporters/console_reporter.h"
 
 #include <iostream>
 #include <stdexcept>
@@ -51,7 +50,7 @@ void DfmNormalStochvol::draw_coefficients(const ModelLocation &location_arg)
 
     const bayests::DfmNormalStochvolInput input = io::read_input(file);
 
-    bayests::ConsoleReporter reporter;
+    bayests::Reporter &reporter = stage_reporter();
     const bayests::DfmNormalStochvolDraws draws =
         bayests::DfmNormalStochvolSampler{}.draw_coefficients(input, reporter);
 
@@ -107,7 +106,7 @@ void DfmNormalStochvol::forecast(const ModelLocation &location_arg)
     // the volatility from, so it is all of the path that is read.
     const bayests::DfmNormalStochvolDraws draws = io::read_forecast_coefficients(file, input);
 
-    bayests::NullReporter reporter;
+    bayests::Reporter &reporter = quiet_reporter();
     if (!dataset_has_data(file, "/posterior/forecast/forecasts"))
     {
         const bayests::ForecastDraws fcst =

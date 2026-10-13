@@ -539,6 +539,7 @@ DfmTvpStochvolDraws DfmTvpStochvolSampler::draw_coefficients(const DfmTvpStochvo
             if (use_a)
             {
                 out.a.col(draw_pos) = arma::vectorise(a_path);
+                reporter.kept_draw("a", static_cast<long long>(draw_pos), a_path);
                 out.a_sigma.col(draw_pos) = a_sigma;
                 if (a_noncentred)
                 {

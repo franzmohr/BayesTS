@@ -15,7 +15,6 @@
 #include "bayests/vec_klgs_2010.h"
 #include "io/hdf5/hdf5_and_armadillo.h"
 #include "io/hdf5/vec_klgs_2010_io.h"
-#include "reporters/console_reporter.h"
 
 #include <iostream>
 #include <stdexcept>
@@ -51,7 +50,7 @@ void VecKlgs2010::draw_coefficients(const ModelLocation &location_arg)
 
     const bayests::VecKlgs2010Input input = io::read_input(file);
 
-    bayests::ConsoleReporter reporter;
+    bayests::Reporter &reporter = stage_reporter();
     const bayests::VecKlgs2010Draws draws =
         bayests::VecKlgs2010Sampler{}.draw_coefficients(input, reporter);
 
@@ -100,7 +99,7 @@ void VecKlgs2010::forecast(const ModelLocation &location_arg)
     const bayests::VecKlgs2010Input input = io::read_input(file);
     const bayests::VecKlgs2010Draws draws = io::read_coefficients(file);
 
-    bayests::NullReporter reporter;
+    bayests::Reporter &reporter = quiet_reporter();
     if (!dataset_has_data(file, "/posterior/forecast/forecasts"))
     {
         const bayests::ForecastDraws fcst =

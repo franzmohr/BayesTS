@@ -15,7 +15,6 @@
 #include "bayests/var_normal_stochvol.h"
 #include "io/hdf5/hdf5_and_armadillo.h"
 #include "io/hdf5/var_normal_stochvol_io.h"
-#include "reporters/console_reporter.h"
 
 #include <iostream>
 #include <stdexcept>
@@ -51,7 +50,7 @@ void VarNormalStochvol::draw_coefficients(const ModelLocation &location_arg)
 
     const bayests::VarNormalStochvolInput input = io::read_input(file);
 
-    bayests::ConsoleReporter reporter;
+    bayests::Reporter &reporter = stage_reporter();
     const bayests::VarNormalStochvolDraws draws =
         bayests::VarNormalStochvolSampler{}.draw_coefficients(input, reporter);
 
@@ -104,7 +103,7 @@ void VarNormalStochvol::forecast(const ModelLocation &location_arg)
     // in-sample period rather than from the whole stored path.
     const bayests::VarNormalStochvolDraws draws = io::read_forecast_coefficients(file, input);
 
-    bayests::NullReporter reporter;
+    bayests::Reporter &reporter = quiet_reporter();
     if (!dataset_has_data(file, "/posterior/forecast/forecasts"))
     {
         const bayests::ForecastDraws fcst =

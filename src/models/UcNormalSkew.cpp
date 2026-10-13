@@ -15,7 +15,6 @@
 #include "bayests/uc_normal_skew.h"
 #include "io/hdf5/uc_normal_skew_io.h"
 #include "io/hdf5/hdf5_and_armadillo.h"
-#include "reporters/console_reporter.h"
 
 #include <iostream>
 #include <stdexcept>
@@ -51,7 +50,7 @@ void UcNormalSkew::draw_coefficients(const ModelLocation &location_arg)
 
     const bayests::UcNormalSkewInput input = io::read_input(file);
 
-    bayests::ConsoleReporter reporter;
+    bayests::Reporter &reporter = stage_reporter();
     const bayests::UcNormalSkewDraws draws =
         bayests::UcNormalSkewSampler{}.draw_coefficients(input, reporter);
 
@@ -96,7 +95,7 @@ void UcNormalSkew::forecast(const ModelLocation &location_arg)
     const bayests::UcNormalSkewInput input = io::read_input(file);
     const bayests::UcNormalSkewDraws draws = io::read_coefficients(file);
 
-    bayests::NullReporter reporter;
+    bayests::Reporter &reporter = quiet_reporter();
     const bayests::ForecastDraws fcst = bayests::UcNormalSkewSampler{}.forecast(input, draws, reporter);
     bayests::hdf5_io::write_forecast(file, fcst);
 }

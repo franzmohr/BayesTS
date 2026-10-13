@@ -54,6 +54,12 @@ target_link_libraries(bayests PRIVATE bayests_openblas)
 #####################################################################
 # Installation
 #
+# Left to the host when BayesTS is someone else's subproject; see
+# BAYESTS_INSTALL in the top-level CMakeLists.txt.
+if(NOT BAYESTS_INSTALL)
+    return()
+endif()
+
 # Only the executable is installed. bayests_subcommands, bayests_models,
 # bayests_core, bayests_algorithms, bayests_console_reporter and
 # bayests_hdf5_helper are static implementation details that end up inside it.

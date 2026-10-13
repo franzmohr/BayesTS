@@ -15,7 +15,6 @@
 #include "bayests/var_tvp_stochvol.h"
 #include "io/hdf5/hdf5_and_armadillo.h"
 #include "io/hdf5/var_tvp_stochvol_io.h"
-#include "reporters/console_reporter.h"
 
 #include <iostream>
 #include <stdexcept>
@@ -51,7 +50,7 @@ void VarTvpStochvol::draw_coefficients(const ModelLocation &location_arg)
 
     const bayests::VarTvpStochvolInput input = io::read_input(file);
 
-    bayests::ConsoleReporter reporter;
+    bayests::Reporter &reporter = stage_reporter();
     const bayests::VarTvpStochvolDraws draws =
         bayests::VarTvpStochvolSampler{}.draw_coefficients(input, reporter);
 
@@ -104,7 +103,7 @@ void VarTvpStochvol::forecast(const ModelLocation &location_arg)
     // forecast starts from the last in-sample period of each.
     const bayests::VarTvpStochvolDraws draws = io::read_forecast_coefficients(file, input);
 
-    bayests::NullReporter reporter;
+    bayests::Reporter &reporter = quiet_reporter();
     if (!dataset_has_data(file, "/posterior/forecast/forecasts"))
     {
         const bayests::ForecastDraws fcst =

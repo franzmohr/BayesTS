@@ -15,7 +15,6 @@
 #include "bayests/vec_tvp_stochvol.h"
 #include "io/hdf5/hdf5_and_armadillo.h"
 #include "io/hdf5/vec_tvp_stochvol_io.h"
-#include "reporters/console_reporter.h"
 
 #include <iostream>
 #include <stdexcept>
@@ -51,7 +50,7 @@ void VecTvpStochvol::draw_coefficients(const ModelLocation &location_arg)
 
     const bayests::VecTvpStochvolInput input = io::read_input(file);
 
-    bayests::ConsoleReporter reporter;
+    bayests::Reporter &reporter = stage_reporter();
     const bayests::VecTvpStochvolDraws draws =
         bayests::VecTvpStochvolSampler{}.draw_coefficients(input, reporter);
 
@@ -105,7 +104,7 @@ void VecTvpStochvol::forecast(const ModelLocation &location_arg)
     // each.
     const bayests::VecTvpStochvolDraws draws = io::read_forecast_coefficients(file, input);
 
-    bayests::NullReporter reporter;
+    bayests::Reporter &reporter = quiet_reporter();
     if (!dataset_has_data(file, "/posterior/forecast/forecasts"))
     {
         const bayests::ForecastDraws fcst =

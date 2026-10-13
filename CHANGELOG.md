@@ -29,6 +29,32 @@ heading, and move down into a version section when one is cut.
 
 ### Added
 
+* **An embedded host can follow and stop the model front-ends, and watch a
+  time-varying coefficient path form.** Three pieces, for a desktop
+  application that drives the `BaseModel` front-ends in-process rather than
+  through the command line:
+
+  - `BaseModel::set_reporter()` hands all three stages a host's `Reporter`.
+    Left unset, `draw_coefficients()` draws the console's progress bar and
+    `forecast()`/`log_likelihood()` stay silent, as before; the 26 front-ends
+    now get theirs from `stage_reporter()`/`quiet_reporter()`
+    (`src/models/base_model.cpp`) instead of constructing one each.
+  - `Reporter::kept_draw(block, index, value)` is called with each kept draw of
+    the coefficient path `a` by the nine samplers that have one (`VarTvp*`
+    but the discounted one, `VecTvp*` likewise, `DfmTvpGamma`,
+    `DfmTvpStochvol`), in the sampler's (coefficients x periods) layout. The
+    default does nothing.
+  - Pulled in with `add_subdirectory()`/`FetchContent`, BayesTS no longer
+    builds its tests or docs, installs its executable or describes a CPack
+    package: `BAYESTS_BUILD_TESTS`, `BAYESTS_BUILD_DOCS` and the new
+    `BAYESTS_INSTALL` default to `PROJECT_IS_TOP_LEVEL`.
+
+  *Draws are unchanged*: neither hook consumes random numbers. Verified with
+  `diff_fingerprints.sh` over the full suite, 202 of 202 fixtures (11,592
+  fingerprints) unchanged; ctest 655 of 655. Rebased onto `main` (d5c92d3),
+  with the volatility break and Student t errors, and verified again: 217 of
+  217 fixtures unchanged against `main`, ctest 723 of 723.
+
 * **A volatility break for `VecNormalWishart`.** The VEC beside the VAR reads
   `/model/volatility_break`, `volatility_scales`, `/priors/volatility` and
   `/initial/volatility` exactly as `VarNormalWishart` does, and writes

@@ -13,6 +13,7 @@
 
 #include "bayests/arma.h"
 #include "bayests/priors.h"
+#include "bayests/reporter.h"
 #include "bayests/spec.h"
 
 /// Where a model is: the file, and the group inside it that the model's tree
@@ -131,6 +132,30 @@ public:
     /// run would refuse the file. What `bayests check` runs; see
     /// models/model_check.h, whose templates each front-end hands its reader to.
     virtual ModelCheck check(const ModelLocation &location_arg) = 0;
+
+    /// Where the three stages report progress and are asked whether to stop.
+    ///
+    /// Left unset, which is what the command line does, draw_coefficients()
+    /// draws the console's progress bar and the other two stages stay silent,
+    /// as they always have. A host that drives these front-ends in-process -- a
+    /// desktop application with a progress bar and a cancel button -- hands its
+    /// own Reporter here and hears all three stages through it, nothing on
+    /// stdout. The pointer is not owned and must outlive the stages it is used
+    /// for; nullptr goes back to the console.
+    void set_reporter(bayests::Reporter *reporter) { host_reporter_ = reporter; }
+
+protected:
+    /// What draw_coefficients() hands its sampler: the host's Reporter, or a
+    /// fresh console progress bar.
+    bayests::Reporter &stage_reporter();
+
+    /// What forecast() and log_likelihood() hand theirs: the host's Reporter,
+    /// or one that discards everything.
+    bayests::Reporter &quiet_reporter();
+
+private:
+    bayests::Reporter *host_reporter_ = nullptr;
+    std::unique_ptr<bayests::Reporter> own_reporter_;
 };
 
 class VarNormalGamma : public BaseModel

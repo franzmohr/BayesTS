@@ -15,7 +15,6 @@
 #include "bayests/vec_tvp_gamma.h"
 #include "io/hdf5/hdf5_and_armadillo.h"
 #include "io/hdf5/vec_tvp_gamma_io.h"
-#include "reporters/console_reporter.h"
 
 #include <iostream>
 #include <stdexcept>
@@ -51,7 +50,7 @@ void VecTvpGamma::draw_coefficients(const ModelLocation &location_arg)
 
     const bayests::VecTvpGammaInput input = io::read_input(file);
 
-    bayests::ConsoleReporter reporter;
+    bayests::Reporter &reporter = stage_reporter();
     const bayests::VecTvpGammaDraws draws =
         bayests::VecTvpGammaSampler{}.draw_coefficients(input, reporter);
 
@@ -100,7 +99,7 @@ void VecTvpGamma::forecast(const ModelLocation &location_arg)
     const bayests::VecTvpGammaInput input = io::read_input(file);
     const bayests::VecTvpGammaDraws draws = io::read_forecast_coefficients(file, input);
 
-    bayests::NullReporter reporter;
+    bayests::Reporter &reporter = quiet_reporter();
     if (!dataset_has_data(file, "/posterior/forecast/forecasts"))
     {
         const bayests::ForecastDraws fcst =
