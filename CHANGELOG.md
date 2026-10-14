@@ -27,6 +27,8 @@ Dates are ISO. Versions follow the `project(VERSION)` in `CMakeLists.txt`.
 New entries go here, under an `### Added`, `### Changed` or `### Fixed`
 heading, and move down into a version section when one is cut.
 
+## 0.4.0 — 2026-10-14
+
 ### Added
 
 * **An embedded host can follow and stop the model front-ends, and watch a

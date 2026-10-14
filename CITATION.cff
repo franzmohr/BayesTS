@@ -6,18 +6,18 @@ title: "BayesTS: Bayesian time series estimation in C++"
 abstract: >-
   A C++ library of Gibbs samplers for Bayesian multivariate time series
   models, driven either from the command line or from an embedded host such
-  as an R package. Twenty-two algorithms span vector autoregressions, quantile
-  VARs, vector error correction models, dynamic factor models and a factor
-  augmented VAR. The numerical core performs no input or output and holds no
-  global state beyond the random number generator, and one HDF5 model file
+  as an R package. Twenty-six algorithms span vector autoregressions, quantile
+  VARs, vector error correction models, dynamic factor models, a factor
+  augmented VAR and unobserved components models. The numerical core
+  performs no input or output and holds no global state beyond the random number generator, and one HDF5 model file
   holds the data, priors, starting values and results of one model.
 type: software
 authors:
   - family-names: Mohr
     given-names: Franz X.
     orcid: "https://orcid.org/0009-0003-8890-7781"
-version: 0.3.0
-date-released: "2026-09-22"
+version: 0.4.0
+date-released: "2026-10-14"
 doi: 10.5281/zenodo.22722531
 license: BSD-3-Clause
 repository-code: "https://github.com/franzmohr/BayesTS"
