@@ -578,7 +578,7 @@ void it_recovers_deterministic_terms()
 {
     std::printf("recovery of deterministic terms\n");
 
-    const int k = 8, n = 2, n_obs = 2, p = 1, tt = 800, n_det = 2, h = 4;
+    const int k = 8, n = 2, n_obs = 2, p = 1, tt = 800, n_det = 2, h = 24;
 
     arma::arma_rng::set_seed(20261004);
     Simulated s = simulate(k, n, n_obs, p, tt);
@@ -640,7 +640,12 @@ void it_recovers_deterministic_terms()
     check_below("the transition beside them", max_abs_diff(a_mean, s.a), 0.15);
 
     // Far enough out, the observed factors' forecast is their mean: the
-    // deviations have decayed and what is left is C_obs d_{T+h}.
+    // deviations have decayed and what is left is C_obs d_{T+h}. The simulated
+    // transition's largest eigenvalue is 0.45 + sqrt(0.075), about 0.72, so a
+    // last state one standard deviation (about 0.7) from its mean still leaves
+    // 0.72^h of it: about 0.19 at four periods, against the 0.15 allowed, which
+    // made the check a question of where the simulated sample happened to end.
+    // At 24 periods it is under 0.001.
     bayests::FavarNormalWishartInput fcst_in = in;
     fcst_in.spec.h = h;
     fcst_in.forecast.x = arma::mat(h, n_det);

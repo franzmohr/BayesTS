@@ -358,8 +358,14 @@ elseif(UNIX AND NOT APPLE)
 endif()
 
 # The unit tests, which need only the shared libraries on the path: no fixture
-# to set up, and no thread pinning, since an exact identity does not care how
-# many threads computed it.
+# to set up. Pinned to one thread all the same. An exact identity does not care
+# how many threads computed it, but many of these are seeded statistical checks
+# -- coint_dees_us, student_t, favar_normal_wishart among them -- and Armadillo
+# seeds one generator per OpenMP thread, so unpinned their draws followed the
+# machine's core count: a check that passed on a four-core runner could fail on
+# a ten-core laptop from the same seed. Pinned, a seed means the same thing
+# everywhere a given standard library is used. (It also stops ctest -j running
+# one test per core with every core's worth of threads each.)
 foreach(_unit vec_to_var forecast_lags forecast_regressors_io forecast_group_io test_observations_io predictive_score factor_score stochvol kalman chan_jeliazkov constrained_var_path
               inverse_gaussian gig truncated_normal identification
               vec_klgs_2010 vec_tvp_coint coint_prior_symmetry coint_klgs_prior coint_jacobian coint_dees_us dfm_normal_gamma dfm_normal_stochvol
@@ -370,6 +376,7 @@ foreach(_unit vec_to_var forecast_lags forecast_regressors_io forecast_group_io 
               uc_normal_gamma)
     add_test(NAME "unit.${_unit}" COMMAND "bayests_unit_${_unit}")
     set_tests_properties("unit.${_unit}" PROPERTIES
+        ENVIRONMENT "${_bayests_pin_threads}"
         ENVIRONMENT_MODIFICATION "${_bayests_test_env_mod}")
 endforeach()
 
