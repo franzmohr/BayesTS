@@ -27,6 +27,34 @@ Dates are ISO. Versions follow the `project(VERSION)` in `CMakeLists.txt`.
 New entries go here, under an `### Added`, `### Changed` or `### Fixed`
 heading, and move down into a version section when one is cut.
 
+### Fixed
+
+* **The unit tests run single-threaded, and two of them no longer depend on
+  their seed's luck.** Found building with Apple clang on macOS, where
+  `unit.coint_dees_us`, `unit.dfm_tvp_gamma` and `unit.favar_normal_wishart`
+  failed:
+
+  - The unit tests were not pinned to one thread, on the grounds that an exact
+    identity does not care how many computed it. Many are seeded statistical
+    checks instead, and Armadillo seeds a generator per OpenMP thread, so their
+    draws followed the machine's core count. `coint_dees_us` gave a largest
+    |z| of 5.12 on ten threads and 3.56 on one, from the same seed. They now get
+    `OMP_NUM_THREADS=1` and `OPENBLAS_NUM_THREADS=1`, as the fixture tests
+    already did; the full suite also runs about four times faster under
+    `ctest -j`.
+  - `unit.favar_normal_wishart` checked that the observed factors' forecast has
+    returned to its mean four periods out. The simulated transition's largest
+    eigenvalue is about 0.72, so a typical last state still leaves about 0.19
+    there against the 0.15 allowed. It now looks 24 periods out, where the gap
+    is about 0.01.
+  - `unit.dfm_tvp_gamma` demanded bit-for-bit agreement between the constant and
+    time-varying transition residuals, which sum the same products in different
+    orders. Under libc++, whose `randn()` draws different factors from the seed,
+    two of twelve differed by one ulp; it now allows 1e-12, the bound of the
+    `Z_t vec(A_t)` check beside it.
+
+  *Draws are unchanged*: only the tests changed, no sampler code.
+
 ## 0.4.0 — 2026-10-14
 
 ### Added

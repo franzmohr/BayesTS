@@ -211,6 +211,12 @@ void the_transition_design_is_the_kronecker_product()
 
     // The residual the factor innovation precision is drawn from is the same
     // object, and reduces to the constant-transition one when nothing moves.
+    // Again to the last bits only: transition_residuals() subtracts one lag at a
+    // time, (f - A_1 f_1) - A_2 f_2, transition_residuals_tvp() the whole product,
+    // f - (A_1 f_1 + A_2 f_2). Whether those round alike depends on the factors,
+    // and randn() is not portable across standard libraries -- libc++ draws
+    // different factors from this seed than libstdc++, and there two residuals
+    // differ by one ulp.
     const arma::mat a_mat = arma::reshape(a_path.col(0), n, n * p);
     arma::mat flat(n * tt, n * p);
     for (int t = 0; t < tt; t++)
@@ -220,7 +226,7 @@ void the_transition_design_is_the_kronecker_product()
     check_below("a transition that does not move gives the constant residual",
                 max_abs_diff(transition_residuals_tvp(factors, flat, x_a, n),
                              transition_residuals(factors, a_mat, n, p)),
-                0.0);
+                1e-12);
 }
 
 void the_prior_over_the_first_factors_uses_each_period()
